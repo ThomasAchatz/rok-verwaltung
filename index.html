@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>ROK Verwaltung</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231F3A5F'/%3E%3Ctext x='16' y='21' font-family='Arial' font-weight='700' font-size='12' fill='%23fff' text-anchor='middle'%3EROK%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+  <!-- Anmeldung -->
+  <section id="anmeldung" class="anmeldung" hidden>
+    <form id="anmeldeformular" class="anmelde-karte" autocomplete="on">
+      <div class="marke marke--gross">
+        <span class="marke__name">ROK Immobilien</span>
+        <span class="marke__zusatz">Verwaltung</span>
+      </div>
+      <label class="feld">
+        <span>E-Mail</span>
+        <input type="email" name="email" required autocomplete="username">
+      </label>
+      <label class="feld">
+        <span>Passwort</span>
+        <input type="password" name="passwort" required autocomplete="current-password">
+      </label>
+      <p id="anmeldefehler" class="formfehler" role="alert" hidden></p>
+      <button type="submit" class="knopf knopf--primaer knopf--breit">Anmelden</button>
+      <p class="hinweis">Testversion mit erfundenen Daten.</p>
+    </form>
+  </section>
+
+  <!-- Kein Zugriff -->
+  <section id="keinzugriff" class="anmeldung" hidden>
+    <div class="anmelde-karte">
+      <div class="marke marke--gross">
+        <span class="marke__name">ROK Immobilien</span>
+        <span class="marke__zusatz">Verwaltung</span>
+      </div>
+      <p>Dieses Konto ist angemeldet, aber noch nicht für die Verwaltung freigeschaltet.</p>
+      <p class="hinweis">Die Freischaltung erfolgt im Supabase-Dashboard (Tabelle <em>mitglieder</em>).</p>
+      <button type="button" class="knopf knopf--breit" data-aktion="abmelden">Abmelden</button>
+    </div>
+  </section>
+
+  <!-- App -->
+  <div id="app" class="app" hidden>
+    <header class="leiste">
+      <a class="marke" href="#/uebersicht">
+        <span class="marke__name">ROK Immobilien</span>
+        <span class="marke__zusatz">Verwaltung</span>
+      </a>
+      <nav class="navigation" aria-label="Hauptnavigation">
+        <a href="#/uebersicht" data-nav="uebersicht">Übersicht</a>
+        <a href="#/mieter" data-nav="mieter">Mieter</a>
+        <a href="#/vorlagen" data-nav="vorlagen">Vorlagen</a>
+        <a href="#/briefkopf" data-nav="briefkopf">Briefkopf</a>
+      </nav>
+      <div class="leiste__konto">
+        <span id="nutzer-email" class="leiste__email"></span>
+        <button type="button" class="knopf knopf--leise" data-aktion="abmelden">Abmelden</button>
+      </div>
+    </header>
+    <div class="testbanner">Testversion: ausschließlich erfundene Daten verwenden</div>
+    <main id="inhalt" class="inhalt" tabindex="-1"></main>
+  </div>
+
+  <div id="meldungen" class="meldungen" aria-live="polite"></div>
+  <dialog id="dialog" class="dialog"></dialog>
+
+  <script src="vendor/docx-vendor.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

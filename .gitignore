@@ -1,0 +1,16 @@
+# Geheimnisse und lokale Umgebungen
+.env
+.env.*
+*.local
+supabase/.temp/
+supabase/.branches/
+
+# Echte Daten gehören nie ins Repo
+echte-daten/
+*.csv
+*.xlsx
+
+# Systemdateien
+.DS_Store
+Thumbs.db
+node_modules/

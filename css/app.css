@@ -1,0 +1,259 @@
+/* ROK Verwaltung – Oberfläche
+   Farben aus dem Briefkopf: Tintenblau + Messing. Status-Farben für das Mietbuch. */
+:root {
+  --tinte: #1f3a5f;
+  --tinte-hell: #2d5281;
+  --tinte-zart: #e8eef6;
+  --messing: #b08d57;
+  --messing-zart: #f6f1e7;
+  --grund: #f2f4f7;
+  --flaeche: #ffffff;
+  --text: #1d2430;
+  --text-leise: #5a6270;
+  --linie: #dde2e9;
+  --bezahlt: #3f7a57;
+  --bezahlt-zart: #e3f0e8;
+  --offen: #b23a26;
+  --offen-zart: #f9e6e2;
+  --teil: #c58a1e;
+  --teil-zart: #fbf0da;
+  --fokus: #2d6fd6;
+  --radius: 6px;
+  --schatten: 0 1px 2px rgba(29, 36, 48, 0.06), 0 2px 8px rgba(29, 36, 48, 0.04);
+  font-family: "Public Sans", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--grund);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--grund); }
+[hidden] { display: none !important; }
+h1, h2, h3 { margin: 0; line-height: 1.25; color: var(--tinte); }
+h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.1rem; font-weight: 600; }
+h3 { font-size: 0.95rem; font-weight: 600; }
+p { margin: 0 0 0.75em; }
+a { color: var(--tinte-hell); }
+.zahl, td.betrag, .betrag { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid var(--fokus); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* --- Marke ------------------------------------------------------------- */
+.marke { display: flex; flex-direction: column; text-decoration: none; line-height: 1.1; }
+.marke__name { font-weight: 700; font-size: 1.15rem; color: var(--tinte); }
+.marke__zusatz { font-size: 0.78rem; color: var(--messing); font-weight: 600; letter-spacing: 0.02em; }
+.marke--gross .marke__name { font-size: 1.6rem; }
+.marke--gross { margin-bottom: 1.5rem; padding-bottom: 0.9rem; border-bottom: 2px solid var(--messing); }
+
+/* --- Anmeldung ---------------------------------------------------------- */
+.anmeldung { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.anmelde-karte {
+  width: min(380px, 100%); background: var(--flaeche); padding: 2rem;
+  border-radius: var(--radius); box-shadow: var(--schatten); border-top: 4px solid var(--tinte);
+}
+.hinweis { font-size: 0.85rem; color: var(--text-leise); margin-top: 1rem; }
+.formfehler { color: var(--offen); font-size: 0.9rem; }
+
+/* --- Formulare ---------------------------------------------------------- */
+.feld { display: flex; flex-direction: column; gap: 4px; margin-bottom: 0.9rem; font-size: 0.85rem; color: var(--text-leise); }
+.feld > span { font-weight: 500; }
+input, select, textarea {
+  font: inherit; font-size: 0.95rem; color: var(--text); background: var(--flaeche);
+  border: 1px solid #c4ccd7; border-radius: 4px; padding: 0.5rem 0.6rem; width: 100%;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--tinte-hell); outline: 2px solid var(--tinte-zart); }
+input[type="checkbox"] { width: 1.05rem; height: 1.05rem; accent-color: var(--tinte); }
+.feld--warnung input { border-color: var(--teil); }
+.feldhinweis { font-size: 0.78rem; color: var(--teil); }
+.formraster { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0 1rem; }
+.formraster .breit { grid-column: 1 / -1; }
+.formgruppe { margin-bottom: 1.25rem; }
+.formgruppe > h3 { margin-bottom: 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--linie); }
+.checkfeld { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; margin: 0.4rem 0 0.9rem; }
+
+/* --- Knöpfe -------------------------------------------------------------- */
+.knopf {
+  font: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  padding: 0.5rem 0.9rem; border-radius: 4px; border: 1px solid #c4ccd7;
+  background: var(--flaeche); color: var(--tinte); text-decoration: none; white-space: nowrap;
+}
+.knopf:hover { border-color: var(--tinte-hell); background: var(--tinte-zart); }
+.knopf:disabled { opacity: 0.45; cursor: not-allowed; background: var(--flaeche); border-color: #c4ccd7; }
+.knopf--primaer { background: var(--tinte); border-color: var(--tinte); color: #fff; }
+.knopf--primaer:hover { background: var(--tinte-hell); border-color: var(--tinte-hell); }
+.knopf--leise { border-color: transparent; background: transparent; color: var(--text-leise); font-weight: 500; }
+.knopf--leise:hover { background: var(--tinte-zart); border-color: transparent; color: var(--tinte); }
+.knopf--klein { padding: 0.3rem 0.6rem; font-size: 0.82rem; }
+.knopf--breit { width: 100%; padding: 0.65rem; }
+.knopf--gefahr { color: var(--offen); }
+.knopfreihe { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
+/* --- App-Rahmen ------------------------------------------------------- */
+.leiste {
+  display: flex; align-items: center; gap: 2rem; padding: 0.7rem 1.5rem;
+  background: var(--flaeche); border-bottom: 1px solid var(--linie);
+  position: sticky; top: 0; z-index: 10;
+}
+.navigation { display: flex; gap: 0.25rem; flex: 1; }
+.navigation a {
+  text-decoration: none; color: var(--text-leise); font-weight: 500; padding: 0.45rem 0.8rem; border-radius: 4px;
+}
+.navigation a:hover { color: var(--tinte); background: var(--tinte-zart); }
+.navigation a[aria-current="page"] { color: var(--tinte); background: var(--tinte-zart); font-weight: 600; }
+.leiste__konto { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-leise); }
+.testbanner {
+  background: var(--messing-zart); color: #6e5630; font-size: 0.8rem; text-align: center;
+  padding: 0.3rem 1rem; border-bottom: 1px solid #eadfca;
+}
+.inhalt { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 4rem; }
+.inhalt:focus { outline: none; }
+.kopf { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.kopf p { margin: 0.25rem 0 0; color: var(--text-leise); }
+
+/* --- Flächen ---------------------------------------------------------- */
+.flaeche { background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius); }
+.flaeche__kopf {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--linie);
+}
+.flaeche__inhalt { padding: 1rem 1.1rem; }
+.flaeche__fuss { padding: 0.75rem 1.1rem; border-top: 1px solid var(--linie); background: #fafbfc; border-radius: 0 0 var(--radius) var(--radius); }
+.leer { padding: 1.5rem 1.1rem; color: var(--text-leise); }
+.stapel > * + * { margin-top: 1.25rem; }
+
+/* --- Kennzahlen (Übersicht) ------------------------------------------- */
+.lage {
+  display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 0; margin-bottom: 1.75rem;
+  background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius);
+}
+.lage > div { padding: 1.1rem 1.25rem; }
+.lage > div + div { border-left: 1px solid var(--linie); }
+.lage__wert { font-size: 1.9rem; font-weight: 700; color: var(--tinte); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.lage__wert--offen { color: var(--offen); }
+.lage__text { color: var(--text-leise); font-size: 0.88rem; margin-top: 0.2rem; }
+
+/* --- Tabellen --------------------------------------------------------- */
+.tabelle { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.tabelle th {
+  text-align: left; font-weight: 600; font-size: 0.8rem; color: var(--text-leise);
+  padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--linie); background: #fafbfc;
+}
+.tabelle td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #edf0f4; vertical-align: middle; }
+.tabelle tr:last-child td { border-bottom: none; }
+.tabelle .betrag { text-align: right; white-space: nowrap; }
+.tabelle .eng { width: 1%; white-space: nowrap; }
+.tabelle tbody tr.klickbar { cursor: pointer; }
+.tabelle tbody tr.klickbar:hover { background: #f6f8fb; }
+.tabelle tr.gruppe td {
+  background: var(--grund); font-weight: 600; color: var(--tinte); font-size: 0.85rem; padding: 0.45rem 0.75rem;
+}
+.tabelle tfoot td { font-weight: 700; border-top: 2px solid var(--linie); }
+.name { font-weight: 600; color: var(--text); text-decoration: none; }
+.name:hover { color: var(--tinte-hell); text-decoration: underline; }
+.leise { color: var(--text-leise); font-size: 0.85rem; }
+.betrag--offen { color: var(--offen); font-weight: 700; }
+.betrag--null { color: var(--text-leise); }
+
+/* --- Mietbuch-Leiste: das zentrale Element --------------------------- */
+.mietbuch { display: inline-grid; grid-auto-flow: column; gap: 3px; }
+.mietbuch__monat {
+  width: 2.35rem; height: 1.7rem; border-radius: 3px; display: grid; place-items: center;
+  font-size: 0.7rem; font-weight: 600; border: 1px solid transparent;
+}
+.mietbuch__monat--bezahlt { background: var(--bezahlt-zart); color: var(--bezahlt); }
+.mietbuch__monat--offen { background: var(--offen); color: #fff; }
+.mietbuch__monat--teil { background: var(--teil-zart); color: #8a5d0d; border-color: #ecd09a; }
+.mietbuch__monat--leer { background: transparent; color: #a3abb7; border: 1px dashed #cfd5de; }
+.mietbuch-legende { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-leise); }
+.mietbuch-legende span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.mietbuch-legende i { width: 0.8rem; height: 0.8rem; border-radius: 2px; display: inline-block; }
+
+/* --- Marken / Hinweise ------------------------------------------------ */
+.marker {
+  display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.75rem; font-weight: 600;
+  padding: 0.12rem 0.5rem; border-radius: 999px; background: var(--tinte-zart); color: var(--tinte); white-space: nowrap;
+}
+.marker--messing { background: var(--messing-zart); color: #7a5d2e; }
+.marker--offen { background: var(--offen-zart); color: var(--offen); }
+.marker--ok { background: var(--bezahlt-zart); color: var(--bezahlt); }
+
+/* --- Mieter-Detail ---------------------------------------------------- */
+.zurueck { display: inline-block; margin-bottom: 0.9rem; font-size: 0.88rem; text-decoration: none; color: var(--text-leise); }
+.zurueck:hover { color: var(--tinte); }
+.akte { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+.akte__kopf { margin-bottom: 1.25rem; }
+.akte__kopf .unter { color: var(--text-leise); margin-top: 0.3rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.briefe {
+  display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
+  padding: 0.9rem 1.1rem; background: var(--tinte); border-radius: var(--radius); margin-bottom: 1.25rem;
+}
+.briefe__titel { color: #fff; font-weight: 600; margin-right: 0.5rem; }
+.briefe .knopf { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.28); color: #fff; }
+.briefe .knopf:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.5); }
+.briefe .knopf:disabled { background: transparent; color: rgba(255,255,255,0.75); }
+.briefe__hinweis { color: #c9d4e3; font-size: 0.8rem; flex-basis: 100%; margin-top: 0.2rem; }
+.datenliste { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 1rem; margin: 0; font-size: 0.9rem; }
+.datenliste dt { color: var(--text-leise); }
+.datenliste dd { margin: 0; overflow-wrap: anywhere; }
+.iban { font-variant-numeric: tabular-nums; letter-spacing: 0.02em; font-weight: 600; }
+.verlauf { list-style: none; margin: 0; padding: 0; }
+.verlauf li { padding: 0.65rem 1.1rem; border-bottom: 1px solid #edf0f4; font-size: 0.9rem; }
+.verlauf li:last-child { border-bottom: none; }
+.verlauf .wann { color: var(--text-leise); font-size: 0.8rem; }
+details.ausklapp > summary {
+  cursor: pointer; padding: 0.85rem 1.1rem; font-weight: 600; color: var(--tinte); list-style: none;
+}
+details.ausklapp > summary::-webkit-details-marker { display: none; }
+details.ausklapp > summary::before { content: "+"; display: inline-block; width: 1.1rem; color: var(--messing); font-weight: 700; }
+details.ausklapp[open] > summary::before { content: "–"; }
+details.ausklapp[open] > summary { border-bottom: 1px solid var(--linie); }
+
+/* --- Vorlagen --------------------------------------------------------- */
+.vorlage { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem 1.5rem; padding: 1rem 1.1rem; border-bottom: 1px solid var(--linie); }
+.vorlage:last-child { border-bottom: none; }
+.vorlage p { margin: 0.2rem 0 0; color: var(--text-leise); font-size: 0.9rem; }
+.platzhalter { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; font-size: 0.85rem; margin: 0; }
+.platzhalter code { background: var(--tinte-zart); color: var(--tinte); padding: 0.05rem 0.35rem; border-radius: 3px; font-size: 0.82rem; }
+.platzhalter dd { margin: 0; color: var(--text-leise); }
+
+/* --- Dialog & Meldungen ---------------------------------------------- */
+.dialog { border: none; border-radius: var(--radius); padding: 0; width: min(480px, calc(100vw - 32px)); box-shadow: 0 12px 40px rgba(29,36,48,0.25); }
+.dialog::backdrop { background: rgba(29, 36, 48, 0.45); }
+.dialog form { padding: 1.4rem; }
+.dialog h2 { margin-bottom: 1rem; }
+.dialog .knopfreihe { justify-content: flex-end; margin-top: 0.5rem; }
+.meldungen { position: fixed; bottom: 1rem; right: 1rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 50; max-width: calc(100vw - 2rem); }
+.meldung {
+  background: var(--text); color: #fff; padding: 0.7rem 1rem; border-radius: var(--radius);
+  font-size: 0.9rem; box-shadow: var(--schatten); max-width: 420px; animation: rein 0.18s ease-out;
+}
+.meldung--fehler { background: var(--offen); }
+.meldung--ok { background: var(--bezahlt); }
+@keyframes rein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.laden { padding: 3rem; text-align: center; color: var(--text-leise); }
+
+/* --- Schmale Bildschirme --------------------------------------------- */
+@media (max-width: 900px) {
+  .akte { grid-template-columns: 1fr; }
+  .lage { grid-template-columns: 1fr; }
+  .lage > div + div { border-left: none; border-top: 1px solid var(--linie); }
+}
+@media (max-width: 720px) {
+  .leiste { flex-wrap: wrap; gap: 0.5rem 1rem; padding: 0.6rem 1rem; }
+  .navigation { order: 3; flex-basis: 100%; overflow-x: auto; }
+  .leiste__konto { margin-left: auto; }
+  .leiste__email { display: none; }
+  .inhalt { padding: 1.25rem 1rem 3rem; }
+  .nur-breit { display: none; }
+  .tabelle td, .tabelle th { padding: 0.5rem 0.45rem; }
+  .vorlage { grid-template-columns: 1fr; }
+  .mietbuch__monat { width: 1.9rem; }
+  .flaeche { overflow-x: auto; }
+  .postentabelle { font-size: 0.85rem; }
+  .postentabelle td:nth-child(3) { hyphens: auto; overflow-wrap: anywhere; }
+  .postentabelle td:nth-child(2) { white-space: normal; }
+  .postentabelle .knopf--klein { padding: 0.25rem 0.4rem; font-size: 0.75rem; }
+}
