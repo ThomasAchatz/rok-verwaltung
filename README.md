@@ -25,12 +25,21 @@ js/dokumente.js       Briefdaten zusammenstellen, Vorlagen befüllen
 js/vorschau.js        Vorschau-Fenster (Drucken/PDF, E-Mail, Herunterladen, in E-Mail ziehen)
 js/app.js             Oberfläche
 PLATZHALTER.md        alle Platzhalter für eigene Vorlagen
+manifest.webmanifest, sw.js, icons/   installierbare App (PWA)
 vorlagen/*.docx       Standard-Briefvorlagen
 tools/vorlagen-erzeugen.js   erzeugt die Standardvorlagen neu (node, Paket "docx")
 supabase/migrations/  Datenbankstruktur + Zugriffsschutz
 supabase/seed.sql     erfundene Testdaten
 vendor/               gebündelte Bibliotheken (siehe vendor/LIZENZEN.md)
 ```
+
+## Als App installieren
+
+- **iPhone/iPad:** Seite in Safari öffnen → Teilen → „Zum Home-Bildschirm“.
+- **Android:** Chrome-Menü → „App installieren“.
+- **Windows/Mac:** In Chrome oder Edge das Installieren-Symbol rechts in der Adressleiste.
+
+In der App gibt es dafür auch den Knopf „Installieren“ (auf dem iPhone mit Anleitung).
 
 ## Sicherheit
 

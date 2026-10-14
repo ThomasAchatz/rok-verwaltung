@@ -984,6 +984,58 @@ async function zeigeBriefkopf() {
 }
 
 // ---------------------------------------------------------------------------
+// Als App installieren (PWA)
+// ---------------------------------------------------------------------------
+const istApp = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const istIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let installAngebot = null;
+
+function zeigeInstallKnopf(sichtbar) {
+  for (const k of $$("[data-aktion=installieren]")) k.hidden = !sichtbar;
+}
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installAngebot = e;
+  zeigeInstallKnopf(true);
+});
+window.addEventListener("appinstalled", () => {
+  installAngebot = null;
+  zeigeInstallKnopf(false);
+  melde("App installiert. Sie finden sie jetzt bei Ihren Apps.", "ok");
+});
+// iOS kennt keinen Installieren-Dialog: dort erklären wir den Weg über „Teilen“
+if (istIOS() && !istApp()) zeigeInstallKnopf(true);
+
+document.addEventListener("click", async (e) => {
+  if (!e.target.closest("[data-aktion=installieren]")) return;
+  if (installAngebot) {
+    installAngebot.prompt();
+    await installAngebot.userChoice.catch(() => null);
+    installAngebot = null;
+    zeigeInstallKnopf(false);
+    return;
+  }
+  await dialogFormular(`
+    <h2>Als App installieren</h2>
+    ${istIOS() ? `
+      <ol class="anleitung">
+        <li>Diese Seite in <strong>Safari</strong> öffnen.</li>
+        <li>Unten (iPad: oben) auf <strong>Teilen</strong> tippen, das Quadrat mit dem Pfeil nach oben.</li>
+        <li><strong>„Zum Home-Bildschirm“</strong> wählen. Falls nicht sichtbar: in der Liste nach unten scrollen.</li>
+        <li>Auf <strong>Hinzufügen</strong> tippen. Die App „ROK“ liegt jetzt auf dem Home-Bildschirm.</li>
+      </ol>` : `
+      <p>Im Browser-Menü (⋮ oben rechts) „App installieren“ bzw. „Zum Startbildschirm hinzufügen“ wählen.
+        In Chrome und Edge am Computer gibt es dafür auch ein Symbol rechts in der Adressleiste.</p>`}
+    <div class="knopfreihe"><button class="knopf knopf--primaer" value="ok">Verstanden</button></div>`);
+});
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((err) => console.warn("Service Worker:", err));
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 db.beiAnmeldeWechsel((ereignis) => {

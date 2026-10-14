@@ -1,0 +1,20 @@
+{
+  "name": "ROK Verwaltung",
+  "short_name": "ROK",
+  "description": "Mieter, offene Posten und Schreiben für ROK Immobilien",
+  "lang": "de",
+  "id": "./",
+  "start_url": "./#/uebersicht",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f2f4f7",
+  "theme_color": "#1f3a5f",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

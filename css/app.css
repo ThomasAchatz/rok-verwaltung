@@ -28,7 +28,14 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; background: var(--grund); }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; min-height: 100vh; min-height: 100dvh; background: var(--grund); }
+/* iOS als App: Die Statusleiste (Uhr, Akku) liegt über der Seite und hat helle Schrift.
+   Dieses Band färbt den Bereich dunkel, damit sie lesbar bleibt und nichts darunter verschwindet. */
+body::before {
+  content: ""; position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px);
+  background: var(--tinte); z-index: 40; pointer-events: none;
+}
 [hidden] { display: none !important; }
 h1, h2, h3 { margin: 0; line-height: 1.25; color: var(--tinte); }
 h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; }
@@ -48,7 +55,13 @@ a { color: var(--tinte-hell); }
 .marke--gross { margin-bottom: 1.5rem; padding-bottom: 0.9rem; border-bottom: 2px solid var(--messing); }
 
 /* --- Anmeldung ---------------------------------------------------------- */
-.anmeldung { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.anmeldung {
+  min-height: 100vh; min-height: 100dvh; display: grid; place-items: center;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px))
+           calc(16px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+}
+.installieren { margin-top: 0.6rem; }
+.leiste__konto .installieren { margin-top: 0; }
 .anmelde-karte {
   width: min(380px, 100%); background: var(--flaeche); padding: 2rem;
   border-radius: var(--radius); box-shadow: var(--schatten); border-top: 4px solid var(--tinte);
@@ -93,7 +106,9 @@ input[type="checkbox"] { width: 1.05rem; height: 1.05rem; accent-color: var(--ti
 
 /* --- App-Rahmen ------------------------------------------------------- */
 .leiste {
-  display: flex; align-items: center; gap: 2rem; padding: 0.7rem 1.5rem;
+  display: flex; align-items: center; gap: 2rem;
+  padding: calc(0.7rem + env(safe-area-inset-top, 0px)) calc(1.5rem + env(safe-area-inset-right, 0px))
+           0.7rem calc(1.5rem + env(safe-area-inset-left, 0px));
   background: var(--flaeche); border-bottom: 1px solid var(--linie);
   position: sticky; top: 0; z-index: 10;
 }
@@ -108,7 +123,11 @@ input[type="checkbox"] { width: 1.05rem; height: 1.05rem; accent-color: var(--ti
   background: var(--messing-zart); color: #6e5630; font-size: 0.8rem; text-align: center;
   padding: 0.3rem 1rem; border-bottom: 1px solid #eadfca;
 }
-.inhalt { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 4rem; }
+.inhalt {
+  max-width: 1180px; margin: 0 auto;
+  padding: 1.75rem calc(1.5rem + env(safe-area-inset-right, 0px)) calc(4rem + env(safe-area-inset-bottom, 0px))
+           calc(1.5rem + env(safe-area-inset-left, 0px));
+}
 .inhalt:focus { outline: none; }
 .kopf { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
 .kopf p { margin: 0.25rem 0 0; color: var(--text-leise); }
@@ -229,7 +248,7 @@ details.ausklapp[open] > summary { border-bottom: 1px solid var(--linie); }
 .dialog form { padding: 1.4rem; }
 .dialog h2 { margin-bottom: 1rem; }
 .dialog .knopfreihe { justify-content: flex-end; margin-top: 0.5rem; }
-.meldungen { position: fixed; bottom: 1rem; right: 1rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 50; max-width: calc(100vw - 2rem); }
+.meldungen { position: fixed; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); right: calc(1rem + env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 0.5rem; z-index: 50; max-width: calc(100vw - 2rem); }
 .meldung {
   background: var(--text); color: #fff; padding: 0.7rem 1rem; border-radius: var(--radius);
   font-size: 0.9rem; box-shadow: var(--schatten); max-width: 420px; animation: rein 0.18s ease-out;
@@ -323,7 +342,11 @@ details.ausklapp[open] > summary { border-bottom: 1px solid var(--linie); }
 .schreiben[data-ohne-datei] .schreiben__aktion { color: var(--text-leise); font-weight: 500; }
 
 /* --- Vorschau-Dialog --------------------------------------------------- */
-.dialog--vorschau { width: min(980px, calc(100vw - 24px)); height: min(94vh, 1100px); max-height: none; }
+.dialog--vorschau {
+  width: min(980px, calc(100vw - 24px));
+  height: min(calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px), 1100px);
+  max-height: none;
+}
 .dialog--vorschau[open] { display: flex; }
 .vorschau { display: flex; flex-direction: column; width: 100%; height: 100%; }
 .vorschau__kopf {
@@ -355,6 +378,7 @@ details.ausklapp[open] > summary { border-bottom: 1px solid var(--linie); }
 .dialogliste { list-style: none; margin: 0 0 1rem; padding: 0; }
 .dialogliste li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid #edf0f4; }
 .fussnote { margin-top: 1rem; }
+.anleitung { margin: 0 0 1rem; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; }
 
 /* --- Schmale Bildschirme --------------------------------------------- */
 @media (max-width: 900px) {
@@ -363,12 +387,20 @@ details.ausklapp[open] > summary { border-bottom: 1px solid var(--linie); }
   .lage > div + div { border-left: none; border-top: 1px solid var(--linie); }
 }
 @media (max-width: 720px) {
-  .leiste { flex-wrap: wrap; gap: 0.5rem 1rem; padding: 0.6rem 1rem; }
+  .leiste {
+    flex-wrap: wrap; gap: 0.5rem 1rem;
+    padding: calc(0.6rem + env(safe-area-inset-top, 0px)) calc(1rem + env(safe-area-inset-right, 0px))
+             0.6rem calc(1rem + env(safe-area-inset-left, 0px));
+  }
   .navigation { order: 3; flex-basis: 100%; justify-content: space-between; gap: 0; }
   .navigation a { padding: 0.4rem 0.5rem; font-size: 0.92rem; }
-  .leiste__konto { margin-left: auto; }
+  .leiste__konto { margin-left: auto; gap: 0.25rem; }
+  .leiste__konto .knopf--leise { padding: 0.45rem 0.5rem; }
   .leiste__email { display: none; }
-  .inhalt { padding: 1.25rem 1rem 3rem; }
+  .inhalt {
+    padding: 1.25rem calc(1rem + env(safe-area-inset-right, 0px)) calc(3rem + env(safe-area-inset-bottom, 0px))
+             calc(1rem + env(safe-area-inset-left, 0px));
+  }
   .nur-breit { display: none; }
   .tabelle td, .tabelle th { padding: 0.5rem 0.45rem; }
   .vorlage { grid-template-columns: 1fr; }
