@@ -4,6 +4,7 @@ import {
   briefDaten, fuelleVorlage, platzhalterAus, vorlagenFehler,
   euro, datumDE, monatDE, ibanFormat, mieterName,
 } from "./dokumente.js";
+import { zeigeDokument } from "./vorschau.js";
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
@@ -22,6 +23,7 @@ const ARTEN = [
   ["sonstiges", "Sonstiges"],
 ];
 const ART_NAME = Object.fromEntries(ARTEN);
+const ART_REIHE = ARTEN.map(([k]) => k);
 const TYP_NAME = {
   mahnung_1: "1. Mahnung",
   mahnung_2: "2. Mahnung",
@@ -48,6 +50,17 @@ const zahl = (text) => {
   return Number.isFinite(n) ? n : NaN;
 };
 const zahlFeld = (n) => (Number(n) || 0).toFixed(2).replace(".", ",");
+const sortiereForderungen = (liste) =>
+  liste.sort((x, y) => String(x.monat).localeCompare(String(y.monat)) || ART_REIHE.indexOf(x.art) - ART_REIHE.indexOf(y.art));
+function nachMonat(liste) {
+  const gruppen = new Map();
+  for (const f of liste) {
+    const k = String(f.monat).slice(0, 7);
+    if (!gruppen.has(k)) gruppen.set(k, []);
+    gruppen.get(k).push(f);
+  }
+  return [...gruppen.entries()];
+}
 
 function ibanGueltig(iban) {
   const s = (iban || "").replace(/\s+/g, "").toUpperCase();
@@ -67,8 +80,8 @@ function melde(text, art = "info") {
   setTimeout(() => el.remove(), art === "fehler" ? 8000 : 4500);
 }
 
-function herunterladen(bytes, dateiname, typ = "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-  const url = URL.createObjectURL(new Blob([bytes], { type: typ }));
+function herunterladen(bytes, dateiname) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }));
   const a = Object.assign(document.createElement("a"), { href: url, download: dateiname });
   document.body.append(a);
   a.click();
@@ -76,7 +89,8 @@ function herunterladen(bytes, dateiname, typ = "application/vnd.openxmlformats-o
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 const dateiTeil = (s) =>
-  String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  String(s || "").replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue").replace(/ß/g, "ss")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 function monatsspanne(posten) {
   const monate = [...new Set(posten.map((f) => String(f.monat).slice(0, 7)))].sort();
@@ -90,17 +104,15 @@ function monatsspanne(posten) {
 }
 
 // Dialog mit Formular; liefert die Formulardaten oder null bei Abbruch
-function dialogFormular(html, beiAnzeige) {
+function dialogFormular(html) {
   const dlg = $("#dialog");
   dlg.innerHTML = `<form method="dialog">${html}</form>`;
   const form = $("form", dlg);
-  beiAnzeige?.(form);
   dlg.showModal();
   $("input:not([type=hidden]), select", form)?.focus();
   return new Promise((fertig) => {
     form.addEventListener("submit", (e) => {
       if (e.submitter?.value === "abbrechen") return fertig(null);
-      if (!form.reportValidity()) { e.preventDefault(); return; }
       fertig(new FormData(form));
     });
     dlg.addEventListener("close", () => fertig(null), { once: true });
@@ -202,7 +214,7 @@ async function route() {
 }
 
 // ---------------------------------------------------------------------------
-// Mietbuch-Leiste (Zahlungsstatus je Monat)
+// Bausteine
 // ---------------------------------------------------------------------------
 function mietbuch(forderungen, monate) {
   return `<span class="mietbuch">${monate
@@ -217,22 +229,85 @@ function mietbuch(forderungen, monate) {
     })
     .join("")}</span>`;
 }
-const LEGENDE = `<div class="mietbuch-legende">
-  <span><i style="background:var(--bezahlt-zart);border:1px solid #bcd8c6"></i>bezahlt</span>
-  <span><i style="background:var(--teil-zart);border:1px solid #ecd09a"></i>teilweise offen</span>
-  <span><i style="background:var(--offen)"></i>offen</span>
-  <span><i style="border:1px dashed #cfd5de"></i>nichts erfasst</span>
+const LEGENDE = `<div class="mietbuch-legende" aria-hidden="true">
+  <span><i class="l-bezahlt"></i>bezahlt</span>
+  <span><i class="l-teil"></i>teilweise offen</span>
+  <span><i class="l-offen"></i>offen</span>
+  <span><i class="l-leer"></i>nichts erfasst</span>
 </div>`;
 
 function naechsterSchritt(m, vorgaenge) {
   const eigene = vorgaenge.filter((v) => v.mieter_id === m.id);
   const hat = (typ) => eigene.some((v) => v.typ === typ);
   const schritte = [];
-  if (hat("mahnung_2")) schritte.push("Weitere Schritte prüfen");
+  if (hat("mahnung_2")) schritte.push("weitere Schritte prüfen");
   else if (hat("mahnung_1")) schritte.push("2. Mahnung");
   else schritte.push("1. Mahnung");
   if (m.kostentraeger && !hat("nachweis_jobcenter")) schritte.push("Nachweis an Kostenträger");
   return schritte.join(", ");
+}
+
+// Eine Zeile pro Mietpartei: passt sich der Breite an, ohne seitliches Scrollen
+function mieterZeile(m, forderungen, monate, zusatz = "", mitObjekt = false) {
+  const offen = Number(m.offen_summe) > 0;
+  return `
+    <a class="zeile" href="#/mieter/${esc(m.id)}">
+      <span class="zeile__wer">
+        <span class="zeile__name">${esc(mieterName(m))}</span>
+        <span class="zeile__ort">${esc(mitObjekt ? [m.objekt, m.wohnung].filter(Boolean).join(", ") : m.wohnung || "")}${m.kostentraeger ? ` <span class="marker marker--messing">${esc(m.kostentraeger)}</span>` : ""}</span>
+        ${zusatz}
+      </span>
+      <span class="zeile__buch">${mietbuch(forderungen.filter((f) => f.mieter_id === m.id), monate)}</span>
+      <span class="zeile__betrag ${offen ? "betrag--offen" : "betrag--null"}">${offen ? euro(m.offen_summe) : "bezahlt"}
+        <span class="zeile__klein">${offen ? "offen" : euro(m.monatlich_gesamt) + " / Monat"}</span></span>
+    </a>`;
+}
+
+// Kachel für ein erstelltes Schreiben (Übersicht und Verlauf)
+function schreibenKachel(v, empfaenger) {
+  const hatDatei = !!v.details?.datei_pfad;
+  return `
+    <button type="button" class="schreiben" data-schreiben="${esc(v.id)}" ${hatDatei ? "" : "data-ohne-datei"}>
+      <span class="schreiben__blatt" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="schreiben__text">
+        <span class="schreiben__titel">${esc(v.titel)}</span>
+        <span class="leise">${empfaenger ? esc(empfaenger) + ", " : ""}${datumDE(v.erstellt_am)}${v.summe != null ? `, ${euro(v.summe)}` : ""}</span>
+        <span class="schreiben__aktion">${hatDatei ? "Ansehen" : "Testeintrag ohne Dokument"}</span>
+      </span>
+    </button>`;
+}
+
+async function oeffneSchreiben(v, mieter) {
+  if (!v.details?.datei_pfad) {
+    return melde("Zu diesem Eintrag ist kein Dokument gespeichert (Testeintrag).", "info");
+  }
+  try {
+    const bytes = await db.ladeSchreiben(v.details.datei_pfad);
+    const kt = mieter ? kostentraegerVon(mieter.kostentraeger_id) : null;
+    await zeigeDokument({
+      titel: v.titel,
+      untertitel: `${mieter ? mieterName(mieter) + ", " : ""}erstellt am ${datumDE(v.erstellt_am)}`,
+      bytes,
+      dateiname: v.details.datei || `${dateiTeil(v.titel)}.docx`,
+      hinweis: "Archivierte Fassung, so wie sie erstellt wurde.",
+      email: emailDaten(v.typ, mieter, kt, v.titel),
+      melde,
+    });
+  } catch (err) {
+    melde(err.message, "fehler");
+  }
+}
+
+function emailDaten(typ, mieter, kostentraeger, titel) {
+  const an = typ === "nachweis_jobcenter" ? kostentraeger?.email : mieter?.email;
+  const anrede = typ === "nachweis_jobcenter"
+    ? "Sehr geehrte Damen und Herren,"
+    : mieter?.anrede === "Frau" ? `Sehr geehrte Frau ${mieter.nachname},` : mieter?.anrede === "Herr" ? `Sehr geehrter Herr ${mieter.nachname},` : "Guten Tag,";
+  return {
+    an: an || "",
+    betreff: `${titel}${mieter && typ === "nachweis_jobcenter" && mieter.aktenzeichen ? " – " + mieter.aktenzeichen : ""}`,
+    text: `${anrede}\n\nim Anhang erhalten Sie unser Schreiben.\n\nMit freundlichen Grüßen\n${zustand.profil?.inhaber || ""}\n${zustand.profil?.firma || ""}`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +324,7 @@ async function zeigeUebersicht() {
   const gesamt = imRueckstand.reduce((s, m) => s + Number(m.offen_summe), 0);
   const mitKT = imRueckstand.filter((m) => m.kostentraeger).length;
   const namen = Object.fromEntries(liste.map((m) => [m.id, m]));
+  const neueste = vorgaenge.slice(0, 6);
 
   inhalt.innerHTML = `
     <div class="kopf">
@@ -272,41 +348,26 @@ async function zeigeUebersicht() {
     <div class="stapel">
       <section class="flaeche">
         <div class="flaeche__kopf"><h2>Handlungsbedarf</h2>${LEGENDE}</div>
-        ${imRueckstand.length ? `
-        <table class="tabelle">
-          <thead><tr><th>Mietpartei</th><th>Letzte 4 Monate</th><th class="betrag">Offen</th><th class="nur-breit">Nächster Schritt</th></tr></thead>
-          <tbody>
-            ${imRueckstand.map((m) => `
-              <tr class="klickbar" data-mieter="${esc(m.id)}">
-                <td><a class="name" href="#/mieter/${esc(m.id)}">${esc(mieterName(m))}</a>
-                  <div class="leise">${esc(m.objekt || "")}, ${esc(m.wohnung || "")}</div></td>
-                <td>${mietbuch(forderungen.filter((f) => f.mieter_id === m.id), monate)}</td>
-                <td class="betrag betrag--offen">${euro(m.offen_summe)}</td>
-                <td class="nur-breit">${esc(naechsterSchritt(m, vorgaenge))}</td>
-              </tr>`).join("")}
-          </tbody>
-        </table>` : `<div class="leer">Alle Mieten sind bezahlt. Nichts zu tun.</div>`}
+        ${imRueckstand.length
+          ? `<div class="zeilen">${imRueckstand.map((m) => mieterZeile(m, forderungen, monate,
+              `<span class="zeile__schritt">Als Nächstes: ${esc(naechsterSchritt(m, vorgaenge))}</span>`, true)).join("")}</div>`
+          : `<div class="leer">Alle Mieten sind bezahlt. Nichts zu tun.</div>`}
       </section>
 
       <section class="flaeche">
-        <div class="flaeche__kopf"><h2>Zuletzt erstellte Schreiben</h2></div>
-        ${vorgaenge.length ? `<ul class="verlauf">
-          ${vorgaenge.slice(0, 8).map((v) => `
-            <li><strong>${esc(v.titel)}</strong> an
-              <a href="#/mieter/${esc(v.mieter_id)}">${esc(mieterName(namen[v.mieter_id] || { nachname: "?" }))}</a>
-              ${v.summe != null ? `über ${euro(v.summe)}` : ""}
-              <div class="wann">${datumDE(v.erstellt_am)}</div></li>`).join("")}
-        </ul>` : `<div class="leer">Noch keine Schreiben erstellt.</div>`}
+        <div class="flaeche__kopf"><h2>Zuletzt erstellte Schreiben</h2>
+          ${vorgaenge.length ? `<span class="leise">Zum Ansehen anklicken</span>` : ""}</div>
+        ${neueste.length
+          ? `<div class="kacheln">${neueste.map((v) => schreibenKachel(v, mieterName(namen[v.mieter_id] || { nachname: "?" }))).join("")}</div>`
+          : `<div class="leer">Noch keine Schreiben erstellt.</div>`}
       </section>
     </div>`;
-  verknuepfeZeilen();
-}
 
-function verknuepfeZeilen() {
-  for (const tr of $$("tr[data-mieter]", inhalt)) {
-    tr.addEventListener("click", (e) => {
-      if (e.target.closest("a, button, input")) return;
-      location.hash = `#/mieter/${tr.dataset.mieter}`;
+  for (const b of $$("[data-schreiben]", inhalt)) {
+    b.addEventListener("click", async () => {
+      const v = vorgaenge.find((x) => x.id === b.dataset.schreiben);
+      const m = v && (await db.ladeMieter(v.mieter_id).catch(() => null));
+      oeffneSchreiben(v, m);
     });
   }
 }
@@ -327,38 +388,33 @@ async function zeigeMieterliste() {
   inhalt.innerHTML = `
     <div class="kopf">
       <div><h1>Mieter</h1><p>${liste.length} Mietparteien in ${gruppen.size} Objekten</p></div>
-      <label class="feld" style="margin:0;min-width:240px"><span>Suchen</span>
+      <label class="feld suchfeld"><span>Suchen</span>
         <input type="search" id="suche" placeholder="Name, Wohnung oder Aktenzeichen"></label>
     </div>
     <section class="flaeche">
-      <div class="flaeche__kopf"><h2>Mietbuch der letzten 6 Monate</h2>${LEGENDE}</div>
-      <table class="tabelle" id="mieterliste">
-        <thead><tr><th>Mietpartei</th><th class="nur-breit">Wohnung</th><th>Zahlungen</th><th class="betrag nur-breit">Monatlich</th><th class="betrag">Offen</th></tr></thead>
-        <tbody>
-          ${[...gruppen.entries()].map(([objekt, mieter]) => `
-            <tr class="gruppe"><td colspan="5">${esc(objekt)}</td></tr>
-            ${mieter.map((m) => `
-              <tr class="klickbar" data-mieter="${esc(m.id)}"
-                  data-suche="${esc([mieterName(m), m.wohnung, m.objekt, m.aktenzeichen, m.kostentraeger].join(" ").toLowerCase())}">
-                <td><a class="name" href="#/mieter/${esc(m.id)}">${esc(mieterName(m))}</a>
-                  ${m.kostentraeger ? `<div><span class="marker marker--messing">${esc(m.kostentraeger)}</span></div>` : ""}</td>
-                <td class="nur-breit">${esc(m.wohnung || "")}</td>
-                <td>${mietbuch(forderungen.filter((f) => f.mieter_id === m.id), monate)}</td>
-                <td class="betrag nur-breit">${euro(m.monatlich_gesamt)}</td>
-                <td class="betrag ${Number(m.offen_summe) > 0 ? "betrag--offen" : "betrag--null"}">${euro(m.offen_summe)}</td>
-              </tr>`).join("")}`).join("")}
-        </tbody>
-      </table>
+      <div class="flaeche__kopf"><h2>Zahlungen der letzten 6 Monate</h2>${LEGENDE}</div>
+      <div id="mieterliste">
+        ${[...gruppen.entries()].map(([objekt, mieter]) => `
+          <div class="objektgruppe">
+            <h3 class="objektgruppe__titel">${esc(objekt)} <span class="leise">${mieter.length} Mietparteien</span></h3>
+            <div class="zeilen">
+              ${mieter.map((m) => `<div data-suche="${esc([mieterName(m), m.wohnung, m.objekt, m.aktenzeichen, m.kostentraeger].join(" ").toLowerCase())}">
+                ${mieterZeile(m, forderungen, monate)}</div>`).join("")}
+            </div>
+          </div>`).join("")}
+        <div class="leer" id="keintreffer" hidden>Keine Mietpartei gefunden.</div>
+      </div>
     </section>`;
-  verknuepfeZeilen();
+
   $("#suche").addEventListener("input", (e) => {
     const q = e.target.value.trim().toLowerCase();
-    for (const tr of $$("#mieterliste tr[data-suche]")) tr.hidden = q && !tr.dataset.suche.includes(q);
-    for (const g of $$("#mieterliste tr.gruppe")) {
-      let n = g.nextElementSibling, sichtbar = false;
-      while (n && !n.classList.contains("gruppe")) { if (!n.hidden) sichtbar = true; n = n.nextElementSibling; }
-      g.hidden = !sichtbar;
+    let treffer = 0;
+    for (const z of $$("#mieterliste [data-suche]")) {
+      z.hidden = q && !z.dataset.suche.includes(q);
+      if (!z.hidden) treffer++;
     }
+    for (const g of $$("#mieterliste .objektgruppe")) g.hidden = !$$("[data-suche]", g).some((z) => !z.hidden);
+    $("#keintreffer").hidden = treffer > 0;
   });
 }
 
@@ -371,16 +427,14 @@ async function zeigeAkte(id) {
     db.ladeForderungen({ mieterId: id }),
     db.ladeVorgaenge({ mieterId: id }),
   ]);
+  sortiereForderungen(forderungen);
   const wohnung = wohnungVon(mieter.wohnung_id);
   const objekt = wohnung ? objektVon(wohnung.objekt_id) : null;
   const kostentraeger = kostentraegerVon(mieter.kostentraeger_id);
-  const reihenfolge = ARTEN.map(([k]) => k);
-  forderungen.sort((x, y) =>
-    String(x.monat).localeCompare(String(y.monat)) || reihenfolge.indexOf(x.art) - reihenfolge.indexOf(y.art));
   const offen = forderungen.filter((f) => !f.bezahlt);
-  const bezahlt = forderungen.filter((f) => f.bezahlt).sort((a, b) => String(b.monat).localeCompare(String(a.monat)));
-  const vorherigeAuswahl = zustand.akte?.mieter.id === id ? zustand.akte.auswahl : null;
-  const auswahl = new Set(offen.filter((f) => !vorherigeAuswahl || vorherigeAuswahl.has(f.id) || !zustand.akte.offenIds.has(f.id)).map((f) => f.id));
+  const bezahlt = forderungen.filter((f) => f.bezahlt);
+  const vorher = zustand.akte?.mieter.id === id ? zustand.akte : null;
+  const auswahl = new Set(offen.filter((f) => !vorher || vorher.auswahl.has(f.id) || !vorher.offenIds.has(f.id)).map((f) => f.id));
   zustand.akte = { mieter, forderungen, vorgaenge, wohnung, objekt, kostentraeger, auswahl, offenIds: new Set(offen.map((f) => f.id)) };
   const monatlich = Number(mieter.kaltmiete) + Number(mieter.nebenkosten_vz) + Number(mieter.strom_pauschale) + Number(mieter.internet_pauschale);
   const summeOffen = offen.reduce((s, f) => s + Number(f.betrag), 0);
@@ -411,24 +465,29 @@ async function zeigeAkte(id) {
       <div class="stapel">
         <section class="flaeche">
           <div class="flaeche__kopf"><h2>Offene Posten</h2>
-            <span class="leise">Ausgewählte Posten kommen in den Brief.</span></div>
+            ${offen.length ? `<label class="checkfeld checkfeld--klein"><input type="checkbox" id="alle"> Alle auswählen</label>` : ""}</div>
           ${offen.length ? `
-          <table class="tabelle postentabelle">
-            <thead><tr>
-              <th class="eng"><input type="checkbox" id="alle" aria-label="Alle auswählen"></th>
-              <th>Monat</th><th>Position</th><th class="betrag">Betrag</th><th class="eng"></th></tr></thead>
-            <tbody>
-              ${offen.map((f) => `
-                <tr>
-                  <td><input type="checkbox" data-posten="${esc(f.id)}" ${auswahl.has(f.id) ? "checked" : ""} aria-label="Auswählen"></td>
-                  <td>${esc(monatDE(f.monat))}</td>
-                  <td>${esc(f.bezeichnung || ART_NAME[f.art] || f.art)}</td>
-                  <td class="betrag">${euro(f.betrag)}</td>
-                  <td><button class="knopf knopf--klein" data-bezahlt="${esc(f.id)}">Bezahlt</button></td>
-                </tr>`).join("")}
-            </tbody>
-            <tfoot><tr><td></td><td colspan="2">Ausgewählt</td><td class="betrag" id="auswahlsumme"></td><td></td></tr></tfoot>
-          </table>` : `<div class="leer">Keine offenen Posten. Neue Forderungen legen Sie über „Monatsmiete anlegen“ an.</div>`}
+            <div class="posten">
+              ${nachMonat(offen).map(([ym, liste]) => `
+                <div class="monat" data-monatsgruppe="${ym}">
+                  <label class="monat__kopf">
+                    <input type="checkbox" data-monat="${ym}" aria-label="${esc(monatDE(ym + "-01"))} auswählen">
+                    <span class="monat__name">${esc(monatDE(ym + "-01"))}</span>
+                    <span class="monat__summe">${euro(liste.reduce((s, f) => s + Number(f.betrag), 0))}</span>
+                  </label>
+                  ${liste.map((f) => `
+                    <div class="posten__zeile">
+                      <label class="posten__wahl">
+                        <input type="checkbox" data-posten="${esc(f.id)}" data-von="${ym}" ${auswahl.has(f.id) ? "checked" : ""}>
+                        <span>${esc(f.bezeichnung || ART_NAME[f.art] || f.art)}</span>
+                      </label>
+                      <span class="posten__betrag">${euro(f.betrag)}</span>
+                      <button class="knopf knopf--klein" data-bezahlt="${esc(f.id)}">Bezahlt</button>
+                    </div>`).join("")}
+                </div>`).join("")}
+            </div>
+            <div class="auswahlsumme"><span>Ausgewählt für den Brief</span><strong id="auswahlsumme"></strong></div>`
+          : `<div class="leer">Keine offenen Posten. Neue Forderungen legen Sie über „Monatsmiete anlegen“ an.</div>`}
           <div class="flaeche__fuss knopfreihe">
             ${offen.length ? `<button class="knopf knopf--klein" id="auswahl-bezahlt">Ausgewählte als bezahlt markieren</button>` : ""}
             <button class="knopf knopf--klein" id="monat-anlegen">Monatsmiete anlegen</button>
@@ -438,12 +497,21 @@ async function zeigeAkte(id) {
 
         <details class="flaeche ausklapp">
           <summary>Bezahlte Posten (${bezahlt.length})</summary>
-          ${bezahlt.length ? `<table class="tabelle"><tbody>
-            ${bezahlt.slice(0, 36).map((f) => `
-              <tr><td>${esc(monatDE(f.monat))}</td><td>${esc(f.bezeichnung || ART_NAME[f.art])}</td>
-                <td class="betrag">${euro(f.betrag)}</td><td class="leise">${f.bezahlt_am ? "am " + datumDE(f.bezahlt_am) : ""}</td>
-                <td class="eng"><button class="knopf knopf--klein knopf--leise" data-wiederoffen="${esc(f.id)}">Wieder öffnen</button></td></tr>`).join("")}
-          </tbody></table>` : `<div class="leer">Noch nichts bezahlt.</div>`}
+          ${bezahlt.length ? `<div class="bezahlt">
+            ${nachMonat(bezahlt).reverse().map(([ym, liste]) => `
+              <div class="bezahlt__monat">
+                <div class="bezahlt__kopf">
+                  <span class="monat__name">${esc(monatDE(ym + "-01"))}</span>
+                  <span class="leise">${liste[0].bezahlt_am ? "bezahlt am " + datumDE(liste[0].bezahlt_am) : ""}</span>
+                  <span class="monat__summe">${euro(liste.reduce((s, f) => s + Number(f.betrag), 0))}</span>
+                </div>
+                <ul class="bezahlt__liste">
+                  ${liste.map((f) => `<li><span>${esc(f.bezeichnung || ART_NAME[f.art])}</span>
+                    <span class="posten__betrag">${euro(f.betrag)}</span>
+                    <button class="textknopf" data-wiederoffen="${esc(f.id)}">wieder öffnen</button></li>`).join("")}
+                </ul>
+              </div>`).join("")}
+          </div>` : `<div class="leer">Noch nichts bezahlt.</div>`}
         </details>
 
         <details class="flaeche ausklapp" id="stammdaten">
@@ -483,11 +551,10 @@ async function zeigeAkte(id) {
           <div class="flaeche__inhalt">${mietbuch(forderungen, letzteMonate(6))}</div>
         </section>
         <section class="flaeche">
-          <div class="flaeche__kopf"><h2>Verlauf</h2></div>
-          ${vorgaenge.length ? `<ul class="verlauf">
-            ${vorgaenge.map((v) => `<li><strong>${esc(v.titel)}</strong>${v.summe != null ? `, ${euro(v.summe)}` : ""}
-              <div class="wann">${datumDE(v.erstellt_am)}${v.details?.hinweis ? " (" + esc(v.details.hinweis) + ")" : ""}</div></li>`).join("")}
-          </ul>` : `<div class="leer">Noch keine Schreiben.</div>`}
+          <div class="flaeche__kopf"><h2>Schreiben</h2></div>
+          ${vorgaenge.length
+            ? `<div class="kacheln kacheln--eng">${vorgaenge.map((v) => schreibenKachel(v)).join("")}</div>`
+            : `<div class="leer">Noch keine Schreiben.</div>`}
         </section>
       </div>
     </div>`;
@@ -497,10 +564,16 @@ async function zeigeAkte(id) {
     for (const cb of $$("[data-posten]")) cb.checked = e.target.checked;
     aktualisiereAuswahl();
   });
+  for (const cb of $$("[data-monat]")) cb.addEventListener("change", () => {
+    for (const p of $$(`[data-posten][data-von="${cb.dataset.monat}"]`)) p.checked = cb.checked;
+    aktualisiereAuswahl();
+  });
   for (const cb of $$("[data-posten]")) cb.addEventListener("change", aktualisiereAuswahl);
   for (const b of $$("[data-brief]")) b.addEventListener("click", () => erstelleBrief(b.dataset.brief, b));
   for (const b of $$("[data-bezahlt]")) b.addEventListener("click", () => markiere([b.dataset.bezahlt], true));
   for (const b of $$("[data-wiederoffen]")) b.addEventListener("click", () => markiere([b.dataset.wiederoffen], false));
+  for (const b of $$("[data-schreiben]")) b.addEventListener("click", () =>
+    oeffneSchreiben(vorgaenge.find((v) => v.id === b.dataset.schreiben), mieter));
   $("#auswahl-bezahlt")?.addEventListener("click", () => {
     const ids = [...zustand.akte.auswahl];
     if (!ids.length) return melde("Keine Posten ausgewählt.", "fehler");
@@ -513,18 +586,20 @@ async function zeigeAkte(id) {
 
 function aktualisiereAuswahl() {
   const a = zustand.akte;
-  a.auswahl = new Set($$("[data-posten]").filter((cb) => cb.checked).map((cb) => cb.dataset.posten));
+  const boxen = $$("[data-posten]");
+  a.auswahl = new Set(boxen.filter((cb) => cb.checked).map((cb) => cb.dataset.posten));
   const ausgewaehlt = a.forderungen.filter((f) => a.auswahl.has(f.id));
   const summe = ausgewaehlt.reduce((s, f) => s + Number(f.betrag), 0);
   if ($("#auswahlsumme")) $("#auswahlsumme").textContent = euro(summe);
-  const alle = $("#alle");
-  if (alle) {
-    const n = $$("[data-posten]").length;
-    alle.checked = a.auswahl.size === n && n > 0;
-    alle.indeterminate = a.auswahl.size > 0 && a.auswahl.size < n;
-  }
+  const setze = (cb, liste) => {
+    const n = liste.filter((x) => x.checked).length;
+    cb.checked = n === liste.length && n > 0;
+    cb.indeterminate = n > 0 && n < liste.length;
+  };
+  if ($("#alle")) setze($("#alle"), boxen);
+  for (const cb of $$("[data-monat]")) setze(cb, boxen.filter((b) => b.dataset.von === cb.dataset.monat));
   $("#briefhinweis").textContent = ausgewaehlt.length
-    ? `Der Brief enthält ${ausgewaehlt.length} Posten (${monatsspanne(ausgewaehlt)}) über ${euro(summe)}. Er wird als Word-Datei heruntergeladen und im Verlauf vermerkt.`
+    ? `Der Brief enthält ${ausgewaehlt.length} Posten (${monatsspanne(ausgewaehlt)}) über ${euro(summe)}. Sie sehen ihn zuerst in der Vorschau.`
     : "Wählen Sie unten mindestens einen offenen Posten für den Brief aus.";
 }
 
@@ -539,35 +614,59 @@ async function erstelleBrief(typ, knopf) {
 
   const text = knopf.textContent;
   knopf.disabled = true;
-  knopf.textContent = "Wird erstellt …";
+  knopf.textContent = "Wird vorbereitet …";
+  let bytes, daten;
   try {
     const datei = await db.ladeVorlagenDatei(vorlage);
-    const daten = briefDaten(typ, {
+    daten = briefDaten(typ, {
       profil: zustand.profil, mieter: a.mieter, wohnung: a.wohnung || {}, objekt: a.objekt || {},
       kostentraeger: a.kostentraeger, posten, vorgaenge: a.vorgaenge,
     });
-    let bytes;
     try {
       bytes = fuelleVorlage(datei, daten);
     } catch (err) {
       throw new Error("Die Vorlage enthält einen Fehler: " + vorlagenFehler(err));
     }
-    const name = `${heuteISO()}_${dateiTeil(TYP_NAME[typ])}_${dateiTeil(a.mieter.nachname)}.docx`;
-    herunterladen(bytes, name);
-    const titel = typ === "nachweis_jobcenter"
-      ? `Nachweis an ${a.kostentraeger.name} (${monatsspanne(posten)})`
-      : `${TYP_NAME[typ]} (${monatsspanne(posten)})`;
-    await db.protokolliereVorgang({
-      mieter_id: a.mieter.id, typ, titel, summe: daten.summe_zahl,
-      details: { posten: posten.map((f) => f.id), vorlage: vorlage.storage_pfad ? "eigene" : "standard", datei: name },
-    });
-    melde(`${TYP_NAME[typ]} erstellt: ${name}`, "ok");
-    await zeigeAkte(a.mieter.id);
   } catch (err) {
     console.error(err);
     melde(err.message, "fehler");
+    return;
+  } finally {
     knopf.disabled = false;
     knopf.textContent = text;
+  }
+
+  const dateiname = `${heuteISO()}_${dateiTeil(TYP_NAME[typ])}_${dateiTeil(a.mieter.nachname)}.docx`;
+  const titel = typ === "nachweis_jobcenter"
+    ? `Nachweis an ${a.kostentraeger.name} (${monatsspanne(posten)})`
+    : `${TYP_NAME[typ]} (${monatsspanne(posten)})`;
+  const vorgangId = crypto.randomUUID();
+
+  const gespeichert = await zeigeDokument({
+    titel,
+    untertitel: `${mieterName(a.mieter)}, ${posten.length} Posten über ${daten.summe}`,
+    bytes,
+    dateiname,
+    hinweis: "Noch nicht gespeichert. Beim Herunterladen, Drucken oder Versenden wird das Schreiben im Verlauf abgelegt.",
+    email: emailDaten(typ, a.mieter, a.kostentraeger, titel),
+    melde,
+    vorAbschluss: async () => {
+      await db.archiviereSchreiben({
+        vorgangId,
+        mieterId: a.mieter.id,
+        bytes,
+        vorgang: {
+          typ, titel, summe: daten.summe_zahl,
+          details: { posten: posten.map((f) => f.id), vorlage: vorlage.storage_pfad ? "eigene" : "standard", datei: dateiname },
+        },
+      });
+      const h = $("#dialog [data-v=hinweis]");
+      if (h) h.textContent = "Im Verlauf gespeichert.";
+    },
+  });
+  if (gespeichert) {
+    melde(`${TYP_NAME[typ]} im Verlauf gespeichert.`, "ok");
+    await zeigeAkte(a.mieter.id);
   }
 }
 
@@ -590,15 +689,16 @@ async function monatAnlegen() {
   if (!teile.length) return melde("Für diesen Mieter ist keine Miete hinterlegt (Stammdaten).", "fehler");
   const vorhanden = new Set(zustand.akte.forderungen.map((f) => String(f.monat).slice(0, 7)));
   const vorschlag = new Date();
+  vorschlag.setDate(1);
   while (vorhanden.has(monatISO(vorschlag).slice(0, 7))) vorschlag.setMonth(vorschlag.getMonth() + 1);
 
   const daten = await dialogFormular(`
     <h2>Monatsmiete anlegen</h2>
     <p class="leise">Legt die vereinbarten Bestandteile als offene Posten an.</p>
     <label class="feld"><span>Monat</span><input type="month" name="monat" required value="${monatISO(vorschlag).slice(0, 7)}"></label>
-    <table class="tabelle" style="margin-bottom:1rem"><tbody>
-      ${teile.map(([art, b]) => `<tr><td>${esc(ART_NAME[art])}</td><td class="betrag">${euro(b)}</td></tr>`).join("")}
-    </tbody></table>
+    <ul class="dialogliste">
+      ${teile.map(([art, b]) => `<li><span>${esc(ART_NAME[art])}</span><span class="posten__betrag">${euro(b)}</span></li>`).join("")}
+    </ul>
     <div class="knopfreihe">
       <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
       <button class="knopf knopf--primaer" value="ok">Anlegen</button>
@@ -746,33 +846,34 @@ function verknuepfeStammdaten() {
 // ---------------------------------------------------------------------------
 // Vorlagen
 // ---------------------------------------------------------------------------
-const PLATZHALTER = [
-  ["v_firma, v_inhaber, v_strasse, v_plz, v_ort, v_telefon, v_email, v_web", "Briefkopf (Seite „Briefkopf“)"],
-  ["datum", "Heutiges Datum"],
-  ["frist", "Zahlungsfrist (1. Mahnung +14 Tage, 2. Mahnung +7 Tage)"],
-  ["empf_name, empf_zusatz, empf_strasse, empf_plz_ort", "Empfänger (Mieter bzw. Kostenträger)"],
-  ["briefanrede", "z. B. „Sehr geehrter Herr Bauer“"],
-  ["mieter_name, mieter_vorname, mieter_nachname", "Mietpartei"],
-  ["objekt, objekt_adresse, objekt_strasse, wohnung, mietbeginn", "Mietobjekt"],
-  ["kostentraeger_name, aktenzeichen", "Kostenträger und Aktenzeichen"],
-  ["konto_inhaber, konto_iban, konto_bic, konto_bank, verwendungszweck", "Mietkonto dieses Mieters"],
-  ["#posten … monat, bezeichnung, betrag … /posten", "Tabellenzeile, die für jeden Posten wiederholt wird"],
-  ["summe", "Summe der ausgewählten Posten"],
-  ["letzte_mahnung_datum, mahnung_datum", "Datum der letzten 1. Mahnung bzw. letzten Mahnung"],
-  ["#feld … /feld", "Text erscheint nur, wenn das Feld gefüllt ist (z. B. #kostentraeger_name)"],
-];
-const BEKANNTE = new Set(PLATZHALTER.flatMap(([k]) => k.replace(/[#/…]/g, " ").split(/[\s,]+/).filter(Boolean))
-  .concat(["hat_nebenleistungen", "posten", "monat", "bezeichnung", "betrag", "feld"]));
+// Bekannte Platzhalter (vollständige Liste mit Erklärung: PLATZHALTER.md im Repo)
+const BEKANNTE = new Set([
+  "v_firma", "v_inhaber", "v_strasse", "v_plz", "v_ort", "v_telefon", "v_email", "v_web",
+  "datum", "frist", "empf_name", "empf_zusatz", "empf_strasse", "empf_plz_ort", "briefanrede",
+  "mieter_name", "mieter_vorname", "mieter_nachname", "objekt", "objekt_adresse", "objekt_strasse",
+  "wohnung", "mietbeginn", "kostentraeger_name", "aktenzeichen", "konto_inhaber", "konto_iban",
+  "konto_bic", "konto_bank", "verwendungszweck", "posten", "monat", "bezeichnung", "betrag", "summe",
+  "hat_nebenleistungen", "letzte_mahnung_datum", "mahnung_datum",
+]);
 
-function probeDaten(typ) {
+// Beispieldaten für die Vorschau einer Vorlage (erfunden)
+function beispielDaten(typ) {
   return briefDaten(typ, {
-    profil: zustand.profil || { firma: "Probe" },
-    mieter: { anrede: "Herr", vorname: "Max", nachname: "Probe", mietbeginn: "2024-01-01", aktenzeichen: "BG 0", mietkonto_iban: "DE00000000000000000000" },
-    wohnung: { bezeichnung: "Whg. 1" },
-    objekt: { bezeichnung: "Probeobjekt", strasse: "Probestraße 1", plz: "12345", ort: "Probestadt" },
-    kostentraeger: { name: "Jobcenter Probe", strasse: "Weg 1", plz: "12345", ort: "Probestadt" },
-    posten: [{ monat: "2026-01-01", art: "kaltmiete", bezeichnung: "Kaltmiete", betrag: 1 }],
-    vorgaenge: [],
+    profil: zustand.profil || { firma: "Beispiel" },
+    mieter: {
+      anrede: "Frau", vorname: "Erika", nachname: "Beispiel", mietbeginn: "2024-04-01", aktenzeichen: "BG 00000//0000000",
+      mietkonto_inhaber: `${zustand.profil?.firma || "Vermieter"} – Mietkonto Beispiel`,
+      mietkonto_iban: "DE60123456780004711099", mietkonto_bic: "MUSTDEXXXXX", mietkonto_bank: "Musterbank",
+    },
+    wohnung: { bezeichnung: "2. OG rechts" },
+    objekt: { bezeichnung: "MFH Beispielweg 5", strasse: "Beispielweg 5", plz: "12345", ort: "Musterstadt" },
+    kostentraeger: { name: "Jobcenter Musterstadt", abteilung: "Leistungsabteilung", strasse: "Agenturplatz 1", plz: "12345", ort: "Musterstadt" },
+    posten: [
+      { monat: "2026-09-01", art: "kaltmiete", bezeichnung: "Kaltmiete", betrag: 450 },
+      { monat: "2026-09-01", art: "nebenkosten", bezeichnung: "Nebenkostenvorauszahlung", betrag: 160 },
+      { monat: "2026-09-01", art: "strom", bezeichnung: "Strompauschale", betrag: 45 },
+    ],
+    vorgaenge: [{ typ: "mahnung_1", erstellt_am: "2026-09-20T10:00:00+02:00" }],
   });
 }
 
@@ -780,38 +881,43 @@ async function zeigeVorlagen() {
   zustand.vorlagen = await db.ladeVorlagen();
   inhalt.innerHTML = `
     <div class="kopf"><div><h1>Vorlagen</h1>
-      <p>Briefvorlagen als Word-Dateien. Eigene Vorlagen ersetzen den Standard, bis Sie ihn wiederherstellen.</p></div></div>
-    <div class="stapel">
-      <section class="flaeche">
-        ${zustand.vorlagen.map((v) => `
-          <div class="vorlage">
-            <div>
-              <h2>${esc(v.name)} ${v.storage_pfad ? `<span class="marker marker--messing">Eigene Vorlage</span>` : `<span class="marker">Standard</span>`}</h2>
-              <p>${esc(v.beschreibung || "")}</p>
-              ${v.storage_pfad ? `<p class="leise">Hochgeladen, zuletzt geändert am ${datumDE(v.aktualisiert_am)}</p>` : ""}
-            </div>
-            <div class="knopfreihe">
-              <button class="knopf knopf--klein" data-laden="${esc(v.schluessel)}">Herunterladen</button>
-              <label class="knopf knopf--klein">Eigene hochladen
-                <input type="file" accept=".docx" data-hochladen="${esc(v.schluessel)}" hidden></label>
-              ${v.storage_pfad ? `<button class="knopf knopf--klein knopf--gefahr" data-zuruecksetzen="${esc(v.schluessel)}">Standard wiederherstellen</button>` : ""}
-            </div>
-          </div>`).join("")}
-      </section>
-      <section class="flaeche">
-        <div class="flaeche__kopf"><h2>Platzhalter für eigene Vorlagen</h2></div>
-        <div class="flaeche__inhalt">
-          <p class="leise">Platzhalter stehen in geschweiften Klammern im Word-Text, z. B. <code>{konto_iban}</code>.
-            Am einfachsten laden Sie eine Standardvorlage herunter, ändern Texte und Gestaltung in Word und laden sie wieder hoch.
-            Beim Hochladen wird die Vorlage geprüft.</p>
-          <dl class="platzhalter">
-            ${PLATZHALTER.map(([k, t]) => `<dt><code>{${esc(k)}}</code></dt><dd>${esc(t)}</dd>`).join("")}
-          </dl>
-          <p class="leise" style="margin-top:1rem">Die Mustertexte sind ein Ausgangspunkt. Vor dem echten Einsatz sollten sie rechtlich geprüft werden, z. B. durch Haus &amp; Grund.</p>
-        </div>
-      </section>
-    </div>`;
+      <p>Briefvorlagen als Word-Dateien. Eine hochgeladene eigene Vorlage ersetzt den Standard, bis Sie ihn wiederherstellen.</p></div></div>
+    <section class="flaeche">
+      ${zustand.vorlagen.map((v) => `
+        <div class="vorlage">
+          <div>
+            <h2>${esc(v.name)} ${v.storage_pfad ? `<span class="marker marker--messing">Eigene Vorlage</span>` : `<span class="marker">Standard</span>`}</h2>
+            <p>${esc(v.beschreibung || "")}</p>
+            ${v.storage_pfad ? `<p class="leise">Hochgeladen, zuletzt geändert am ${datumDE(v.aktualisiert_am)}</p>` : ""}
+          </div>
+          <div class="knopfreihe">
+            <button class="knopf knopf--klein knopf--primaer" data-ansehen="${esc(v.schluessel)}">Ansehen</button>
+            <button class="knopf knopf--klein" data-laden="${esc(v.schluessel)}">Zum Bearbeiten herunterladen</button>
+            <label class="knopf knopf--klein">Eigene hochladen
+              <input type="file" accept=".docx" data-hochladen="${esc(v.schluessel)}" hidden></label>
+            ${v.storage_pfad ? `<button class="knopf knopf--klein knopf--gefahr" data-zuruecksetzen="${esc(v.schluessel)}">Standard wiederherstellen</button>` : ""}
+          </div>
+        </div>`).join("")}
+    </section>
+    <p class="leise fussnote">Die Mustertexte sind ein Ausgangspunkt. Vor dem echten Einsatz sollten sie rechtlich geprüft werden, z. B. durch Haus &amp; Grund.</p>`;
 
+  for (const b of $$("[data-ansehen]")) b.addEventListener("click", async () => {
+    const v = zustand.vorlagen.find((x) => x.schluessel === b.dataset.ansehen);
+    try {
+      const datei = await db.ladeVorlagenDatei(v);
+      let bytes;
+      try { bytes = fuelleVorlage(datei, beispielDaten(v.schluessel)); }
+      catch (err) { return melde("Die Vorlage enthält einen Fehler: " + vorlagenFehler(err), "fehler"); }
+      await zeigeDokument({
+        titel: `Vorlage: ${v.name}`,
+        untertitel: "Mit erfundenen Beispieldaten befüllt",
+        bytes,
+        dateiname: `Beispiel_${dateiTeil(v.name)}.docx`,
+        hinweis: "So sieht das Schreiben aus. Die eingesetzten Daten sind Beispiele.",
+        melde,
+      });
+    } catch (err) { melde(err.message, "fehler"); }
+  });
   for (const b of $$("[data-laden]")) b.addEventListener("click", async () => {
     const v = zustand.vorlagen.find((x) => x.schluessel === b.dataset.laden);
     try {
@@ -827,7 +933,7 @@ async function zeigeVorlagen() {
     try {
       const buf = await datei.arrayBuffer();
       const gefunden = platzhalterAus(buf);
-      try { fuelleVorlage(buf, probeDaten(typ)); }
+      try { fuelleVorlage(buf, beispielDaten(typ)); }
       catch (err) { return melde("Vorlage nicht verwendbar: " + vorlagenFehler(err), "fehler"); }
       await db.ladeVorlageHoch(typ, datei);
       const unbekannt = gefunden.filter((p) => !BEKANNTE.has(p));

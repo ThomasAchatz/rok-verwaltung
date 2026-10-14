@@ -119,3 +119,27 @@ export async function vorlageZuruecksetzen(vorlage) {
   }
   return pruefe(await sb.from("vorlagen").update({ storage_pfad: null }).eq("schluessel", vorlage.schluessel).select().single());
 }
+
+// --- Archiv der erzeugten Schreiben ---------------------------------------
+const DOCX_TYP = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/** Legt ein fertiges Schreiben im privaten Bucket ab und vermerkt es im Verlauf. */
+export async function archiviereSchreiben({ vorgangId, mieterId, bytes, vorgang }) {
+  const pfad = `${mieterId}/${vorgangId}.docx`;
+  const { error } = await sb.storage.from("schreiben").upload(pfad, new Blob([bytes], { type: DOCX_TYP }), {
+    upsert: false,
+    contentType: DOCX_TYP,
+  });
+  if (error) throw new Error("Schreiben konnte nicht gespeichert werden: " + error.message);
+  return await protokolliereVorgang({
+    ...vorgang,
+    id: vorgangId,
+    mieter_id: mieterId,
+    details: { ...(vorgang.details || {}), datei_pfad: pfad },
+  });
+}
+export async function ladeSchreiben(pfad) {
+  const { data, error } = await sb.storage.from("schreiben").download(pfad);
+  if (error) throw new Error("Schreiben konnte nicht geladen werden: " + error.message);
+  return await data.arrayBuffer();
+}

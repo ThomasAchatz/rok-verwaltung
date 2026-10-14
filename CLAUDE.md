@@ -15,6 +15,11 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Kein Build-Schritt: reines HTML/CSS/ES-Module, läuft direkt auf GitHub Pages.
 - `vendor/docx-vendor.min.js` ist ein gebündelter Build (pizzip 3.3.0, docxtemplater 3.70.1,
   @xmldom/xmldom 0.9.12, pako 2.1.0) und stellt `window.PizZip` / `window.Docxtemplater` bereit.
+  Vorschau: `vendor/jszip.min.js` + `vendor/docx-preview.min.js` (window.docx), genutzt in `js/vorschau.js`.
+- Briefe werden NIE automatisch heruntergeladen: erst Vorschau, Archivierung (Bucket `schreiben`,
+  Vorgang mit details.datei_pfad) passiert bei der ersten Aktion (Herunterladen/Drucken/E-Mail/Ziehen).
+- Keine Tabellen mit fester Breite: Listen müssen ab 360 px ohne seitliches Scrollen funktionieren.
+- Platzhalter-Doku für Tommy: `PLATZHALTER.md` (nicht in der App anzeigen).
 - Standardvorlagen werden mit `node tools/vorlagen-erzeugen.js` erzeugt; Platzhalter `{feld}`,
   Schleife `{#posten}…{/posten}`, Bedingung `{#feld}…{/feld}`. Datenobjekt: `briefDaten()` in `js/dokumente.js`.
 
@@ -22,10 +27,11 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 
 - Projekt `rok-verwaltung`, Ref `hjrmwdcvsngovhtrkobc`, Region eu-central-1.
 - Tabellen: mitglieder, vermieter_profil, objekte, wohnungen, kostentraeger, mieter, forderungen,
-  vorgaenge, vorlagen; View mieter_uebersicht (security_invoker); Bucket `vorlagen` (privat).
+  vorgaenge, vorlagen; View mieter_uebersicht (security_invoker); Buckets `vorlagen` und `schreiben` (privat).
 
 ## Stand / nächste Schritte
 
-- Stufe 1 fertig (Übersicht, Mieterliste mit Mietbuch, Akte, 3 Briefvorlagen, Vorlagen-Upload, Briefkopf).
+- Stufe 1 fertig (Übersicht, Mieterliste mit Mietbuch, Akte, 3 Briefvorlagen, Vorlagen-Upload, Briefkopf),
+  dazu Vorschau-Ablauf und Archiv der Schreiben.
 - Stufe 2: KI-Antwortentwurf (Edge Function, Claude API, Schlüssel als Supabase-Secret `ANTHROPIC_API_KEY`,
   nur nötige Daten senden, keine IBAN; immer Entwurf, nie Autoversand).

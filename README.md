@@ -1,8 +1,9 @@
 # ROK Verwaltung
 
 Verwaltungs-Dashboard für ROK Immobilien: offene Mieten im Blick behalten und Standardschreiben
-(1. Mahnung, 2. Mahnung, Nachweis an Jobcenter/Sozialamt) per Klick als Word-Datei erzeugen –
-mit den richtigen Mieterdaten und dem richtigen Mietkonto (IBAN) je Mieter.
+(1. Mahnung, 2. Mahnung, Nachweis an Jobcenter/Sozialamt) per Klick erzeugen – mit den richtigen
+Mieterdaten und dem richtigen Mietkonto (IBAN) je Mieter. Jedes Schreiben erscheint zuerst in einer
+Vorschau; erst beim Herunterladen, Drucken/PDF oder Versenden wird es im Verlauf archiviert.
 
 > **Testversion:** In der Datenbank liegen ausschließlich erfundene Daten. Echte Mieterdaten
 > erst nach dem Umzug auf Roberts eigenes Supabase-Konto (Pro-Plan, AVV, Region Frankfurt) eintragen.
@@ -21,7 +22,9 @@ css/app.css           Gestaltung
 js/config.js          Supabase-URL + Publishable Key (öffentlich, das ist so gedacht)
 js/daten.js           alle Datenbankzugriffe
 js/dokumente.js       Briefdaten zusammenstellen, Vorlagen befüllen
+js/vorschau.js        Vorschau-Fenster (Drucken/PDF, E-Mail, Herunterladen, in E-Mail ziehen)
 js/app.js             Oberfläche
+PLATZHALTER.md        alle Platzhalter für eigene Vorlagen
 vorlagen/*.docx       Standard-Briefvorlagen
 tools/vorlagen-erzeugen.js   erzeugt die Standardvorlagen neu (node, Paket "docx")
 supabase/migrations/  Datenbankstruktur + Zugriffsschutz
@@ -34,7 +37,8 @@ vendor/               gebündelte Bibliotheken (siehe vendor/LIZENZEN.md)
 - **Login + Freischaltung:** Eingeloggt sein reicht nicht. Daten sieht nur, wer in der Tabelle
   `mitglieder` steht (Row Level Security auf allen Tabellen, Funktion `privat.ist_mitglied()`).
 - Der anonyme Zugang (`anon`) hat auf keine Tabelle Rechte.
-- Eigene Vorlagen liegen im **privaten** Bucket `vorlagen`.
+- Eigene Vorlagen liegen im **privaten** Bucket `vorlagen`, erstellte Schreiben im **privaten**
+  Bucket `schreiben` (`<mieter_id>/<vorgang_id>.docx`, nicht überschreibbar).
 - Im Repo stehen **keine** Geheimnisse und **keine** echten Daten. Niemals den Secret Key
   (`sb_secret_…` / service_role), das Datenbank-Passwort oder KI-API-Schlüssel committen.
 
@@ -71,8 +75,9 @@ truncate public.vorgaenge, public.forderungen, public.mieter, public.wohnungen,
 ## Ausbaustufen
 
 - [x] Stufe 1: Mieter, offene Posten, Mahnungen und Nachweis per Klick, eigene Vorlagen
+- [x] Stufe 1b: Vorschau vor dem Download, Archiv der Schreiben, Ansicht ohne seitliches Scrollen
 - [ ] Stufe 2: Antwortentwürfe auf individuelle Schreiben mit KI (Supabase Edge Function + Claude API,
       Schlüssel nur als Supabase-Secret)
-- [ ] Später: Import offener Posten aus immocloud (CSV), PDF-Ausgabe, E-Mail-Versand
+- [ ] Später: Import offener Posten aus immocloud (CSV), direkter E-Mail-Versand aus der App
 
 Die Mustertexte der Vorlagen sind ein Ausgangspunkt und vor dem echten Einsatz rechtlich prüfen zu lassen.

@@ -50,24 +50,30 @@ function zelle(kinder, breite, opts = {}) {
 }
 
 function briefkopf() {
+  // Zweispaltige Tabelle statt Tabstopps: wird in Word und in der Browser-Vorschau gleich dargestellt
+  const rechts = (text) => new Paragraph({ alignment: AlignmentType.RIGHT, spacing: { after: 0 }, children: [t(text, { size: 16, color: GRAU })] });
   return new Header({
     children: [
-      new Paragraph({
-        tabStops: [{ type: TabStopType.RIGHT, position: BREITE }],
-        spacing: { after: 40 },
-        children: [
-          t("{v_firma}", { bold: true, size: 36, color: FARBE }),
-          tt("{v_strasse} · {v_plz} {v_ort}", { size: 16, color: GRAU }),
-        ],
+      new Table({
+        width: { size: BREITE, type: WidthType.DXA },
+        columnWidths: [4354, 5000],
+        borders: keineRahmen,
+        rows: [new TableRow({ children: [
+          zelle([
+            new Paragraph({ spacing: { after: 0 }, children: [t("{v_firma}", { bold: true, size: 36, color: FARBE })] }),
+            new Paragraph({ spacing: { after: 0 }, children: [t("Immobilienverwaltung", { size: 16, color: GRAU, characterSpacing: 20 })] }),
+          ], 4354),
+          zelle([
+            new Paragraph({ spacing: { after: 0 }, children: [t("")] }),
+            rechts("{v_strasse} · {v_plz} {v_ort}"),
+            rechts("Tel. {v_telefon} · {v_email} · {v_web}"),
+          ], 5000),
+        ] })],
       }),
       new Paragraph({
-        tabStops: [{ type: TabStopType.RIGHT, position: BREITE }],
-        border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: AKZENT, space: 4 } },
+        border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: AKZENT, space: 1 } },
         spacing: { after: 0 },
-        children: [
-          t("Immobilienverwaltung", { size: 16, color: GRAU, characterSpacing: 20 }),
-          tt("Tel. {v_telefon} · {v_email} · {v_web}", { size: 16, color: GRAU }),
-        ],
+        children: [t("", { size: 4 })],
       }),
     ],
   });

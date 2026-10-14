@@ -1,4 +1,6 @@
-# Gebündelte Bibliotheken in docx-vendor.min.js
+# Mitgelieferte Bibliotheken
+
+## docx-vendor.min.js (Vorlagen befüllen)
 
 Gebaut mit `bun build --target=browser --format=iife --minify` aus den offiziellen Quellen:
 
@@ -17,3 +19,12 @@ import Docxtemplater from "docxtemplater/es6/docxtemplater.js";
 window.PizZip = PizZip;
 window.Docxtemplater = Docxtemplater;
 ```
+
+## Vorschau von Word-Dokumenten
+
+Unveränderte, offiziell veröffentlichte Builds:
+
+| Datei | Bibliothek | Version | Lizenz | Quelle |
+|---|---|---|---|---|
+| jszip.min.js | JSZip | 3.10.1 | MIT oder GPLv3 (hier MIT) | https://github.com/Stuk/jszip |
+| docx-preview.min.js | docx-preview | 0.4.0 | Apache-2.0 | https://github.com/VolodymyrBaydalka/docxjs |
