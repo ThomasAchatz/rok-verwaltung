@@ -130,6 +130,22 @@ export async function claude(o: {
     throw new Fehler(503, "Die KI ist noch nicht eingerichtet: In Supabase fehlt das Secret ANTHROPIC_API_KEY.", "ki_fehlt");
   }
   const basis = env("ANTHROPIC_URL") ?? "https://api.anthropic.com";
+  const modell = MODELL();
+  // Claude Sonnet 5.5 erlaubt kein erzwungenes Werkzeug (tool_choice "tool"/"any").
+  // Darum "auto" und im Auftrag klar sagen, dass über das Werkzeug geantwortet wird.
+  const anfrage: Record<string, unknown> = {
+    model: modell,
+    max_tokens: o.maxTokens ?? 2000,
+    system: o.system,
+    messages: [{
+      role: "user",
+      content: [...o.inhalt, { type: "text", text: `Antworte jetzt ausschließlich, indem du das Werkzeug '${o.werkzeug.name}' aufrufst.` }],
+    }],
+    tools: [o.werkzeug],
+    tool_choice: { type: "auto" },
+  };
+  // Kein Vorab-Nachdenken nötig: spart Zeit und Kosten (bei Sonnet 5.5 die niedrigste Stufe)
+  if (/sonnet-5-5/.test(modell)) anfrage.thinking = { type: "between_tools" };
   const antwort = await fetch(`${basis}/v1/messages`, {
     method: "POST",
     headers: {
@@ -137,18 +153,12 @@ export async function claude(o: {
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },
-    body: JSON.stringify({
-      model: MODELL(),
-      max_tokens: o.maxTokens ?? 2000,
-      system: o.system,
-      messages: [{ role: "user", content: o.inhalt }],
-      tools: [o.werkzeug],
-      tool_choice: { type: "tool", name: o.werkzeug.name },
-    }),
+    body: JSON.stringify(anfrage),
   });
   const daten = await antwort.json().catch(() => null);
   if (!antwort.ok) {
     const meldung = daten?.error?.message ?? `Status ${antwort.status}`;
+    console.error("Claude API:", antwort.status, meldung);
     if (antwort.status === 401) throw new Fehler(502, "Der KI-Schlüssel wurde abgelehnt. Bitte ANTHROPIC_API_KEY prüfen.", "ki_schluessel");
     if (antwort.status === 400 && /credit|balance/i.test(meldung)) {
       throw new Fehler(502, "Das KI-Guthaben ist aufgebraucht. Bitte in der Anthropic-Konsole aufladen.", "ki_guthaben");
@@ -156,9 +166,17 @@ export async function claude(o: {
     throw new Fehler(502, `KI-Fehler: ${meldung}`, "ki_fehler");
   }
   // deno-lint-ignore no-explicit-any
-  const block = daten?.content?.find((b: any) => b.type === "tool_use");
-  if (!block) throw new Fehler(502, "Die KI hat keine verwertbare Antwort geliefert.", "ki_leer");
-  return { daten: block.input, modell: daten.model ?? MODELL() };
+  const block = daten?.content?.find((b: any) => b.type === "tool_use" && b.name === o.werkzeug.name);
+  if (block) return { daten: block.input, modell: daten.model ?? modell };
+  // Rückfall: Hat die KI das Ergebnis als JSON-Text geschrieben, das nehmen
+  // deno-lint-ignore no-explicit-any
+  const text = (daten?.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+  const json = text.match(/\{[\s\S]*\}/);
+  if (json) {
+    try { return { daten: JSON.parse(json[0]), modell: daten.model ?? modell }; } catch { /* kein gültiges JSON */ }
+  }
+  console.error("Claude ohne Werkzeug-Aufruf:", daten?.stop_reason, text.slice(0, 300));
+  throw new Fehler(502, "Die KI hat keine verwertbare Antwort geliefert. Bitte noch einmal versuchen.", "ki_leer");
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +305,7 @@ export async function ordneEin(nachrichtId: string, zugriff: Zugriff): Promise<a
     system,
     inhalt: [{ type: "text", text }],
     werkzeug: WERKZEUG_EINORDNUNG,
-    maxTokens: 600,
+    maxTokens: 1200,
   });
 
   const gueltigeId = mieter.some((m: { id: string }) => m.id === daten.mieter_id) ? daten.mieter_id : null;
@@ -450,7 +468,7 @@ export async function entwirf(o: EntwurfAuftrag): Promise<any> {
     system,
     inhalt: [{ type: "text", text }],
     werkzeug: WERKZEUG_ENTWURF,
-    maxTokens: 1800,
+    maxTokens: 3000,
   });
   return {
     betreff: String(daten.betreff ?? "").slice(0, 200),
@@ -492,7 +510,7 @@ export async function liesBrief(bild: { daten: string; typ: string }): Promise<a
       { type: "text", text: "Schreibe diesen Brief vollständig ab." },
     ],
     werkzeug: WERKZEUG_BRIEF,
-    maxTokens: 3000,
+    maxTokens: 4000,
   });
   return daten;
 }
