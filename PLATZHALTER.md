@@ -8,7 +8,7 @@ Beim Hochladen prüft die App die Vorlage; unbekannte Platzhalter bleiben im Bri
 Tipp: Platzhalter in Word am Stück tippen (nicht teilweise formatieren), sonst erkennt Word ihn
 eventuell nicht als zusammenhängenden Text.
 
-## Briefkopf (Seite „Briefkopf“ in der App)
+## Briefkopf (Einstellungen → Briefkopf in der App)
 
 | Platzhalter | Inhalt |
 |---|---|
@@ -89,3 +89,14 @@ Mit `{^feld}…{/feld}` erscheint Text nur, wenn das Feld **leer** ist.
 | `{#mahnung_datum}…{/mahnung_datum}` | Satz nur, wenn schon gemahnt wurde |
 | `{#letzte_mahnung_datum}…{/letzte_mahnung_datum}` / `{^letzte_mahnung_datum}…{/letzte_mahnung_datum}` | Text abhängig davon, ob es eine 1. Mahnung gab |
 | `{#empf_zusatz}…{/empf_zusatz}` | Zusatzzeile in der Anschrift nur, wenn vorhanden |
+
+## Antwortschreiben (Vorlage „Antwortschreiben“)
+
+Wird im Postfach bzw. bei „Neues Schreiben“ mit „Als Brief“ erzeugt. Der Text kommt aus dem Entwurf.
+Briefkopf-, Datums- und Mieter-Platzhalter wie oben (Mieterfelder bleiben leer, wenn keine Mietpartei
+zugeordnet ist). Die Anschrift (`{empf_…}`) wählt man vor der Vorschau aus.
+
+| Platzhalter | Inhalt |
+|---|---|
+| `{betreff}` | Betreff des Entwurfs |
+| `{#absaetze}` / `{absatz}` / `{/absaetze}` | Jeder Absatz des Entwurfs (der erste ist die Anrede). Die drei Teile jeweils in einem eigenen Absatz, dann wird der mittlere Absatz für jeden Textabsatz wiederholt. |

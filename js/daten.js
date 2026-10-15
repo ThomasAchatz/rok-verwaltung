@@ -143,3 +143,95 @@ export async function ladeSchreiben(pfad) {
   if (error) throw new Error("Schreiben konnte nicht geladen werden: " + error.message);
   return await data.arrayBuffer();
 }
+
+// --- Postfach, Antworten, Wissen -------------------------------------------
+export { SUPABASE_URL };
+
+export async function ladeMieterKurz() {
+  return pruefe(await sb.from("mieter")
+    .select("id,anrede,vorname,nachname,email,wohnung_id,kostentraeger_id,aktenzeichen")
+    .order("nachname"));
+}
+export async function ladeNachrichten({ status = null, mieterId = null, anzahl = 200 } = {}) {
+  let q = sb.from("nachrichten").select("*").order("eingang_am", { ascending: false }).limit(anzahl);
+  if (status) q = q.in("status", status);
+  if (mieterId) q = q.eq("mieter_id", mieterId);
+  return pruefe(await q);
+}
+export async function ladeNachricht(id) {
+  return pruefe(await sb.from("nachrichten").select("*").eq("id", id).single());
+}
+export async function aendereNachricht(id, felder) {
+  return pruefe(await sb.from("nachrichten").update(felder).eq("id", id).select().single());
+}
+export async function neueNachricht(zeile) {
+  return pruefe(await sb.from("nachrichten").insert(zeile).select().single());
+}
+export async function ladeAntworten({ nachrichtId = null, mieterId = null, anzahl = 50 } = {}) {
+  let q = sb.from("antworten").select("*").order("erstellt_am", { ascending: false }).limit(anzahl);
+  if (nachrichtId) q = q.eq("nachricht_id", nachrichtId);
+  if (mieterId) q = q.eq("mieter_id", mieterId);
+  return pruefe(await q);
+}
+/** Legt einen Entwurf an (id leer) oder ändert ihn. */
+export async function speichereAntwort(id, felder) {
+  if (!id) return pruefe(await sb.from("antworten").insert(felder).select().single());
+  return pruefe(await sb.from("antworten").update(felder).eq("id", id).select().single());
+}
+export async function loescheAntwort(id) {
+  pruefe(await sb.from("antworten").delete().eq("id", id));
+}
+export async function ladeWissen() {
+  return pruefe(await sb.from("wissen").select("*").order("titel"));
+}
+export async function speichereWissen(id, felder) {
+  if (!id) return pruefe(await sb.from("wissen").insert(felder).select().single());
+  return pruefe(await sb.from("wissen").update(felder).eq("id", id).select().single());
+}
+export async function loescheWissen(id) {
+  pruefe(await sb.from("wissen").delete().eq("id", id));
+}
+export async function ladePostfach() {
+  return pruefe(await sb.from("postfach").select("*").eq("id", 1).maybeSingle());
+}
+export async function speicherePostfach(felder) {
+  return pruefe(await sb.from("postfach").update(felder).eq("id", 1).select().single());
+}
+export async function erneuerePostfachToken() {
+  return pruefe(await sb.rpc("postfach_token_erneuern"));
+}
+
+// Fotografierte Briefe (privater Bucket "eingang")
+export async function ladeFotoHoch(pfad, blob) {
+  const { error } = await sb.storage.from("eingang").upload(pfad, blob, { upsert: false, contentType: blob.type });
+  if (error) throw new Error("Foto konnte nicht gespeichert werden: " + error.message);
+  return pfad;
+}
+export async function fotoAdresse(pfad) {
+  const { data, error } = await sb.storage.from("eingang").createSignedUrl(pfad, 600);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
+}
+
+/** Ruft eine Edge Function mit dem Login des Nutzers auf. Fehler haben .code (z. B. "ki_fehlt"). */
+export async function funktion(name, body) {
+  const { data, error } = await sb.functions.invoke(name, { body });
+  if (error) {
+    let info = null;
+    try { info = await error.context?.json(); } catch { /* keine JSON-Antwort */ }
+    const fehler = new Error(info?.fehler || (error.name === "FunctionsFetchError"
+      ? "Der Server ist nicht erreichbar. Bitte Internetverbindung prüfen."
+      : error.message));
+    fehler.code = info?.code || "fehler";
+    throw fehler;
+  }
+  return data;
+}
+export async function ladeAntwort(id) {
+  return pruefe(await sb.from("antworten").select("*").eq("id", id).single());
+}
+export async function zaehleNeue() {
+  const { count, error } = await sb.from("nachrichten").select("id", { count: "exact", head: true }).eq("status", "neu");
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}

@@ -33,11 +33,18 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 
 - Projekt `rok-verwaltung`, Ref `hjrmwdcvsngovhtrkobc`, Region eu-central-1.
 - Tabellen: mitglieder, vermieter_profil, objekte, wohnungen, kostentraeger, mieter, forderungen,
-  vorgaenge, vorlagen; View mieter_uebersicht (security_invoker); Buckets `vorlagen` und `schreiben` (privat).
+  vorgaenge, vorlagen, nachrichten, antworten, wissen, postfach; View mieter_uebersicht (security_invoker);
+  Buckets `vorlagen`, `schreiben`, `eingang` (privat).
+- Edge Functions `ki`, `posteingang`, `versand` (Quellen in `supabase/functions/`, gemeinsamer Code in
+  `_shared/gemeinsam.ts`, deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw. Postfach-Token).
+  service_role hat nur die Rechte aus `20261015010200_rechte_server.sql` (Projekt vergibt keine automatischen Grants).
+- Secrets: ANTHROPIC_API_KEY, RESEND_API_KEY, VERSAND_ABSENDER, optional RESEND_WEBHOOK_SECRET, KI_MODELL.
 
 ## Stand / nächste Schritte
 
 - Stufe 1 fertig (Übersicht, Mieterliste mit Mietbuch, Akte, 3 Briefvorlagen, Vorlagen-Upload, Briefkopf),
   dazu Vorschau-Ablauf und Archiv der Schreiben.
-- Stufe 2: KI-Antwortentwurf (Edge Function, Claude API, Schlüssel als Supabase-Secret `ANTHROPIC_API_KEY`,
-  nur nötige Daten senden, keine IBAN; immer Entwurf, nie Autoversand).
+- Stufe 2 gebaut: Postfach (Resend-Webhook), KI-Einordnung, Entwürfe mit Diktat, Wissen, Versand per Klick,
+  Brief fotografieren. Regeln: nur nötige Daten an die KI, nie IBAN; immer Entwurf, nie Autoversand.
+- Oberfläche Postfach/Wissen/Einstellungen in `js/postfach.js`, gemeinsame Hilfen in `js/helfer.js`.
+  Dialoge (`dialogFormular`) lösen erst beim close-Ereignis auf, sonst schließt sich der nächste Dialog sofort.

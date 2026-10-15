@@ -124,6 +124,27 @@ export function briefDaten(typ, ctx) {
   return daten;
 }
 
+/**
+ * Datenobjekt für die Vorlage „Antwortschreiben“.
+ * @param {object} ctx { profil, mieter?, wohnung?, objekt?, empfaenger: {name, zusatz, strasse, plz_ort}, betreff, text }
+ *   text: Anrede und Absätze (durch Leerzeilen getrennt), ohne Gruß und Unterschrift
+ */
+export function antwortDaten(ctx) {
+  const { profil, mieter = null, wohnung = {}, objekt = {}, empfaenger = {}, betreff = "", text = "" } = ctx;
+  const basis = briefDaten("antwort", {
+    profil, mieter: mieter || { nachname: "" }, wohnung: mieter ? wohnung : {}, objekt: mieter ? objekt : {}, heute: ctx.heute,
+  });
+  return {
+    ...basis,
+    empf_name: empfaenger.name || "",
+    empf_zusatz: empfaenger.zusatz || "",
+    empf_strasse: empfaenger.strasse || "",
+    empf_plz_ort: empfaenger.plz_ort || "",
+    betreff,
+    absaetze: String(text).replace(/\r/g, "").split(/\n[ \t]*\n/).map((a) => a.trim()).filter(Boolean).map((absatz) => ({ absatz })),
+  };
+}
+
 /** Liefert alle Platzhalter einer Vorlage (zur Anzeige / Prüfung). */
 export function platzhalterAus(arrayBuffer) {
   const zip = new globalThis.PizZip(arrayBuffer);

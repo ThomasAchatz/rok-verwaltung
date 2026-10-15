@@ -4,7 +4,7 @@
 //   fremde Adressen laufen direkt ins Netz.
 // - „Netz zuerst“: Online gibt es immer die neueste Version, offline startet wenigstens die Hülle.
 // Bei jeder Änderung an der App VERSION hochzählen.
-const VERSION = "rok-v3";
+const VERSION = "rok-v4";
 const HUELLE = [
   "./",
   "index.html",
@@ -14,6 +14,8 @@ const HUELLE = [
   "js/config.js",
   "js/daten.js",
   "js/dokumente.js",
+  "js/helfer.js",
+  "js/postfach.js",
   "js/vorschau.js",
   "vendor/docx-vendor.min.js",
   "vendor/jszip.min.js",
@@ -21,6 +23,7 @@ const HUELLE = [
   "vorlagen/mahnung_1.docx",
   "vorlagen/mahnung_2.docx",
   "vorlagen/nachweis_jobcenter.docx",
+  "vorlagen/antwort.docx",
   "icons/icon-192.png",
   "icons/icon-512.png",
   "icons/apple-touch-icon.png",

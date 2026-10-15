@@ -1,18 +1,19 @@
 // ROK Verwaltung – Oberfläche (ohne Build-Schritt, reines ES-Modul)
 import * as db from "./daten.js";
 import {
-  briefDaten, fuelleVorlage, platzhalterAus, vorlagenFehler,
+  briefDaten, antwortDaten, fuelleVorlage, platzhalterAus, vorlagenFehler,
   euro, datumDE, monatDE, ibanFormat, mieterName,
 } from "./dokumente.js";
 import { zeigeDokument } from "./vorschau.js";
+import {
+  $, $$, esc, melde, herunterladen, dateiTeil, dialogFormular, heuteISO,
+  zustand, wohnungVon, objektVon, kostentraegerVon,
+} from "./helfer.js";
+import * as postfach from "./postfach.js";
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
 // ---------------------------------------------------------------------------
-const $ = (sel, el = document) => el.querySelector(sel);
-const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
-const esc = (v) =>
-  String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const inhalt = $("#inhalt");
 const MONATE_KURZ = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 const ARTEN = [
@@ -32,10 +33,6 @@ const TYP_NAME = {
   sonstiges: "Schreiben",
 };
 
-const heuteISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
 const monatISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 function letzteMonate(anzahl) {
   const jetzt = new Date();
@@ -71,26 +68,6 @@ function ibanGueltig(iban) {
   return rest === 1;
 }
 
-function melde(text, art = "info") {
-  const el = document.createElement("div");
-  el.className = `meldung meldung--${art}`;
-  el.setAttribute("role", art === "fehler" ? "alert" : "status");
-  el.textContent = text;
-  $("#meldungen").append(el);
-  setTimeout(() => el.remove(), art === "fehler" ? 8000 : 4500);
-}
-
-function herunterladen(bytes, dateiname) {
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }));
-  const a = Object.assign(document.createElement("a"), { href: url, download: dateiname });
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
-const dateiTeil = (s) =>
-  String(s || "").replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue").replace(/ß/g, "ss")
-    .normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 function monatsspanne(posten) {
   const monate = [...new Set(posten.map((f) => String(f.monat).slice(0, 7)))].sort();
@@ -103,40 +80,15 @@ function monatsspanne(posten) {
     : `${fmt(a)} – ${fmt(b)}`;
 }
 
-// Dialog mit Formular; liefert die Formulardaten oder null bei Abbruch
-function dialogFormular(html) {
-  const dlg = $("#dialog");
-  dlg.innerHTML = `<form method="dialog">${html}</form>`;
-  const form = $("form", dlg);
-  dlg.showModal();
-  $("input:not([type=hidden]), select", form)?.focus();
-  return new Promise((fertig) => {
-    form.addEventListener("submit", (e) => {
-      if (e.submitter?.value === "abbrechen") return fertig(null);
-      fertig(new FormData(form));
-    });
-    dlg.addEventListener("close", () => fertig(null), { once: true });
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Zustand
 // ---------------------------------------------------------------------------
-const zustand = {
-  nutzer: null,
-  profil: null,
-  stamm: null,      // { objekte, wohnungen, kostentraeger }
-  vorlagen: null,
-  akte: null,       // geöffneter Mieter
-};
 
 async function ladeGrunddaten() {
   const [profil, stamm, vorlagen] = await Promise.all([db.ladeProfil(), db.ladeStammdaten(), db.ladeVorlagen()]);
   Object.assign(zustand, { profil, stamm, vorlagen });
+  postfach.ladeKiStatus(); // im Hintergrund: Ist die KI eingerichtet?
 }
-const wohnungVon = (id) => zustand.stamm.wohnungen.find((w) => w.id === id) || null;
-const objektVon = (id) => zustand.stamm.objekte.find((o) => o.id === id) || null;
-const kostentraegerVon = (id) => zustand.stamm.kostentraeger.find((k) => k.id === id) || null;
 
 // ---------------------------------------------------------------------------
 // Anmeldung
@@ -196,16 +148,24 @@ window.addEventListener("hashchange", () => route());
 async function route() {
   if ($("#app").hidden) return;
   const [, teil = "uebersicht", id] = (location.hash || "#/uebersicht").split("/");
+  const navTeil = { schreiben: "postfach", entwurf: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen" }[teil] || teil;
   for (const a of $$("[data-nav]")) {
-    if (a.dataset.nav === teil) a.setAttribute("aria-current", "page");
+    if (a.dataset.nav === navTeil) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   }
+  postfach.aktualisiereZaehler();
   try {
     if (teil === "mieter" && id) await zeigeAkte(id);
     else if (teil === "mieter") await zeigeMieterliste();
+    else if (teil === "postfach" && id) await postfach.zeigeNachricht(id);
+    else if (teil === "postfach") await postfach.zeigePostfach();
+    else if (teil === "schreiben") await postfach.zeigeNeuesSchreiben(id || null);
+    else if (teil === "entwurf" && id) await postfach.zeigeNeuesSchreiben(null, id);
+    else if (teil === "wissen") await postfach.zeigeWissen();
     else if (teil === "vorlagen") await zeigeVorlagen();
-    else if (teil === "briefkopf") await zeigeBriefkopf();
+    else if (teil === "einstellungen" || teil === "briefkopf") await postfach.zeigeEinstellungen();
     else await zeigeUebersicht();
+    window.scrollTo(0, 0);
   } catch (err) {
     console.error(err);
     inhalt.innerHTML = `<div class="flaeche leer"><h2>Das hat nicht geklappt</h2><p>${esc(err.message)}</p>
@@ -315,10 +275,11 @@ function emailDaten(typ, mieter, kostentraeger, titel) {
 // ---------------------------------------------------------------------------
 async function zeigeUebersicht() {
   const monate = letzteMonate(4);
-  const [liste, forderungen, vorgaenge] = await Promise.all([
+  const [liste, forderungen, vorgaenge, postfachAbschnitt] = await Promise.all([
     db.ladeUebersicht(),
     db.ladeForderungen({ abMonat: monate[0] }),
     db.ladeVorgaenge({ anzahl: 200 }),
+    postfach.uebersichtPostfach(),
   ]);
   const imRueckstand = liste.filter((m) => Number(m.offen_summe) > 0).sort((a, b) => b.offen_summe - a.offen_summe);
   const gesamt = imRueckstand.reduce((s, m) => s + Number(m.offen_summe), 0);
@@ -346,6 +307,7 @@ async function zeigeUebersicht() {
     </div>
 
     <div class="stapel">
+      ${postfachAbschnitt}
       <section class="flaeche">
         <div class="flaeche__kopf"><h2>Handlungsbedarf</h2>${LEGENDE}</div>
         ${imRueckstand.length
@@ -422,11 +384,14 @@ async function zeigeMieterliste() {
 // Mieter-Akte
 // ---------------------------------------------------------------------------
 async function zeigeAkte(id) {
-  const [mieter, forderungen, vorgaenge] = await Promise.all([
+  const [mieter, forderungen, vorgaenge, nachrichten, antworten] = await Promise.all([
     db.ladeMieter(id),
     db.ladeForderungen({ mieterId: id }),
     db.ladeVorgaenge({ mieterId: id }),
+    db.ladeNachrichten({ mieterId: id, anzahl: 8 }).catch(() => []),
+    db.ladeAntworten({ mieterId: id, anzahl: 20 }).catch(() => []),
   ]);
+  const entwuerfe = antworten.filter((a) => a.status === "entwurf");
   sortiereForderungen(forderungen);
   const wohnung = wohnungVon(mieter.wohnung_id);
   const objekt = wohnung ? objektVon(wohnung.objekt_id) : null;
@@ -457,7 +422,7 @@ async function zeigeAkte(id) {
       <button class="knopf" data-brief="mahnung_1">1. Mahnung</button>
       <button class="knopf" data-brief="mahnung_2" ${hatMahnung1 ? "" : `title="Noch keine 1. Mahnung im Verlauf"`}>2. Mahnung</button>
       <button class="knopf" data-brief="nachweis_jobcenter" ${kostentraeger ? "" : `disabled title="Kein Kostenträger hinterlegt"`}>Nachweis an Kostenträger</button>
-      <button class="knopf" disabled title="Folgt in der nächsten Ausbaustufe">Antwort mit KI-Entwurf</button>
+      <a class="knopf knopf--hell" href="#/schreiben/${esc(mieter.id)}">Schreiben mit KI</a>
       <span class="briefe__hinweis" id="briefhinweis"></span>
     </div>
 
@@ -549,6 +514,14 @@ async function zeigeAkte(id) {
         <section class="flaeche">
           <div class="flaeche__kopf"><h2>Zahlungen</h2></div>
           <div class="flaeche__inhalt">${mietbuch(forderungen, letzteMonate(6))}</div>
+        </section>
+        <section class="flaeche">
+          <div class="flaeche__kopf"><h2>Nachrichten</h2><a class="leise" href="#/schreiben/${esc(mieter.id)}">Neues Schreiben</a></div>
+          ${entwuerfe.length ? `<div class="zeilen">${entwuerfe.map((a) => `<a class="entwurfzeile" href="${a.nachricht_id ? `#/postfach/${esc(a.nachricht_id)}` : `#/entwurf/${esc(a.id)}`}">
+              <span><span class="marker marker--messing">Entwurf</span> ${esc(a.betreff || "(ohne Betreff)")}</span><span class="leise">${datumDE(a.aktualisiert_am)}</span></a>`).join("")}</div>` : ""}
+          ${nachrichten.length
+            ? `<div class="posts">${nachrichten.map((n) => postfach.nachrichtZeile(n, { [mieter.id]: mieterName(mieter) })).join("")}</div>`
+            : entwuerfe.length ? "" : `<div class="leer">Keine Nachrichten von dieser Mietpartei.</div>`}
         </section>
         <section class="flaeche">
           <div class="flaeche__kopf"><h2>Schreiben</h2></div>
@@ -853,11 +826,22 @@ const BEKANNTE = new Set([
   "mieter_name", "mieter_vorname", "mieter_nachname", "objekt", "objekt_adresse", "objekt_strasse",
   "wohnung", "mietbeginn", "kostentraeger_name", "aktenzeichen", "konto_inhaber", "konto_iban",
   "konto_bic", "konto_bank", "verwendungszweck", "posten", "monat", "bezeichnung", "betrag", "summe",
-  "hat_nebenleistungen", "letzte_mahnung_datum", "mahnung_datum",
+  "hat_nebenleistungen", "letzte_mahnung_datum", "mahnung_datum", "betreff", "absaetze", "absatz",
 ]);
 
 // Beispieldaten für die Vorschau einer Vorlage (erfunden)
 function beispielDaten(typ) {
+  if (typ === "antwort") {
+    return antwortDaten({
+      profil: zustand.profil || { firma: "Beispiel" },
+      mieter: { anrede: "Frau", vorname: "Erika", nachname: "Beispiel" },
+      wohnung: { bezeichnung: "2. OG rechts" },
+      objekt: { bezeichnung: "MFH Beispielweg 5", strasse: "Beispielweg 5", plz: "12345", ort: "Musterstadt" },
+      empfaenger: { name: "Frau Erika Beispiel", zusatz: "Wohnung 2. OG rechts", strasse: "Beispielweg 5", plz_ort: "12345 Musterstadt" },
+      betreff: "Ihre Nachricht vom 12.10.: Heizung im Bad",
+      text: "Sehr geehrte Frau Beispiel,\n\nvielen Dank für Ihre Nachricht. Wir haben die Haustechnik beauftragt. Die Firma meldet sich innerhalb von zwei Werktagen bei Ihnen für einen Termin.\n\nBitte sorgen Sie dafür, dass die Wohnung zum Termin zugänglich ist.",
+    });
+  }
   return briefDaten(typ, {
     profil: zustand.profil || { firma: "Beispiel" },
     mieter: {
@@ -880,6 +864,7 @@ function beispielDaten(typ) {
 async function zeigeVorlagen() {
   zustand.vorlagen = await db.ladeVorlagen();
   inhalt.innerHTML = `
+    <a class="zurueck" href="#/einstellungen">Zu den Einstellungen</a>
     <div class="kopf"><div><h1>Vorlagen</h1>
       <p>Briefvorlagen als Word-Dateien. Eine hochgeladene eigene Vorlage ersetzt den Standard, bis Sie ihn wiederherstellen.</p></div></div>
     <section class="flaeche">
@@ -950,35 +935,6 @@ async function zeigeVorlagen() {
       await db.vorlageZuruecksetzen(v);
       melde("Standardvorlage wiederhergestellt.", "ok");
       await zeigeVorlagen();
-    } catch (err) { melde(err.message, "fehler"); }
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Briefkopf
-// ---------------------------------------------------------------------------
-async function zeigeBriefkopf() {
-  const p = (zustand.profil = await db.ladeProfil()) || {};
-  const f = (name, label, attrs = "") =>
-    `<label class="feld"><span>${label}</span><input name="${name}" value="${esc(p[name] ?? "")}" ${attrs}></label>`;
-  inhalt.innerHTML = `
-    <div class="kopf"><div><h1>Briefkopf</h1><p>Diese Angaben erscheinen in allen Schreiben als Absender.</p></div></div>
-    <section class="flaeche"><form class="flaeche__inhalt" id="profilformular">
-      <div class="formraster">
-        ${f("firma", "Firma", "required")}${f("inhaber", "Inhaber / Unterzeichner")}
-        ${f("strasse", "Straße und Hausnummer")}${f("plz", "PLZ")}${f("ort", "Ort")}
-        ${f("telefon", "Telefon")}${f("email", "E-Mail", `type="email"`)}${f("web", "Website")}
-      </div>
-      <div class="knopfreihe"><button class="knopf knopf--primaer" type="submit">Briefkopf speichern</button></div>
-    </form></section>`;
-  $("#profilformular").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const felder = Object.fromEntries(["firma", "inhaber", "strasse", "plz", "ort", "telefon", "email", "web"]
-      .map((k) => [k, (fd.get(k) || "").trim() || null]));
-    try {
-      zustand.profil = await db.speichereProfil(felder);
-      melde("Briefkopf gespeichert.", "ok");
     } catch (err) { melde(err.message, "fehler"); }
   });
 }

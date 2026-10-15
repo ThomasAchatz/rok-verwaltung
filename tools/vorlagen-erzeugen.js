@@ -107,13 +107,15 @@ function anschriftUndInfo(infoZeilen) {
     new Paragraph({ spacing: { after: 0 }, children: [t("{empf_strasse}")] }),
     new Paragraph({ spacing: { after: 0 }, children: [t("{empf_plz_ort}")] }),
   ];
-  const rechts = infoZeilen.map(([label, wert]) =>
-    new Paragraph({
+  // Dritter Eintrag (optional): Zeile nur zeigen, wenn dieses Feld gefüllt ist
+  const rechts = infoZeilen.flatMap(([label, wert, feld]) => {
+    const zeile = new Paragraph({
       spacing: { after: 20 },
       tabStops: [{ type: TabStopType.LEFT, position: 1300 }],
       children: [t(label, { size: 17, color: GRAU }), tt(wert, { size: 17 })],
-    })
-  );
+    });
+    return feld ? wenn(feld, zeile) : [zeile];
+  });
   return new Table({
     width: { size: BREITE, type: WidthType.DXA },
     columnWidths: [5054, 4300],
@@ -313,10 +315,26 @@ const nachweis = brief([
   ...gruss(),
 ]);
 
+// ---------------------------------------------------------------------------
+// Antwortschreiben (Text aus dem Postfach bzw. vom KI-Entwurf)
+// {#absaetze}{absatz}{/absaetze}: jeder Absatz des Entwurfs wird ein eigener Absatz.
+// Der erste Absatz ist die Anrede.
+// ---------------------------------------------------------------------------
+const antwort = brief([
+  anschriftUndInfo([
+    ["Datum", "{datum}"],
+    ["Mietobjekt", "{objekt_strasse}", "objekt_strasse"],
+    ["Wohnung", "{wohnung}", "wohnung"],
+  ]),
+  betreff("{betreff}"),
+  ...wenn("absaetze", p("{absatz}")),
+  ...gruss(),
+]);
+
 const ziel = path.join(__dirname, "..", "vorlagen");
 fs.mkdirSync(ziel, { recursive: true });
 (async () => {
-  for (const [name, doc] of [["mahnung_1", mahnung1], ["mahnung_2", mahnung2], ["nachweis_jobcenter", nachweis]]) {
+  for (const [name, doc] of [["mahnung_1", mahnung1], ["mahnung_2", mahnung2], ["nachweis_jobcenter", nachweis], ["antwort", antwort]]) {
     fs.writeFileSync(path.join(ziel, name + ".docx"), await Packer.toBuffer(doc));
     console.log("geschrieben:", name + ".docx");
   }
