@@ -169,7 +169,8 @@ async function route() {
   } catch (err) {
     console.error(err);
     inhalt.innerHTML = `<div class="flaeche leer"><h2>Das hat nicht geklappt</h2><p>${esc(err.message)}</p>
-      <button class="knopf" onclick="location.reload()">Seite neu laden</button></div>`;
+      <button class="knopf" id="neu-laden">Seite neu laden</button></div>`;
+    $("#neu-laden").addEventListener("click", () => location.reload());
   }
 }
 

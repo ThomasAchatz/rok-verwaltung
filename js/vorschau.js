@@ -52,7 +52,7 @@ export function zeigeDokument(o) {
         <button type="button" class="knopf knopf--leise" data-v="schliessen" aria-label="Vorschau schließen">Schließen</button>
       </header>
       <div class="vorschau__flaeche">
-        <iframe class="vorschau__blatt" title="Vorschau ${esc(o.titel)}"></iframe>
+        <iframe class="vorschau__blatt" title="Vorschau ${esc(o.titel)}" sandbox="allow-same-origin allow-modals"></iframe>
         <div class="vorschau__laden">Vorschau wird erstellt …</div>
       </div>
       <footer class="vorschau__fuss">

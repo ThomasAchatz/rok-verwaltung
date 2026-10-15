@@ -46,17 +46,21 @@ export async function handler(req: Request): Promise<Response> {
     const nutzlast: Record<string, unknown> = {
       from: absender,
       to: [an],
-      subject: antwort.betreff || "Ihre Nachricht",
+      subject: String(antwort.betreff || "Ihre Nachricht").replace(/[\r\n]+/g, " ").slice(0, 200),
       text: volltext,
       html: emailHtml(volltext),
     };
     if (profil?.antwort_email && istEmail(profil.antwort_email)) nutzlast.reply_to = profil.antwort_email;
-    if (nachricht?.extern_message_id) {
-      nutzlast.headers = { "In-Reply-To": nachricht.extern_message_id, References: nachricht.extern_message_id };
+    // Message-ID stammt aus einer fremden Mail: nur eine saubere <…@…>-Kennung übernehmen
+    let mid = String(nachricht?.extern_message_id ?? "").replace(/[\r\n]/g, "").trim();
+    if (/^[^<>\s]{1,250}@[^<>\s]{1,250}$/.test(mid)) mid = `<${mid}>`;
+    if (/^<[^<>\s]{1,250}@[^<>\s]{1,250}>$/.test(mid)) {
+      nutzlast.headers = { "In-Reply-To": mid, References: mid };
     }
     if (eingabe.anhang?.daten && eingabe.anhang?.dateiname) {
       if (eingabe.anhang.daten.length > 8_000_000) throw new Fehler(413, "Der Anhang ist zu groß.", "eingabe");
-      nutzlast.attachments = [{ filename: String(eingabe.anhang.dateiname), content: eingabe.anhang.daten }];
+      const dateiname = String(eingabe.anhang.dateiname).replace(/[\r\n\\/"]/g, "").slice(0, 120) || "Anhang";
+      nutzlast.attachments = [{ filename: dateiname, content: eingabe.anhang.daten }];
     }
 
     const basis = env("RESEND_URL") ?? "https://api.resend.com";

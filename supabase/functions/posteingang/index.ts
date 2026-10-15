@@ -4,7 +4,7 @@
 //   - Resend-Webhook "email.received" (Inhalt wird über die Resend-API nachgeladen, braucht RESEND_API_KEY)
 //   - einfaches JSON { from, subject, text, html?, message_id?, id? } (z. B. aus einem Cloudflare Email Worker)
 //   - Postmark-Format { From, FromName, Subject, TextBody, HtmlBody, MessageID }
-// Ist RESEND_WEBHOOK_SECRET gesetzt, muss zusätzlich die Signatur stimmen.
+// Ist RESEND_WEBHOOK_SECRET gesetzt, muss zusätzlich jede Anfrage gültig signiert sein (nur Resend).
 // Ist die KI eingerichtet, wird die Nachricht gleich eingeordnet.
 import {
   CORS, Fehler, enc, env, fehlerAntwort, gleich, htmlZuText, json, kiEingerichtet, kuerze, ordneEin, pruefeSvix,
@@ -36,9 +36,11 @@ export async function handler(req: Request): Promise<Response> {
       throw new Fehler(401, "Ungültiger Zugang", "token");
     }
     const rohtext = await req.text();
+    // Ist das Signing Secret gesetzt, muss JEDE Anfrage korrekt signiert sein
+    // (ein geleaktes Token allein reicht dann nicht mehr).
     const geheimnis = env("RESEND_WEBHOOK_SECRET");
-    if (geheimnis && req.headers.get("svix-id") && !(await pruefeSvix(req, rohtext, geheimnis))) {
-      throw new Fehler(401, "Signatur ungültig", "signatur");
+    if (geheimnis && !(await pruefeSvix(req, rohtext, geheimnis))) {
+      throw new Fehler(401, "Signatur fehlt oder ist ungültig", "signatur");
     }
     // deno-lint-ignore no-explicit-any
     let e: any;
