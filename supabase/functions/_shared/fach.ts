@@ -19,7 +19,7 @@ export const DOKUMENT_ORDNER = [
   "Mietverhältnisse", "Sonstiges",
 ];
 export const DOKUMENT_ARTEN = [
-  "Rechnung", "Vertrag", "Bescheid", "Abrechnung", "Angebot", "Mahnung", "Brief", "Protokoll", "Notiz", "Sonstiges",
+  "Rechnung", "Vertrag", "Bescheid", "Abrechnung", "Angebot", "Mahnung", "Brief", "E-Mail", "Auftrag", "Protokoll", "Notiz", "Sonstiges",
 ];
 
 /** Ordner der Dokumentenablage: bearbeitbare Liste aus der Datenbank, sonst die Standardliste */
@@ -444,6 +444,74 @@ export async function liesDokument(datei: { daten: string; typ: string }, zugrif
     ordner: nurAus(ordnerListe, daten.ordner, "Sonstiges"),
     art: nurAus(DOKUMENT_ARTEN, daten.art, "Sonstiges"),
     lesbar: daten.lesbar !== false,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Ablage-Vorschlag für Text aus der App (E-Mail, gesendetes Schreiben, Notiz)
+// ---------------------------------------------------------------------------
+/** Bankverbindungen entfernen, bevor Text an die KI geht */
+export const ohneIban = (s: unknown) =>
+  String(s ?? "").replace(/\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b/g, "[IBAN entfernt]");
+
+const WERKZEUG_ABLAGE: Werkzeug = {
+  name: "ablage",
+  description: "Schlägt vor, in welchen Ordner der Ablage ein Text gehört.",
+  input_schema: {
+    type: "object",
+    properties: {
+      ordner: { type: "string", enum: DOKUMENT_ORDNER, description: "Passendster Ordner. Unterordner sind mit „/“ geschrieben; den genauesten passenden wählen." },
+      art: { type: "string", enum: DOKUMENT_ARTEN },
+      gegenueber_kurz: { type: ["string", "null"], description: "Kurzname des Gegenübers für den Dateinamen (1–2 Wörter): bei Eingang der Absender, bei Ausgang der Empfänger, z. B. 'Huber', 'Jobcenter', 'Haustechnik Muster'." },
+      zusammenfassung: { type: "string", description: "1 kurzer Satz: worum geht es?" },
+    },
+    required: ["ordner", "art", "gegenueber_kurz", "zusammenfassung"],
+  },
+};
+
+type AblageAnfrage = {
+  titel?: string; text?: string; richtung?: string; art?: string | null; gegenueber?: string | null;
+  mieter_id?: string | null; objekt_id?: string | null;
+};
+
+// deno-lint-ignore no-explicit-any
+export async function ablageVorschlag(e: AblageAnfrage, zugriff: Zugriff): Promise<any> {
+  const text = kuerze(ohneIban(e.text), 4000);
+  const titel = ohneIban(e.titel).slice(0, 300);
+  if (!text.trim() && !titel.trim()) throw new Fehler(400, "Kein Text zum Ablegen.", "eingabe");
+  const [ordnerListe, mieter, haus] = await Promise.all([
+    dokumentOrdner(zugriff),
+    e.mieter_id ? rest(`mieter?id=eq.${enc(e.mieter_id)}&select=vorname,nachname,wohnung:wohnungen(bezeichnung,objekt:objekte(bezeichnung))`, zugriff).then((r) => r[0]).catch(() => null) : null,
+    e.objekt_id ? rest(`objekte?id=eq.${enc(e.objekt_id)}&select=bezeichnung`, zugriff).then((r) => r[0]).catch(() => null) : null,
+  ]);
+  const richtung = e.richtung === "ausgang" ? "Ausgang (von uns gesendet)" : e.richtung === "notiz" ? "eigene Notiz der Verwaltung" : "Eingang (an uns)";
+  const werkzeug: Werkzeug = {
+    ...WERKZEUG_ABLAGE,
+    input_schema: {
+      ...WERKZEUG_ABLAGE.input_schema,
+      properties: { ...(WERKZEUG_ABLAGE.input_schema.properties as Record<string, unknown>), ordner: { ...((WERKZEUG_ABLAGE.input_schema.properties as Record<string, Record<string, unknown>>).ordner), enum: ordnerListe } },
+    },
+  };
+  const kontext = [
+    `<ordner>\n${ordnerListe.join("\n")}\n</ordner>`,
+    `Richtung: ${richtung}`,
+    e.art ? `Art laut App: ${e.art}` : "",
+    e.gegenueber ? `Gegenüber: ${String(e.gegenueber).slice(0, 120)}` : "",
+    mieter ? `Mietpartei: ${[mieter.vorname, mieter.nachname].filter(Boolean).join(" ")} (${mieter.wohnung?.objekt?.bezeichnung ?? ""}, ${mieter.wohnung?.bezeichnung ?? ""})` : "",
+    haus ? `Haus: ${haus.bezeichnung}` : "",
+    `<text>\nTitel: ${titel}\n\n${text}\n</text>`,
+  ].filter(Boolean).join("\n\n");
+  const { daten } = await claude({
+    system: `Du ordnest Schriftverkehr einer Hausverwaltung in die vorgegebenen Ordner ein. ${KI_REGEL_FREMD} Antworte ausschließlich über das Werkzeug 'ablage', auf Deutsch.`,
+    inhalt: [{ type: "text", text: kontext }],
+    werkzeug,
+    maxTokens: 600,
+  });
+  return {
+    ordner: nurAus(ordnerListe, daten.ordner, "Sonstiges"),
+    art: nurAus(DOKUMENT_ARTEN, daten.art, nurAus(DOKUMENT_ARTEN, e.art, "Sonstiges")),
+    gegenueber_kurz: ohneLeer(daten.gegenueber_kurz)?.slice(0, 40) ?? null,
+    zusammenfassung: String(daten.zusammenfassung ?? "").slice(0, 300),
   };
 }
 

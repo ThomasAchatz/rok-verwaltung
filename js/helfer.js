@@ -10,13 +10,21 @@ export const heuteISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-export function melde(text, art = "info") {
+// aktion: { text, beiKlick } zeigt einen Knopf in der Meldung (z. B. „Ändern“)
+export function melde(text, art = "info", { aktion = null, dauer = null } = {}) {
   const el = document.createElement("div");
   el.className = `meldung meldung--${art}`;
   el.setAttribute("role", art === "fehler" ? "alert" : "status");
-  el.textContent = text;
+  const span = document.createElement("span");
+  span.textContent = text;
+  el.append(span);
+  if (aktion) {
+    const knopf = Object.assign(document.createElement("button"), { type: "button", className: "meldung__knopf", textContent: aktion.text });
+    knopf.addEventListener("click", () => { el.remove(); aktion.beiKlick(); });
+    el.append(knopf);
+  }
   $("#meldungen").append(el);
-  setTimeout(() => el.remove(), art === "fehler" ? 9000 : 4500);
+  setTimeout(() => el.remove(), dauer ?? (art === "fehler" ? 9000 : 4500));
 }
 
 export function herunterladen(bytes, dateiname, typ = "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {

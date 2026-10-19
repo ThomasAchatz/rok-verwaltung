@@ -251,10 +251,17 @@ details.ausklapp[open] > summary { border-bottom: 1px solid var(--linie); }
 .meldungen { position: fixed; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); right: calc(1rem + env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 0.5rem; z-index: 50; max-width: calc(100vw - 2rem); }
 .meldung {
   background: var(--text); color: #fff; padding: 0.7rem 1rem; border-radius: var(--radius);
-  font-size: 0.9rem; box-shadow: var(--schatten); max-width: 420px; animation: rein 0.18s ease-out;
+  font-size: 0.9rem; box-shadow: var(--schatten); max-width: min(420px, 100%); animation: rein 0.18s ease-out;
 }
 .meldung--fehler { background: var(--offen); }
 .meldung--ok { background: var(--bezahlt); }
+.meldung:has(.meldung__knopf) { display: flex; align-items: center; gap: 0.75rem; }
+.meldung > span { min-width: 0; overflow-wrap: anywhere; }
+.meldung__knopf {
+  flex: none; background: rgba(255,255,255,0.18); color: #fff; border: 1px solid rgba(255,255,255,0.55);
+  border-radius: 999px; padding: 0.3rem 0.8rem; font: inherit; font-weight: 600; cursor: pointer; min-height: 32px;
+}
+.meldung__knopf:hover { background: rgba(255,255,255,0.3); }
 @keyframes rein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .laden { padding: 3rem; text-align: center; color: var(--text-leise); }
 
@@ -658,6 +665,14 @@ details.mehr[open] > summary { border-bottom: 1px solid #edf0f4; }
   background: #b23a26; color: #fff; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.03em;
 }
 .dok__icon--bild { background: var(--tinte-hell); }
+.dok__icon--word { background: #2b579a; }
+.dok__icon--excel { background: #217346; }
+/* „In der Ablage“-Hinweis an Nachrichten, Antworten und Notizen */
+.abgelegt { display: inline-flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; font-size: 0.85rem; color: var(--text-leise); }
+.abgelegt::before { content: ""; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--bezahlt); flex: none; }
+.abgelegt button { font: inherit; background: none; border: none; padding: 0; color: var(--tinte, inherit); text-decoration: underline; cursor: pointer; overflow-wrap: anywhere; text-align: left; }
+.antwort__fuss { padding: 0 1.1rem 0.8rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.ki-tipp { font-size: 0.8rem; color: var(--text-leise); }
 .dateizeile { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; overflow-wrap: anywhere; }
 .dienst { display: flex; align-items: center; gap: 0.5rem; padding-right: 1.1rem; border-bottom: 1px solid #edf0f4; }
 .zeilen > .dienst:last-child { border-bottom: none; }

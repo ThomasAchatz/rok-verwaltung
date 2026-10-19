@@ -105,6 +105,13 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   neu anlegen. Unterordner mit „/“, z. B. `Versorger/Strom`. Die KI wählt nur aus dieser Liste.
 - **ZIP-Export** je Haus oder für alles (Einstellungen): echte Ordnerstruktur, saubere Dateinamen und
   `Inhaltsverzeichnis.csv`. Taugt auch als Sicherungskopie.
+- **Ablegen aus der App:** „In Ablage speichern“ bei Nachrichten (auf Wunsch mit Anhängen), bei erledigten
+  Antworten und bei Notizen. Mails und Notizen werden als PDF abgelegt (eigener kleiner PDF-Schreiber `js/pdf.js`),
+  Briefe aus den Vorlagen als Word-Datei. Die KI schlägt nur den Ordner vor (`ki` → `ablage_vorschlag`,
+  IBANs werden vorher entfernt); bei Briefen mit Bankverbindung sieht sie nur Titel und Empfänger.
+- **Gesendetes automatisch ablegen** (E-Mail, Brief, Auftrag, Mahnung/Nachweis): Name nach Schema, Ordner von der KI,
+  danach Meldung „Abgelegt in … – Ändern“. Schalter in den Einstellungen (`vermieter_profil.auto_ablage`).
+- **Upload vom Gerät:** Fotos, PDF, Word (.docx) und Excel (.xlsx); Word/Excel liest die KI nicht.
 - **Handwerker** bekommen nur Adresse, Wohnung, Name/Telefon der Mietpartei, Schadensbeschreibung und Fotos –
   keine Miete, keine Rückstände, keinen Kostenträger, keine Bankdaten.
 - **Selbsthilfe-Tipps** in Entwürfen sind als „Unser Tipp (unverbindlich)“ markiert, nie bei Strom, Gas,
@@ -172,6 +179,7 @@ Danach die Zeile für die Antwortvorlage aus `supabase/migrations/20261015020000
       Dokumentenablage mit KI-Vorschlag, Anhänge aus E-Mails, Handwerker-Auftrag, Wissen einsprechen,
       Mieterhöhung prüfen, Chat mit Vorschlägen
 - [x] Ablage: Ordner bearbeitbar (mit Unterordnern), ZIP-Export, Download unter sauberem Namen
+- [x] Ablage aus der App: Mails, Notizen und Gesendetes mit KI-Ordnervorschlag, Word/Excel hochladen
 - [ ] Später: Antwort als PDF-Anhang mailen, Import offener Posten aus immocloud (CSV)
 
 Die Mustertexte der Vorlagen sind ein Ausgangspunkt und vor dem echten Einsatz rechtlich prüfen zu lassen.

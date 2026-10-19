@@ -45,6 +45,93 @@ function signaturText() {
   return (p.email_signatur || "").trim() || [p.inhaber, p.firma].filter(Boolean).join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// Für die Ablage: was abgelegt wird (siehe ablage.js, „Aus der App ablegen“)
+// ---------------------------------------------------------------------------
+const isoTag = (wert) => new Date(wert || Date.now()).toLocaleDateString("sv-SE");
+function briefkopfZeilen() {
+  const p = zustand.profil || {};
+  return [p.firma, [p.strasse, [p.plz, p.ort].filter(Boolean).join(" ")].filter(Boolean).join(", "),
+    [p.telefon ? `Tel. ${p.telefon}` : "", p.email, p.web].filter(Boolean).join(" · ")].filter(Boolean);
+}
+function mietparteiText(mieter) {
+  if (!mieter) return "";
+  const w = wohnungVon(mieter.wohnung_id);
+  const o = w && objektVon(w.objekt_id);
+  return [mieterName(mieter), o?.bezeichnung, w?.bezeichnung].filter(Boolean).join(", ");
+}
+
+/** Eingegangene Nachricht (E-Mail, fotografierter Brief, Anruf-Notiz) */
+function eintragNachricht(n, mieter, o) {
+  const art = n.quelle === "notiz" ? "Notiz" : n.quelle === "brief" ? "Brief" : "E-Mail";
+  const von = [n.absender_name, n.absender_email ? `<${n.absender_email}>` : ""].filter(Boolean).join(" ") || "Unbekannt";
+  const anhaenge = (n.anhaenge || []).filter((a) => a.pfad);
+  const vomMieter = mieter && (norm(n.absender_email) === norm(mieter.email) || norm(n.absender_name) === norm(mieterName(mieter)));
+  return {
+    quelle: { nachricht_id: n.id },
+    richtung: n.quelle === "notiz" ? "notiz" : "eingang",
+    art, artFest: n.quelle !== "email",
+    datum: isoTag(n.eingang_am),
+    objektId: o?.id || null,
+    mieterId: mieter?.id || null,
+    gegenueber: n.absender_name || n.absender_email || "",
+    gegenueberKurz: vomMieter ? mieter.nachname : null,
+    kiText: { titel: n.betreff || "", text: n.text || "" },
+    zusammenfassung: n.ki_zusammenfassung || "",
+    anhaenge,
+    beschreibung: `${QUELLE[n.quelle] || "Nachricht"} wird als PDF abgelegt${anhaenge.length ? ", die Anhänge auf Wunsch als eigene Dateien" : ""}.`,
+    datei: ablage.pdfEintrag({
+      titel: n.betreff || "(ohne Betreff)",
+      angaben: [
+        ["Von", von], ["Eingang", datumZeit(n.eingang_am)], ["Art", QUELLE[n.quelle] || ""], ["Mietpartei", mietparteiText(mieter)],
+        ["Anhänge", (n.anhaenge || []).map((a) => a.name || "Datei").join(", ")],
+      ],
+      text: n.text || "(kein Text)",
+      abschnitte: n.ki_zusammenfassung ? [{ titel: "Kurzfassung (KI)", text: n.ki_zusammenfassung }] : [],
+    }),
+  };
+}
+
+/**
+ * Gesendete Antwort, Schreiben oder Auftrag.
+ * kanal: "email" | "email-programm" | "druck" | "brief"; bytes: Word-Datei beim Brief
+ */
+function eintragAntwort(a, { nachricht = null, mieter = null, objektId = null, kanal = "email", an = null, bytes = null, vorgangId = null }) {
+  const art = a.art === "auftrag" ? "Auftrag" : kanal === "brief" || a.status === "als_brief" ? "Brief" : "E-Mail";
+  const empfaenger = a.empfaenger_name || an || a.empfaenger_email || "";
+  const anMieter = mieter && a.art !== "auftrag" && !a.dienstleister_id && (!an || norm(an) === norm(mieter.email));
+  const voll = `${String(a.text || "").trim()}\n\nMit freundlichen Grüßen\n${signaturText()}`;
+  const p = zustand.profil || {};
+  const datei = bytes
+    ? async () => ({ blob: new Blob([bytes], { type: ablage.DOCX_TYP }), typ: ablage.DOCX_TYP })
+    : ablage.pdfEintrag({
+      kopf: briefkopfZeilen(),
+      titel: a.betreff || (art === "Auftrag" ? "Auftrag" : "Schreiben"),
+      angaben: [
+        ["Von", [p.firma || p.inhaber, zustand.ki?.absender ? `<${zustand.ki.absender}>` : ""].filter(Boolean).join(" ")],
+        ["An", [a.empfaenger_name, (an || a.empfaenger_email) ? `<${an || a.empfaenger_email}>` : ""].filter(Boolean).join(" ")],
+        [kanal === "druck" ? "Gedruckt" : "Gesendet", datumZeit(a.gesendet_am || new Date().toISOString())],
+        ["Weg", { email: "E-Mail aus der App", "email-programm": "eigenes E-Mail-Programm", druck: "Ausdruck", brief: "Brief" }[kanal] || ""],
+        ["Mietpartei", art === "Auftrag" || a.dienstleister_id ? "" : mietparteiText(mieter)],
+        ["Antwort auf", nachricht && art !== "Auftrag" ? `${nachricht.betreff || "(ohne Betreff)"} vom ${datumDE(nachricht.eingang_am)}` : ""],
+        ["Anhänge", (a.anhaenge || []).length ? `${a.anhaenge.length} Foto(s)` : ""],
+      ],
+      text: voll,
+    });
+  return {
+    quelle: { antwort_id: a.id, vorgang_id: vorgangId },
+    richtung: "ausgang",
+    art, artFest: true,
+    datum: isoTag(a.gesendet_am),
+    objektId, mieterId: art === "Auftrag" ? null : mieter?.id || null,
+    gegenueber: empfaenger,
+    gegenueberKurz: anMieter ? mieter.nachname : null,
+    kiText: { titel: a.betreff || "", text: a.text || "" },
+    beschreibung: bytes ? "Das Schreiben wird als Word-Datei abgelegt." : `${art === "Auftrag" ? "Der Auftrag" : "Die E-Mail"} wird als PDF abgelegt.`,
+    datei,
+  };
+}
+
 
 // ---------------------------------------------------------------------------
 // Was ist auf dem Server eingerichtet? (KI-Schlüssel, Versand)
@@ -132,7 +219,7 @@ export async function zeigePostfach() {
       <div><h1>Postfach</h1>
         <p>${pf?.adresse ? `Eingang: <strong class="umbruch">${esc(pf.adresse)}</strong>` : "Anfragen von Mietern, Ämtern und Interessenten"}</p></div>
       <div class="knopfreihe">
-        <label class="knopf">${ICON_KAMERA} Foto / PDF<input type="file" accept="image/*,application/pdf" id="foto" hidden></label>
+        <label class="knopf">${ICON_KAMERA} Foto / Datei<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="foto" hidden></label>
         <button type="button" class="knopf" id="notiz">Anruf erfassen</button>
         <a class="knopf knopf--primaer" href="#/schreiben">Neues Schreiben</a>
       </div>
@@ -231,7 +318,7 @@ async function notizErfassen() {
 // ---------------------------------------------------------------------------
 // Eine Nachricht mit Antwort
 // ---------------------------------------------------------------------------
-function antwortEintrag(a) {
+function antwortEintrag(a, abgelegt = []) {
   const art = a.art === "auftrag"
     ? `Auftrag an ${a.empfaenger_name || a.empfaenger_email || "Handwerker"}${a.status === "gesendet" ? " (E-Mail)" : " (gedruckt)"}`
     : a.status === "gesendet" ? `E-Mail an ${a.empfaenger_email || "?"}` : "Als Brief erstellt";
@@ -240,6 +327,8 @@ function antwortEintrag(a) {
     <details class="antwort">
       <summary><span class="antwort__art">${esc(art)}</span><span class="leise">${esc(datumZeit(wann))}</span></summary>
       <div class="antwort__text"><strong>${esc(a.betreff)}</strong>\n\n${esc(a.text)}</div>
+      <div class="antwort__fuss">${abgelegt.length ? ablage.abgelegtHtml(abgelegt)
+        : `<button type="button" class="knopf knopf--klein" data-antwort-ablage="${esc(a.id)}">In Ablage speichern</button>`}</div>
     </details>`;
 }
 
@@ -297,6 +386,11 @@ export async function zeigeNachricht(id) {
     aktualisiereZaehler();
   }
   const mieter = n.mieter_id ? await db.ladeMieter(n.mieter_id).catch(() => null) : null;
+  const [abgelegtN, abgelegtA] = await Promise.all([
+    db.ladeAbgelegte("nachricht_id", [id]).catch(() => []),
+    db.ladeAbgelegte("antwort_id", antworten.filter((a) => a.status !== "entwurf").map((a) => a.id)).catch(() => []),
+  ]);
+  const abgelegtVon = (aid) => abgelegtA.filter((d) => d.antwort_id === aid);
   const entwurf = antworten.find((a) => a.status === "entwurf" && a.art !== "auftrag") || null;
   const auftraege = antworten.filter((a) => a.status === "entwurf" && a.art === "auftrag");
   const fertige = antworten.filter((a) => a.status !== "entwurf");
@@ -338,7 +432,7 @@ export async function zeigeNachricht(id) {
         </section>
         <div id="entwurf"></div>
         ${auftraege.map((a) => `<div data-auftrag="${esc(a.id)}"></div>`).join("")}
-        ${fertige.length ? `<section class="flaeche"><div class="flaeche__kopf"><h2>Bisher erledigt</h2></div>${fertige.map(antwortEintrag).join("")}</section>` : ""}
+        ${fertige.length ? `<section class="flaeche"><div class="flaeche__kopf"><h2>Bisher erledigt</h2></div>${fertige.map((a) => antwortEintrag(a, abgelegtVon(a.id))).join("")}</section>` : ""}
       </div>
       <div class="stapel">
         ${fristHtml(n)}
@@ -359,6 +453,8 @@ export async function zeigeNachricht(id) {
           <div class="flaeche__inhalt knopfreihe knopfreihe--senkrecht">
             <button type="button" class="knopf" id="handwerker">Handwerker beauftragen</button>
             <button type="button" class="knopf" id="wiedervorlage">Wiedervorlage / Notiz</button>
+            <button type="button" class="knopf" id="in-ablage">${abgelegtN.length ? "Nochmals ablegen" : "In Ablage speichern"}</button>
+            ${abgelegtN.length ? ablage.abgelegtHtml(abgelegtN) : ""}
             ${erledigt
               ? `<button type="button" class="knopf" id="wiederoffen">Wieder öffnen</button>`
               : `<button type="button" class="knopf" id="erledigt">Erledigt, keine Antwort nötig</button>`}
@@ -368,9 +464,9 @@ export async function zeigeNachricht(id) {
     </div>`;
 
   const neu = () => zeigeNachricht(id);
-  baueEntwurf($("#entwurf"), { nachricht: n, mieter, antwort: entwurf, anweisung: vorbelegt, nachEnde: neu });
+  baueEntwurf($("#entwurf"), { nachricht: n, mieter, antwort: entwurf, anweisung: vorbelegt, nachEnde: neu, objektId: () => o?.id || null });
   for (const a of auftraege) {
-    baueEntwurf($(`[data-auftrag="${a.id}"]`), { nachricht: n, mieter, antwort: a, auftrag: true, hinweise: hinweisSpeicher.get(a.id), nachEnde: neu });
+    baueEntwurf($(`[data-auftrag="${a.id}"]`), { nachricht: n, mieter, antwort: a, auftrag: true, hinweise: hinweisSpeicher.get(a.id), nachEnde: neu, objektId: () => o?.id || null });
     hinweisSpeicher.delete(a.id);
   }
 
@@ -402,6 +498,14 @@ export async function zeigeNachricht(id) {
     }
   });
   $("#handwerker").addEventListener("click", () => auftragStarten(n, mieter, bilder, o));
+  $("#in-ablage").addEventListener("click", () => ablage.inAblageDialog(eintragNachricht(n, mieter, o), { nachher: neu, schon: abgelegtN }));
+  ablage.verbindeAbgelegt(inhalt(), [...abgelegtN, ...abgelegtA], { nachher: neu });
+  for (const b of $$("[data-antwort-ablage]")) {
+    b.addEventListener("click", () => {
+      const a = fertige.find((x) => x.id === b.dataset.antwortAblage);
+      ablage.inAblageDialog(eintragAntwort(a, { nachricht: n, mieter, objektId: o?.id || null, kanal: a.status === "als_brief" ? (a.art === "auftrag" ? "druck" : "brief") : "email", an: a.empfaenger_email }), { nachher: neu });
+    });
+  }
   $("#wiedervorlage").addEventListener("click", () => aufgabeDialog({
     titel: `Nachfassen: ${n.betreff || "Nachricht"}`.slice(0, 200), mieter_id: n.mieter_id, objekt_id: o?.id || null,
     nachricht_id: n.id, faellig_am: fristVon(n) || "", vorlauf_tage: 3,
@@ -625,6 +729,19 @@ function baueEntwurf(el, k) {
     return false;
   }
 
+  // Nach dem Versand: automatisch in die Ablage (abschaltbar in den Einstellungen)
+  function hausId() {
+    const w = k.mieter && wohnungVon(k.mieter.wohnung_id);
+    return k.objektId?.() || w?.objekt_id || k.dienstleister?.objekt_id || null;
+  }
+  function ablegenNachVersand(kanal, an, extra = {}) {
+    const a = { ...antwort, betreff: werte().betreff, text: werte().text, gesendet_am: new Date().toISOString(), empfaenger_email: an || antwort.empfaenger_email };
+    return ablage.automatischAblegen(
+      eintragAntwort(a, { nachricht: k.nachricht, mieter: k.mieter, objektId: hausId(), kanal, an, ...extra }),
+      { nachher: k.nachEnde, meldung: extra.meldung !== false },
+    );
+  }
+
   async function alsGesendetMarkieren(an, kanal) {
     await db.speichereAntwort(antwort.id, { status: kanal === "druck" ? "als_brief" : "gesendet", gesendet_am: new Date().toISOString(), empfaenger_email: an || antwort.empfaenger_email || null });
     if (k.nachricht && !k.auftrag) await db.aendereNachricht(k.nachricht.id, { status: "beantwortet" });
@@ -683,6 +800,7 @@ function baueEntwurf(el, k) {
         try {
           await alsGesendetMarkieren(null, "druck");
           melde("Auftrag vermerkt.", "ok");
+          ablegenNachVersand("druck", null);
           k.nachEnde();
         } catch (err) { melde(err.message, "fehler"); }
       }
@@ -761,7 +879,11 @@ function baueEntwurf(el, k) {
             return null;
           }
         });
-        if (erfolg) { melde(`E-Mail an ${v.an} gesendet.`, "ok"); return k.nachEnde(); }
+        if (erfolg) {
+          melde(`E-Mail an ${v.an} gesendet.`, "ok");
+          ablegenNachVersand("email", v.an);
+          return k.nachEnde();
+        }
         if (erfolg === null) return;
       }
 
@@ -776,6 +898,7 @@ function baueEntwurf(el, k) {
         try {
           await alsGesendetMarkieren(v.an, "email-programm");
           melde("Als beantwortet markiert.", "ok");
+          ablegenNachVersand("email-programm", v.an);
           k.nachEnde();
         } catch (err) { melde(err.message, "fehler"); }
       }
@@ -813,6 +936,7 @@ function baueEntwurf(el, k) {
       if (!ergebnis) return;
       const vorgangId = crypto.randomUUID();
       const anrede = v.text.split(/\n/)[0] || "Guten Tag,";
+      let ablageLaeuft = null;
       const gespeichert = await zeigeDokument({
         titel: v.betreff || "Schreiben",
         untertitel: `An ${empf.name}`,
@@ -834,11 +958,17 @@ function baueEntwurf(el, k) {
           if (k.nachricht) await db.aendereNachricht(k.nachricht.id, { status: "beantwortet" });
           const h = $("#dialog [data-v=hinweis]");
           if (h) h.textContent = k.mieter ? "In der Akte gespeichert." : "Vermerkt.";
+          ablageLaeuft = ablegenNachVersand("brief", null, { bytes, vorgangId: k.mieter ? vorgangId : null, meldung: false });
+          ablageLaeuft.then((doc) => {
+            const h2 = $("#dialog [data-v=hinweis]");
+            if (doc && h2) h2.textContent += ` Abgelegt in „${ablage.ordnerAnzeige(doc.ordner)}“.`;
+          });
         },
       });
       if (gespeichert) {
         melde("Brief erstellt und vermerkt.", "ok");
         k.nachEnde();
+        if (ablageLaeuft) ablageLaeuft.then((doc) => ablage.zeigeAblageMeldung(doc, { nachher: k.nachEnde }));
       }
     },
   };
@@ -1045,6 +1175,8 @@ export async function zeigeEinstellungen() {
         <div class="flaeche__kopf"><h2>Dokumentenablage</h2></div>
         <div class="flaeche__inhalt">
           <p>Ordner für Rechnungen, Verträge &amp; Co. (für alle Häuser gleich). Die KI legt nur in diese Ordner ab.</p>
+          <label class="checkfeld"><input type="checkbox" id="auto-ablage" ${p.auto_ablage === false ? "" : "checked"}>
+            Gesendetes automatisch ablegen (E-Mails, Briefe, Aufträge – Name nach Schema, Ordner schlägt die KI vor)</label>
           <div class="knopfreihe">
             <button type="button" class="knopf" id="ordner-bearbeiten">Ordner bearbeiten</button>
             <button type="button" class="knopf" id="zip-alle">Alle Dokumente als ZIP (Sicherung)</button>
@@ -1099,6 +1231,15 @@ export async function zeigeEinstellungen() {
   };
   $("#ordner-bearbeiten").addEventListener("click", () => ablage.ordnerBearbeiten());
   $("#zip-alle").addEventListener("click", () => ablage.zipExport({}));
+  $("#auto-ablage").addEventListener("change", async (e) => {
+    try {
+      zustand.profil = await db.speichereProfil({ auto_ablage: e.target.checked });
+      melde(e.target.checked ? "Gesendetes wird automatisch abgelegt." : "Automatisches Ablegen ist aus.", "ok");
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      melde(err.message, "fehler");
+    }
+  });
   speichernMit("#profilformular", ["firma", "inhaber", "strasse", "plz", "ort", "telefon", "email", "web"], "Briefkopf gespeichert.");
   speichernMit("#antwortformular", ["ki_tonfall", "email_signatur", "antwort_email"], "Gespeichert.");
 

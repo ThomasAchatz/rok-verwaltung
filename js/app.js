@@ -470,6 +470,7 @@ async function erstelleBrief(typ, knopf) {
     ? `Nachweis an ${a.kostentraeger.name} (${monatsspanne(posten)})`
     : `${TYP_NAME[typ]} (${monatsspanne(posten)})`;
   const vorgangId = crypto.randomUUID();
+  let ablageLaeuft = null;
 
   const gespeichert = await zeigeDokument({
     titel,
@@ -491,11 +492,29 @@ async function erstelleBrief(typ, knopf) {
       });
       const h = $("#dialog [data-v=hinweis]");
       if (h) h.textContent = "Im Verlauf gespeichert.";
+      // Zusätzlich in die Ablage (Word-Datei); an die KI gehen nur Titel und Empfänger, kein Inhalt (IBAN!)
+      const jc = typ === "nachweis_jobcenter";
+      ablageLaeuft = ablage.automatischAblegen({
+        quelle: { vorgang_id: vorgangId },
+        richtung: "ausgang",
+        art: typ.startsWith("mahnung") ? "Mahnung" : "Brief", artFest: true,
+        objektId: a.objekt?.id || null, mieterId: a.mieter.id,
+        gegenueber: jc ? a.kostentraeger?.name : mieterName(a.mieter),
+        gegenueberKurz: jc ? null : a.mieter.nachname,
+        kiText: { titel, text: `${TYP_NAME[typ]} an ${jc ? a.kostentraeger?.name : "die Mietpartei"} ${mieterName(a.mieter)}` },
+        zusammenfassung: `${titel}, ${posten.length} Posten über ${daten.summe}`,
+        datei: async () => ({ blob: new Blob([bytes], { type: ablage.DOCX_TYP }), typ: ablage.DOCX_TYP }),
+      }, { meldung: false });
+      ablageLaeuft.then((doc) => {
+        const h2 = $("#dialog [data-v=hinweis]");
+        if (doc && h2) h2.textContent += ` Abgelegt in „${ablage.ordnerAnzeige(doc.ordner)}“.`;
+      });
     },
   });
   if (gespeichert) {
     melde(`${TYP_NAME[typ]} im Verlauf gespeichert.`, "ok");
     await zeigeAkte(a.mieter.id);
+    if (ablageLaeuft) ablageLaeuft.then((doc) => ablage.zeigeAblageMeldung(doc, { nachher: () => zeigeAkte(a.mieter.id) }));
   }
 }
 

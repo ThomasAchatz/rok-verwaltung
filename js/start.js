@@ -2,7 +2,7 @@
 // Grundsatz: Die KI schlägt nur vor (Antwort, Datum). Gespeichert wird erst per Klick.
 import * as db from "./daten.js";
 import { euro, datumDE, mieterName } from "./dokumente.js";
-import { $, $$, esc, melde, dialogFormular, frage, heuteISO, zustand, objektVon } from "./helfer.js";
+import { $, $$, esc, melde, dialogFormular, frage, heuteISO, zustand, objektVon, wohnungVon } from "./helfer.js";
 import {
   ICON_KI, ICON_KAMERA, kurz, norm, geheZu, mieterListe, mieterOptionen, mikroKnopf, verbindeDiktat, wartehinweis,
 } from "./ui.js";
@@ -196,7 +196,7 @@ export async function zeigeStart() {
       <div><h1>Übersicht</h1><p>${esc(zustand.profil?.firma || "")}, ${datumDE(new Date())}</p></div>
       <div class="knopfreihe">
         <button type="button" class="knopf knopf--primaer" id="notiz-neu">${ICON_PLUS} Notiz</button>
-        <label class="knopf">${ICON_KAMERA} Foto / PDF<input type="file" accept="image/*,application/pdf" id="erfassen" hidden></label>
+        <label class="knopf">${ICON_KAMERA} Foto / Datei<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="erfassen" hidden></label>
       </div>
     </div>
     <div class="lage lage--kompakt">
@@ -309,7 +309,7 @@ export async function zeigeObjekt(id) {
         <p>${allgemein ? "Unterlagen, Wissen und Notizen, die zu keinem bestimmten Haus gehören." : esc([o.strasse, [o.plz, o.ort].filter(Boolean).join(" ")].filter(Boolean).join(", "))}</p></div>
       <div class="knopfreihe">
         <button type="button" class="knopf knopf--primaer" id="notiz-neu">${ICON_PLUS} Notiz</button>
-        <label class="knopf">${ICON_KAMERA} Dokument ablegen<input type="file" accept="image/*,application/pdf" id="erfassen" hidden></label>
+        <label class="knopf">${ICON_KAMERA} Dokument ablegen<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="erfassen" hidden></label>
         <button type="button" class="knopf" id="wissen-sprechen">${ICON_KI} Wissen einsprechen</button>
       </div>
     </div>
@@ -386,8 +386,10 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
   const vorhanden = !!a.id;
   const kiDa = !!zustand.ki?.ki;
   const faellig = vorschlag?.wiedervorlage || a.faellig_am || "";
+  const abgelegt = vorhanden ? await db.ladeAbgelegte("aufgabe_id", [a.id]).catch(() => []) : [];
   const daten = await dialogFormular(`
     <h2>${vorhanden ? "Notiz" : "Neue Notiz"}</h2>
+    ${abgelegt.length ? `<p>${ablage.abgelegtHtml(abgelegt)}</p>` : ""}
     <label class="feld"><span>Worum geht es?</span>
       <span class="diktat"><input name="titel" required maxlength="200" value="${esc(a.titel || "")}" placeholder="z. B. Check Möglichkeit Mieterhöhung Huber" autocomplete="off">${mikroKnopf()}</span></label>
     <label class="feld"><span>Notiz (optional)</span>
@@ -410,12 +412,21 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
       ${vorhanden ? `<button class="knopf knopf--gefahr knopf--links" value="loeschen" formnovalidate>Löschen</button>` : ""}
       <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
       ${kiDa ? `<button class="knopf knopf--ki" value="pruefen">${ICON_KI} Mit KI prüfen</button>` : ""}
+      <button class="knopf" value="ablage" title="Notiz speichern und als PDF in die Ablage legen">In Ablage</button>
       ${vorhanden && a.status !== "erledigt" ? `<button class="knopf" value="erledigt">Erledigt</button>` : ""}
       <button class="knopf knopf--primaer" value="ok">Speichern</button>
     </div>`, {
     breit: true,
     vorbereiten: (form) => {
       verbindeDiktat(form);
+      // „In der Ablage“ öffnet das Dokument (der Notiz-Dialog schließt sich dabei)
+      for (const b of $$("[data-abgelegt]", form)) {
+        b.addEventListener("click", () => {
+          const d = abgelegt.find((x) => x.id === b.dataset.abgelegt);
+          $("#dialog").close();
+          setTimeout(() => ablage.oeffneDokument(d, { nachher }), 0);
+        });
+      }
       // Mietpartei anhand des Nachnamens im Titel vorschlagen, solange keine gewählt ist
       let vonHand = !!a.mieter_id;
       form.mieter_id.addEventListener("change", () => { vonHand = true; });
@@ -451,11 +462,48 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
     if (aktion === "erledigt") Object.assign(felder, { status: "erledigt", erledigt_am: new Date().toISOString() });
     const gespeichert = await db.speichereAufgabe(a.id, felder);
     if (aktion === "pruefen") return pruefeMitKi(gespeichert, nachher);
+    if (aktion === "ablage") {
+      nachher();
+      return ablage.inAblageDialog(eintragNotiz(gespeichert), { nachher, schon: abgelegt });
+    }
     melde(aktion === "erledigt" ? "Erledigt." : "Notiz gespeichert.", "ok");
     nachher();
   } catch (err) {
     melde(err.message, "fehler");
   }
+}
+
+// Notiz als PDF für die Ablage
+function eintragNotiz(a) {
+  const m = a.mieter_id ? zustand.mieterKurz?.find?.((x) => x.id === a.mieter_id) : null;
+  const hausId = a.objekt_id || (m ? wohnungVon(m.wohnung_id)?.objekt_id : null) || null;
+  const haus = hausId ? objektVon(hausId) : null;
+  return {
+    quelle: { aufgabe_id: a.id },
+    richtung: "notiz",
+    art: "Notiz", artFest: true,
+    datum: heuteISO(),
+    objektId: hausId,
+    mieterId: a.mieter_id || null,
+    gegenueber: m ? mieterName(m) : haus?.bezeichnung || "",
+    gegenueberKurz: m?.nachname || null,
+    kiText: { titel: a.titel, text: [a.notiz, a.antwort].filter(Boolean).join("\n\n") },
+    zusammenfassung: a.titel,
+    beschreibung: "Die Notiz wird als PDF abgelegt (mit Einschätzung der KI, falls vorhanden).",
+    datei: async () => {
+      const mieterL = await mieterListe().catch(() => []);
+      const mp = mieterL.find((x) => x.id === a.mieter_id);
+      return ablage.pdfEintrag({
+        titel: a.titel,
+        angaben: [
+          ["Erstellt", datumDE(a.erstellt_am || new Date())], ["Wiedervorlage", a.faellig_am ? datumDE(a.faellig_am) : ""],
+          ["Status", a.status === "erledigt" ? "erledigt" : "offen"], ["Mietpartei", mp ? mieterName(mp) : ""], ["Haus", haus?.bezeichnung || ""],
+        ],
+        text: a.notiz || "",
+        abschnitte: a.antwort ? [{ titel: "Einschätzung der KI (keine Rechtsberatung)", text: a.antwort }] : [],
+      })();
+    },
+  };
 }
 
 // Notiz von der KI prüfen lassen. Die Antwort wird gespeichert; das Datum nur als Vorschlag gezeigt.

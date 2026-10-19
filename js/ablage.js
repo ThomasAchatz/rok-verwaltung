@@ -6,11 +6,19 @@ import { $, $$, esc, melde, dialogFormular, frage, heuteISO, dateiTeil, herunter
 import {
   ICON_KI, istEmail, norm, geheZu, mieterListe, mieterOptionen, mikroKnopf, verbindeDiktat, wartehinweis, verkleinere, alsBase64,
 } from "./ui.js";
+import { textPdf } from "./pdf.js";
 
 export const DOKUMENT_ORDNER = [
   "Rechnungen", "Verträge", "Versorger", "Versicherungen", "Behörden & Steuern", "Handwerker & Angebote", "Mietverhältnisse", "Sonstiges",
 ];
-export const DOKUMENT_ARTEN = ["Rechnung", "Vertrag", "Bescheid", "Abrechnung", "Angebot", "Mahnung", "Brief", "Protokoll", "Notiz", "Sonstiges"];
+export const DOKUMENT_ARTEN = ["Rechnung", "Vertrag", "Bescheid", "Abrechnung", "Angebot", "Mahnung", "Brief", "E-Mail", "Auftrag", "Protokoll", "Notiz", "Sonstiges"];
+export const DOCX_TYP = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export const XLSX_TYP = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const ENDUNG = { "application/pdf": "pdf", "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg", [DOCX_TYP]: "docx", [XLSX_TYP]: "xlsx" };
+const anzeigbar = (typ) => typ === "application/pdf" || /^image\//.test(typ || "");
+/** Kennzeichen für die Liste: [Text, CSS-Klasse] */
+export const symbolVon = (typ) =>
+  typ === "application/pdf" ? ["PDF", ""] : typ === DOCX_TYP ? ["Word", "dok__icon--word"] : typ === XLSX_TYP ? ["Excel", "dok__icon--excel"] : ["Foto", "dok__icon--bild"];
 export const WISSEN_ORDNER = [
   "Abläufe & Hausordnung", "Heizung", "Wasser & Sanitär", "Strom", "Schlüssel & Schließanlage", "Zähler", "Dach & Fassade",
   "Dienstleister & Verträge", "Sonstiges",
@@ -40,7 +48,7 @@ export async function ordnerListe(neu = false) {
   }
   return zustand.dokOrdner;
 }
-const endungVon = (d) => (d.typ === "application/pdf" ? "pdf" : d.typ === "image/png" ? "png" : "jpg");
+const endungVon = (d) => ENDUNG[d.typ] || "jpg";
 // Dateiname zum Speichern: Name aus der Ablage, nur Zeichen, die überall erlaubt sind
 const sichererDateiname = (s) => String(s || "Dokument").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 150) || "Dokument";
 const hausOptionen = (gewaehlt, leer = "Allgemein (kein bestimmtes Haus)") =>
@@ -57,6 +65,22 @@ export function dokumentTitel({ datum, objekt, absender, art }) {
     .filter(Boolean).join("_");
 }
 
+// Name nach dem Schema Datum_Haus_Absender_Art, bis Robert ihn selbst ändert
+function verbindeNamen(bereich) {
+  const titel = $("[name=titel]", bereich);
+  let vonHand = false;
+  const setze = () => {
+    if (vonHand) return;
+    titel.value = dokumentTitel({
+      datum: $("[name=datum]", bereich).value, objekt: objektVon($("[name=objekt_id]", bereich).value),
+      absender: $("[name=absender]", bereich).value, art: $("[name=art]", bereich).value,
+    });
+  };
+  titel.addEventListener("input", () => { vonHand = true; });
+  for (const n of ["datum", "objekt_id", "absender", "art"]) $(`[name=${n}]`, bereich).addEventListener(n === "absender" ? "input" : "change", setze);
+  setze();
+}
+
 async function istPdfDatei(datei) {
   const kopf = new Uint8Array(await datei.slice(0, 5).arrayBuffer());
   return String.fromCharCode(...kopf) === "%PDF-";
@@ -70,9 +94,20 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
   if (!datei) return;
   if (datei.size > MAX_DATEI) return melde("Die Datei ist zu groß (höchstens 15 MB).", "fehler");
   const pdf = datei.type === "application/pdf" || /\.pdf$/i.test(datei.name || "");
+  // Word/Excel vom Gerät: ohne KI, nur in die Ablage
+  const office = /\.docx$/i.test(datei.name || "") || datei.type === DOCX_TYP ? DOCX_TYP
+    : /\.xlsx$/i.test(datei.name || "") || datei.type === XLSX_TYP ? XLSX_TYP : null;
+  if (office) nurAblage = true;
+  if (!pdf && !office && !/^image\//.test(datei.type || "") && !/\.(jpe?g|png|webp|heic)$/i.test(datei.name || "")) {
+    return melde("Dieses Dateiformat geht nicht. Möglich sind Fotos, PDF, Word (.docx) und Excel (.xlsx).", "fehler");
+  }
   let blob, base64 = null, vorschau = null;
   try {
-    if (pdf) {
+    if (office) {
+      const kopf = new Uint8Array(await datei.slice(0, 2).arrayBuffer());
+      if (kopf[0] !== 0x50 || kopf[1] !== 0x4b) return melde("Die Datei ist beschädigt oder kein echtes Word/Excel-Dokument.", "fehler");
+      blob = new Blob([datei], { type: office });
+    } else if (pdf) {
       if (!(await istPdfDatei(datei))) return melde("Das ist keine gültige PDF-Datei.", "fehler");
       blob = new Blob([datei], { type: "application/pdf" });
       if (blob.size <= MAX_PDF_KI) base64 = await alsBase64(blob);
@@ -105,15 +140,16 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
   const hausStart = objektId !== undefined ? objektId : erkannt.objekt_id || null;
   const datumStart = erkannt.datum || heuteISO();
   const absenderStart = erkannt.absender_kurz || erkannt.absender_name || "";
+  const [symbol, symbolKlasse] = symbolVon(office || (pdf ? "application/pdf" : "image/jpeg"));
   const artStart = erkannt.art || "Sonstiges";
   const name = norm(erkannt.absender_name);
   const mieterVermutet = erkannt.mieter_id ||
     (name ? mieterL.find((m) => name.includes(norm(m.nachname)) && (!m.vorname || name.includes(norm(m.vorname))))?.id : null) || null;
 
   const daten = await dialogFormular(`
-    <h2>${pdf ? "PDF" : "Foto"} erfassen</h2>
-    ${vorschau ? `<img class="fotovorschau" src="${vorschau}" alt="Vorschau">` : `<p class="dateizeile"><span class="dok__icon">PDF</span> ${esc(datei.name || "Dokument.pdf")} <span class="leise">(${(blob.size / 1048576).toFixed(1).replace(".", ",")} MB)</span></p>`}
-    <p class="leise">${erkannt.betreff ? "Von der KI gelesen. Bitte kurz prüfen." : zustand.ki?.ki ? "Bitte die Angaben eintragen." : "Die KI ist noch nicht eingerichtet. Bitte die Angaben selbst eintragen."}</p>
+    <h2>${office ? "Datei ablegen" : pdf ? "PDF erfassen" : "Foto erfassen"}</h2>
+    ${vorschau ? `<img class="fotovorschau" src="${vorschau}" alt="Vorschau">` : `<p class="dateizeile"><span class="dok__icon ${symbolKlasse}">${symbol}</span> ${esc(datei.name || "Dokument")} <span class="leise">(${(blob.size / 1048576).toFixed(1).replace(".", ",")} MB)</span></p>`}
+    <p class="leise">${erkannt.betreff ? "Von der KI gelesen. Bitte kurz prüfen." : office ? "Word- und Excel-Dateien liest die KI nicht. Bitte die Angaben eintragen." : zustand.ki?.ki ? "Bitte die Angaben eintragen." : "Die KI ist noch nicht eingerichtet. Bitte die Angaben selbst eintragen."}</p>
     ${nurAblage ? "" : `
     <div class="wahl" role="radiogroup" aria-label="Wohin damit?">
       <label><input type="radio" name="ziel" value="anfrage" ${ziel === "anfrage" ? "checked" : ""}> <span><strong>Ins Postfach</strong><br><span class="leise">Jemand will etwas, braucht eine Antwort</span></span></label>
@@ -154,27 +190,14 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
       };
       for (const r of $$("[name=ziel]", form)) r.addEventListener("change", zeige);
       zeige();
-      // Name nach dem Schema Datum_Haus_Absender_Art, bis Robert ihn selbst ändert
-      const dok = $("fieldset[data-ziel=dokument]", form);
-      const titel = $("[name=titel]", dok);
-      let vonHand = false;
-      const setze = () => {
-        if (vonHand) return;
-        titel.value = dokumentTitel({
-          datum: $("[name=datum]", dok).value, objekt: objektVon($("[name=objekt_id]", dok).value),
-          absender: $("[name=absender]", dok).value, art: $("[name=art]", dok).value,
-        });
-      };
-      titel.addEventListener("input", () => { vonHand = true; });
-      for (const n of ["datum", "objekt_id", "absender", "art"]) $(`[name=${n}]`, dok).addEventListener(n === "absender" ? "input" : "change", setze);
-      setze();
+      verbindeNamen($("fieldset[data-ziel=dokument]", form));
     },
   });
   if (vorschau) setTimeout(() => URL.revokeObjectURL(vorschau), 5000);
   if (!daten) return;
 
-  const typ = pdf ? "application/pdf" : "image/jpeg";
-  const endung = pdf ? "pdf" : "jpg";
+  const typ = office || (pdf ? "application/pdf" : "image/jpeg");
+  const endung = ENDUNG[typ];
   if (nurAblage || daten.get("ziel") === "dokument") {
     const objekt_id = daten.get("objekt_id") || null;
     try {
@@ -249,7 +272,7 @@ export function dokumentListe(liste, { leer = "Keine Dokumente." } = {}) {
     <div class="ordner"><h3 class="ordner__titel">${esc(ordnerAnzeige(ordner))} <span class="leise">${l.length}</span></h3>
       ${l.map((d) => `
         <button type="button" class="dok" data-dok="${esc(d.id)}">
-          <span class="dok__icon ${d.typ === "application/pdf" ? "" : "dok__icon--bild"}">${d.typ === "application/pdf" ? "PDF" : "Foto"}</span>
+          <span class="dok__icon ${symbolVon(d.typ)[1]}">${symbolVon(d.typ)[0]}</span>
           <span class="dok__text"><span class="dok__titel">${esc(d.titel).replace(/_/g, "_<wbr>")}</span>
             <span class="leise">${esc([d.datum ? datumDE(d.datum) : "", d.art, d.zusammenfassung].filter(Boolean).join(" · "))}</span></span>
         </button>`).join("")}
@@ -289,16 +312,18 @@ export function verbindeListen(root, { dokumente = [], wissen = [], dienstleiste
 // ---------------------------------------------------------------------------
 // Ein Dokument ansehen und bearbeiten
 // ---------------------------------------------------------------------------
-async function oeffneDokument(d, { nachher }) {
+export async function oeffneDokument(d, { nachher = () => {} } = {}) {
   if (!d) return;
   const [mieterL, ordnerL] = await Promise.all([mieterListe(), ordnerListe()]);
   const pdf = d.typ === "application/pdf";
+  const bild = /^image\//.test(d.typ || "");
   const daten = await dialogFormular(`
     <h2 class="umbruch">${esc(d.titel)}</h2>
-    ${pdf ? "" : `<a data-ansehen target="_blank" rel="noopener"><img class="fotovorschau" alt="Dokument"></a>`}
+    ${bild ? `<a data-ansehen target="_blank" rel="noopener"><img class="fotovorschau" alt="Dokument"></a>` : ""}
     ${d.zusammenfassung ? `<p>${esc(d.zusammenfassung)}</p>` : ""}
+    <p class="leise">${esc(ordnerAnzeige(d.ordner))}${d.objekt_id ? ` · ${esc(objektVon(d.objekt_id)?.bezeichnung || "")}` : " · Allgemein"}</p>
     <p class="knopfreihe">
-      <a class="knopf knopf--klein" data-ansehen target="_blank" rel="noopener">${pdf ? "PDF öffnen" : "In voller Größe"}</a>
+      ${anzeigbar(d.typ) ? `<a class="knopf knopf--klein" data-ansehen target="_blank" rel="noopener">${pdf ? "PDF öffnen" : "In voller Größe"}</a>` : ""}
       <a class="knopf knopf--klein" data-laden>Herunterladen</a>
     </p>
     <details class="ausklapp ausklapp--innen"><summary>Angaben ändern</summary>
@@ -659,4 +684,208 @@ export async function zipExport({ objektId } = {}) {
   } finally {
     await warte.ende();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Aus der App ablegen: E-Mails, Notizen und Gesendetes landen als Dokument in der Ablage
+// Ein Eintrag beschreibt, was abgelegt wird:
+// {
+//   quelle: { nachricht_id?, antwort_id?, aufgabe_id?, vorgang_id? },  Verknüpfung (zeigt „In der Ablage“)
+//   richtung: "eingang" | "ausgang" | "notiz",
+//   art: "E-Mail" | "Brief" | "Auftrag" | "Notiz" …,  artFest: true = Art nicht von der KI ändern lassen
+//   datum, objektId, mieterId,
+//   gegenueber: voller Name (Absender bzw. Empfänger), gegenueberKurz: fester Kurzname (z. B. Nachname)
+//   kiText: { titel, text },          was die KI für den Ordner-Vorschlag sieht (ohne IBAN, das prüft auch der Server)
+//   zusammenfassung,
+//   datei: async () => ({ blob, typ }), die Datei (PDF aus Text oder das Word-Schreiben)
+//   anhaenge: [{ name, typ, pfad }],  Anhänge im Bucket „eingang“ (nur beim Ablegen von Hand wählbar)
+//   beschreibung: kurzer Text im Dialog, z. B. „Die E-Mail wird als PDF abgelegt.“
+// }
+// ---------------------------------------------------------------------------
+function ordnerOhneKi(liste, e) {
+  const finde = (re) => liste.find((o) => re.test(o));
+  if (e.art === "Auftrag") return finde(/handwerk|auftr/i) || "Sonstiges";
+  if (e.mieterId) return finde(/mietverh|mieter/i) || "Sonstiges";
+  return "Sonstiges";
+}
+
+async function vorschlagFuer(e) {
+  const liste = await ordnerListe();
+  const ersatz = { ordner: ordnerOhneKi(liste, e), art: e.art || "Sonstiges", gegenueber_kurz: null, zusammenfassung: "", vonKi: false };
+  if (!zustand.ki?.ki) return ersatz;
+  try {
+    const r = await db.funktion("ki", {
+      aktion: "ablage_vorschlag", titel: e.kiText?.titel || "", text: e.kiText?.text || "", richtung: e.richtung, art: e.art || null,
+      gegenueber: e.gegenueber || null, mieter_id: e.mieterId || null, objekt_id: e.objektId || null,
+    });
+    return {
+      ordner: liste.includes(r.ordner) ? r.ordner : ersatz.ordner,
+      art: e.artFest ? e.art : DOKUMENT_ARTEN.includes(r.art) ? r.art : ersatz.art,
+      gegenueber_kurz: r.gegenueber_kurz || null,
+      zusammenfassung: r.zusammenfassung || "",
+      vonKi: true,
+    };
+  } catch {
+    return ersatz;
+  }
+}
+
+const kurzName = (e, v) => String(e.gegenueberKurz || v.gegenueber_kurz || e.gegenueber || "").trim().slice(0, 40);
+
+async function legeEintragAb(e, f) {
+  const { blob, typ } = await e.datei();
+  const objekt_id = f.objekt_id || null;
+  return db.legeDokumentAb({
+    objekt_id,
+    mieter_id: f.mieter_id || null,
+    nachricht_id: e.quelle?.nachricht_id || null,
+    antwort_id: e.quelle?.antwort_id || null,
+    aufgabe_id: e.quelle?.aufgabe_id || null,
+    vorgang_id: e.quelle?.vorgang_id || null,
+    ordner: f.ordner,
+    art: f.art || null,
+    absender: f.absender || null,
+    datum: f.datum || null,
+    titel: f.titel,
+    zusammenfassung: f.zusammenfassung || null,
+    pfad: `${objekt_id || "allgemein"}/${crypto.randomUUID()}.${ENDUNG[typ] || "pdf"}`,
+    typ, groesse: blob.size,
+  }, blob);
+}
+
+// Anhänge einer Nachricht (Bucket „eingang“) als eigene Dokumente in denselben Ordner kopieren
+async function legeAnhaengeAb(e, f, haupt) {
+  let fehler = 0;
+  for (const [i, a] of (e.anhaenge || []).filter((x) => x.pfad).entries()) {
+    try {
+      const roh = await db.ladeEingangDatei(a.pfad);
+      const typ = ENDUNG[a.typ] ? a.typ : ENDUNG[roh.type] ? roh.type : null;
+      if (!typ) { fehler++; continue; }
+      await legeEintragAb({ ...e, datei: async () => ({ blob: new Blob([roh], { type: typ }), typ }) }, {
+        ...f, titel: `${f.titel}_Anlage${i + 1}`.slice(0, 160),
+        zusammenfassung: `Anlage „${a.name || "Datei"}“ zu ${haupt.titel}`.slice(0, 300),
+      });
+    } catch {
+      fehler++;
+    }
+  }
+  if (fehler) melde(`${fehler} Anhang/Anhänge konnten nicht abgelegt werden.`, "fehler");
+}
+
+/** Meldung „Abgelegt in …“ mit Knopf zum Ändern */
+export function zeigeAblageMeldung(doc, { nachher = () => {} } = {}) {
+  if (!doc) return;
+  melde(`Abgelegt in „${ordnerAnzeige(doc.ordner)}“: ${doc.titel}`, "ok", {
+    dauer: 12000,
+    aktion: {
+      text: "Ändern",
+      beiKlick: () => {
+        const dlg = $("#dialog");
+        if (dlg.open) dlg.close();
+        setTimeout(() => oeffneDokument(doc, { nachher }), 0);
+      },
+    },
+  });
+}
+
+/**
+ * Gesendetes automatisch ablegen (Name nach Schema, Ordner von der KI vorgeschlagen).
+ * Abschaltbar in den Einstellungen. Liefert das Dokument oder null; Fehler stören den Versand nicht.
+ */
+export async function automatischAblegen(e, { meldung = true, nachher = () => {} } = {}) {
+  if (zustand.profil?.auto_ablage === false) return null;
+  try {
+    const v = await vorschlagFuer(e);
+    const absender = kurzName(e, v);
+    const datum = e.datum || heuteISO();
+    const doc = await legeEintragAb(e, {
+      objekt_id: e.objektId, mieter_id: e.mieterId, ordner: v.ordner, art: v.art, absender, datum,
+      titel: dokumentTitel({ datum, objekt: objektVon(e.objektId), absender, art: v.art }),
+      zusammenfassung: e.zusammenfassung || v.zusammenfassung,
+    });
+    if (meldung) zeigeAblageMeldung(doc, { nachher });
+    return doc;
+  } catch (err) {
+    melde("Gesendet, aber nicht abgelegt: " + err.message, "fehler");
+    return null;
+  }
+}
+
+/** Von Hand ablegen: Dialog mit Vorschlag (Ordner von der KI, Name nach Schema) */
+export async function inAblageDialog(e, { nachher = () => {}, schon = [] } = {}) {
+  const warte = zustand.ki?.ki ? wartehinweis("Die KI sucht den passenden Ordner …") : null;
+  let v, mieterL, ordnerL;
+  try {
+    [v, mieterL, ordnerL] = await Promise.all([vorschlagFuer(e), mieterListe(), ordnerListe()]);
+  } finally {
+    await warte?.ende();
+  }
+  const mitAnhang = (e.anhaenge || []).filter((a) => a.pfad);
+  const datum = e.datum || heuteISO();
+  const daten = await dialogFormular(`
+    <h2>In die Ablage</h2>
+    ${e.beschreibung ? `<p class="leise">${esc(e.beschreibung)}</p>` : ""}
+    ${schon.length ? `<p class="leise">Schon abgelegt als „${esc(schon[0].titel)}“ (${esc(ordnerAnzeige(schon[0].ordner))}). Es kommt eine weitere Fassung dazu.</p>` : ""}
+    <div class="formraster formraster--zwei">
+      <label class="feld"><span>Ordner</span><select name="ordner">${ordnerOptionen(ordnerL, v.ordner)}</select>
+        ${v.vonKi ? `<span class="feldhinweis">Vorschlag der KI</span>` : ""}</label>
+      <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(e.objektId || null)}</select></label>
+      <label class="feld"><span>Mietpartei (optional)</span><select name="mieter_id">${mieterOptionen(mieterL, e.mieterId || null)}</select></label>
+      <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, v.art)}</select></label>
+      <label class="feld"><span>${e.richtung === "ausgang" ? "Empfänger (kurz)" : e.richtung === "notiz" ? "Betrifft (kurz)" : "Absender (kurz)"}</span>
+        <input name="absender" value="${esc(kurzName(e, v))}" maxlength="80"></label>
+      <label class="feld"><span>Datum</span><input type="date" name="datum" value="${esc(datum)}" required></label>
+    </div>
+    <label class="feld"><span>Name in der Ablage</span><input name="titel" required maxlength="160" spellcheck="false"></label>
+    <label class="feld"><span>Kurz zusammengefasst</span><textarea name="zusammenfassung" rows="2">${esc(e.zusammenfassung || v.zusammenfassung || "")}</textarea></label>
+    ${mitAnhang.length ? `<label class="checkfeld"><input type="checkbox" name="anhaenge" checked> Anhänge mit ablegen (${mitAnhang.length}: ${esc(mitAnhang.map((a) => a.name || "Datei").join(", "))})</label>` : ""}
+    <div class="knopfreihe">
+      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      <button class="knopf knopf--primaer" value="ok">Ablegen</button>
+    </div>`, { breit: true, vorbereiten: verbindeNamen });
+  if (!daten) return null;
+  const f = {
+    objekt_id: daten.get("objekt_id") || null,
+    mieter_id: daten.get("mieter_id") || null,
+    ordner: daten.get("ordner"),
+    art: daten.get("art"),
+    absender: String(daten.get("absender") || "").trim() || null,
+    datum: daten.get("datum") || null,
+    titel: String(daten.get("titel") || "").trim(),
+    zusammenfassung: String(daten.get("zusammenfassung") || "").trim() || null,
+  };
+  const warte2 = wartehinweis("Wird abgelegt …");
+  try {
+    const doc = await legeEintragAb(e, f);
+    if (daten.get("anhaenge")) await legeAnhaengeAb(e, f, doc);
+    await warte2.ende();
+    zeigeAblageMeldung(doc, { nachher });
+    nachher();
+    return doc;
+  } catch (err) {
+    await warte2.ende();
+    melde("Ablegen nicht möglich: " + err.message, "fehler");
+    return null;
+  }
+}
+
+/** Kleiner Hinweis „In der Ablage: Ordner · Name“ (Klick öffnet das Dokument) */
+export function abgelegtHtml(docs) {
+  if (!docs?.length) return "";
+  const d = docs[0];
+  return `<span class="abgelegt">In der Ablage: <button type="button" data-abgelegt="${esc(d.id)}">${esc(ordnerAnzeige(d.ordner))} · ${esc(d.titel)}</button>${docs.length > 1 ? ` <span>+${docs.length - 1}</span>` : ""}</span>`;
+}
+export function verbindeAbgelegt(root, docs, { nachher = () => {} } = {}) {
+  for (const b of $$("[data-abgelegt]", root)) b.addEventListener("click", () => oeffneDokument(docs.find((d) => d.id === b.dataset.abgelegt), { nachher }));
+}
+
+/** PDF aus Text bauen (für E-Mails, Aufträge, Notizen) */
+export function pdfEintrag({ titel, angaben, text, abschnitte, kopf }) {
+  return async () => {
+    const bytes = textPdf({
+      kopf, titel, angaben, text, abschnitte,
+      fuss: `Abgelegt am ${datumDE(new Date())} aus der Verwaltungs-App`,
+    });
+    return { blob: new Blob([bytes], { type: "application/pdf" }), typ: "application/pdf" };
+  };
 }

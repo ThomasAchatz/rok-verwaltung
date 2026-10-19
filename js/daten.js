@@ -313,6 +313,19 @@ export async function ladeDokumentDatei(pfad) {
   if (error) throw new Error(error.message);
   return data;
 }
+/** Anhang einer Nachricht laden (Bucket "eingang"), z. B. um ihn in die Ablage zu kopieren */
+export async function ladeEingangDatei(pfad) {
+  const { data, error } = await sb.storage.from("eingang").download(pfad);
+  if (error) throw new Error(error.message);
+  return data;
+}
+/** Dokumente, die schon aus einer Nachricht, Antwort, Notiz oder einem Schreiben abgelegt wurden */
+export async function ladeAbgelegte(feld, ids) {
+  if (!["nachricht_id", "antwort_id", "aufgabe_id", "vorgang_id"].includes(feld)) throw new Error("Unbekanntes Feld");
+  const liste = (ids || []).filter(Boolean);
+  if (!liste.length) return [];
+  return pruefe(await sb.from("dokumente").select("*").in(feld, liste).order("erstellt_am"));
+}
 
 // --- Ordner der Dokumentenablage (für alle Häuser) --------------------------
 export async function ladeDokumentOrdner() {

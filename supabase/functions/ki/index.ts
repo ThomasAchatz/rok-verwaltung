@@ -5,11 +5,12 @@
 //   { aktion: "entwurf", nachricht_id?, mieter_id?, dienstleister_id?, objekt_id?, anweisung?, bisher?, aenderung? }
 //   { aktion: "auftrag", nachricht_id, dienstleister_id?, anweisung? }       → Auftrag an Handwerker
 //   { aktion: "brief_lesen", bild: { daten, typ } }                           → Foto/PDF lesen + Ablage vorschlagen
+//   { aktion: "ablage_vorschlag", titel, text, richtung, art?, gegenueber?, mieter_id?, objekt_id? } → Ordner für die Ablage
 //   { aktion: "wissen_ordnen", text, objekt_id? }                             → eingesprochenes Wissen ordnen
 //   { aktion: "notiz_pruefen", aufgabe_id }                                   → Notiz prüfen (z. B. Mieterhöhung)
 //   { aktion: "chat", verlauf: [{ rolle: "robert"|"ki", text }] }            → Fragen an die App
 import { CORS, Fehler, MODELL, env, fehlerAntwort, json, kiEingerichtet, pruefeMitglied } from "../_shared/gemeinsam.ts";
-import { auftrag, entwirf, liesDokument, ordneEin, ordneWissen, pruefeNotiz } from "../_shared/fach.ts";
+import { ablageVorschlag, auftrag, entwirf, liesDokument, ordneEin, ordneWissen, pruefeNotiz } from "../_shared/fach.ts";
 import { chat } from "../_shared/chat.ts";
 
 export async function handler(req: Request): Promise<Response> {
@@ -43,6 +44,11 @@ export async function handler(req: Request): Promise<Response> {
       case "brief_lesen":
         if (!e.bild?.daten || !e.bild?.typ) throw new Fehler(400, "Foto oder PDF fehlt", "eingabe");
         return json(await liesDokument(e.bild, zugriff));
+      case "ablage_vorschlag":
+        return json(await ablageVorschlag({
+          titel: e.titel, text: e.text, richtung: e.richtung, art: e.art ?? null, gegenueber: e.gegenueber ?? null,
+          mieter_id: e.mieter_id ?? null, objekt_id: e.objekt_id ?? null,
+        }, zugriff));
       case "wissen_ordnen":
         return json(await ordneWissen(String(e.text ?? ""), zugriff, e.objekt_id ?? null));
       case "notiz_pruefen":
