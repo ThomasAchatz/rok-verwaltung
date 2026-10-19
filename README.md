@@ -115,7 +115,9 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
 - **Ordnerstruktur nach Robert** (je Haus gleich): 01_Kalkulation & Ankauf … 09_Archiv mit festen Unterordnern.
   Automatische Unterordner (`dokument_ordner.automatik`): 04_Betriebskosten und 05_Instandhaltung **je Jahr**,
   03_Vermietung **je Wohnung** („Wohnung - Nachname“ aus den Mietparteien, nie von Hand angelegt).
-- **Dateiname:** `JJMMTT_Kürzel_Straße Nr._Dokumentart_Details`, z. B. `261019_SR_Königsberger Str. 19_Rechnung_Sanitär Gruber_102,89`.
+- **Dateiname:** `JJMMTT_Kürzel_Straße Nr._Dokumentart_Thema_Wohnung_Betrag`, z. B.
+  `261019_SR_Königsberger Str. 19_Rechnung_Wasserschaden_WHG 1_2430,31` oder `…_Mietvertrag_WHG 08_Meier`.
+  Thema, Betrag und Wohnung schlägt die KI vor; die Mietpartei (Name) kommt bei Schriftverkehr dazu, nicht bei Rechnungen.
   Orts-Kürzel je Haus (`objekte.kuerzel`, Hausseite → Einstellungen zum Haus). Details schlägt die KI vor
   (Firma_Betrag, Vertragspartner …); bei einer Mietpartei setzt die App „Wohnung_Nachname“.
 - **Handwerker** bekommen nur Adresse, Wohnung, Name/Telefon der Mietpartei, Schadensbeschreibung und Fotos –

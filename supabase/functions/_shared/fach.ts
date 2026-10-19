@@ -43,10 +43,29 @@ export async function dokumentOrdnerInfo(zugriff: Zugriff): Promise<{ namen: str
   };
 }
 
-const DETAILS_BESCHREIBUNG =
-  "Details für den Dateinamen (Schema Datum_Ort_Straße_Art_Details), kurz, ohne Datum und Adresse: " +
-  "bei Rechnungen und Angeboten 'Gewerk oder Firma_Betrag', z. B. 'Sanitär Gruber_102,89'; bei Verträgen der Vertragspartner, z. B. 'Ista'; " +
-  "sonst Absender oder Stichwort (1–4 Wörter). Bei Schreiben zu einer Mietpartei setzt die App 'Wohnung_Name' selbst.";
+// Teile für den Dateinamen (Datum_Ort_Straße_Art_Thema_Wohnung_Betrag); zusammengesetzt wird in der App
+const NAMENS_FELDER = {
+  thema: { type: ["string", "null"], description: "Thema oder Anlass für den Dateinamen, 1–3 Wörter, z. B. 'Wasserschaden', 'Heizungswartung', 'Abschlag Allgemeinstrom', 'Rauchmelder'. null, wenn die Dokumentart schon alles sagt (z. B. ein Mietvertrag)." },
+  betrag: { type: ["string", "null"], description: "Bei Rechnungen, Angeboten, Abrechnungen und Mahnungen der Endbetrag ohne Euro-Zeichen im Format 2430,31. Sonst null." },
+  wohnung_id: { type: ["string", "null"], description: "ID aus <wohnungen>, wenn das Schreiben eindeutig eine bestimmte Wohnung betrifft (z. B. 'WHG 1', '1. OG links' oder die Wohnung der genannten Mietpartei). Sonst null." },
+};
+/** Betrag für den Dateinamen: „2.430,31 €“ / „2430.31“ → „2430,31“ */
+export function betragKurz(roh: unknown): string | null {
+  let s = String(roh ?? "").replace(/[€\s]|EUR/gi, "");
+  if (!s) return null;
+  if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(s)) s = s.replace(/\./g, "");
+  else if (/^\d+\.\d{1,2}$/.test(s)) s = s.replace(".", ",");
+  if (!/^\d{1,7}(,\d{1,2})?$/.test(s)) return null;
+  return s.replace(/,(\d)$/, (_m, d) => `,${d}0`);
+}
+async function wohnungListe(zugriff: Zugriff, objektId: string | null = null) {
+  const wohnungen = await rest(
+    `wohnungen?select=id,bezeichnung,objekt:objekte(bezeichnung)${objektId ? `&objekt_id=eq.${enc(objektId)}` : ""}&order=bezeichnung`, zugriff,
+  ).catch(() => []);
+  // deno-lint-ignore no-explicit-any
+  const text = wohnungen.map((w: any) => `${w.id} | ${w.objekt?.bezeichnung ?? ""} | ${w.bezeichnung}`).join("\n");
+  return { wohnungen, text: `<wohnungen>\nID | Haus | Wohnung\n${text}\n</wohnungen>` };
+}
 
 const nurAus = <T extends string>(liste: readonly T[], wert: unknown, sonst: T): T =>
   liste.includes(wert as T) ? (wert as T) : sonst;
@@ -414,7 +433,7 @@ const WERKZEUG_DOKUMENT: Werkzeug = {
       mieter_id: { type: ["string", "null"], description: "ID aus der Mieterliste, wenn eindeutig eine Mietpartei betroffen ist. Sonst null." },
       ordner: { type: "string", enum: DOKUMENT_ORDNER },
       art: { type: "string", enum: DOKUMENT_ARTEN },
-      details: { type: ["string", "null"], description: DETAILS_BESCHREIBUNG },
+      ...NAMENS_FELDER,
       lesbar: { type: "boolean", description: "false, wenn nichts Lesbares zu erkennen ist." },
     },
     required: ["eingang", "betreff", "text", "zusammenfassung", "ordner", "art", "lesbar", "objekt_id", "mieter_id"],
@@ -426,8 +445,8 @@ export async function liesDokument(datei: { daten: string; typ: string }, zugrif
   const istPdf = datei.typ === "application/pdf";
   if (!istPdf && !/^image\/(jpeg|png|webp|gif)$/.test(datei.typ)) throw new Fehler(400, "Bitte ein Foto (JPEG/PNG) oder ein PDF senden.", "eingabe");
   if (datei.daten.length > (istPdf ? 11_000_000 : 7_000_000)) throw new Fehler(413, "Die Datei ist zu groß.", "eingabe");
-  const [{ objekte, text: objekteText }, { mieter, text: mieterText }, { namen: ordnerListe, hinweis: ordnerHinweis }] = await Promise.all([
-    objektListe(zugriff), mieterListe(zugriff), dokumentOrdnerInfo(zugriff),
+  const [{ objekte, text: objekteText }, { mieter, text: mieterText }, { namen: ordnerListe, hinweis: ordnerHinweis }, { wohnungen, text: wohnungenText }] = await Promise.all([
+    objektListe(zugriff), mieterListe(zugriff), dokumentOrdnerInfo(zugriff), wohnungListe(zugriff),
   ]);
   // Werkzeug mit der aktuellen Ordnerliste (Unterordner mit „/“)
   const werkzeug: Werkzeug = {
@@ -445,7 +464,7 @@ export async function liesDokument(datei: { daten: string; typ: string }, zugrif
     : { type: "image", source: { type: "base64", media_type: datei.typ, data: datei.daten } };
   const { daten } = await claude({
     system: `Du liest Schreiben für eine Hausverwaltung ab und schlägst die Ablage vor. Heute ist ${heuteDE()}. ${KI_REGEL_FREMD} Antworte ausschließlich über das Werkzeug 'dokument'.`,
-    inhalt: [block, { type: "text", text: `${objekteText}\n\n${mieterText}\n\nLies das Schreiben und ordne es ein.` }],
+    inhalt: [block, { type: "text", text: `${objekteText}\n\n${wohnungenText}\n\n${mieterText}\n\nLies das Schreiben und ordne es ein.` }],
     werkzeug,
     maxTokens: 4000,
   });
@@ -462,7 +481,9 @@ export async function liesDokument(datei: { daten: string; typ: string }, zugrif
     mieter_id: mieter.some((x: { id: string }) => x.id === daten.mieter_id) ? daten.mieter_id : null,
     ordner: nurAus(ordnerListe, daten.ordner, "Sonstiges"),
     art: nurAus(DOKUMENT_ARTEN, daten.art, "Sonstiges"),
-    details: ohneLeer(daten.details)?.slice(0, 80) ?? null,
+    thema: ohneLeer(daten.thema)?.slice(0, 40) ?? null,
+    betrag: betragKurz(daten.betrag),
+    wohnung_id: wohnungen.some((x: { id: string }) => x.id === daten.wohnung_id) ? daten.wohnung_id : null,
     lesbar: daten.lesbar !== false,
   };
 }
@@ -483,10 +504,10 @@ const WERKZEUG_ABLAGE: Werkzeug = {
       ordner: { type: "string", enum: DOKUMENT_ORDNER, description: "Passendster Ordner. Unterordner sind mit „/“ geschrieben; den genauesten passenden wählen." },
       art: { type: "string", enum: DOKUMENT_ARTEN },
       gegenueber_kurz: { type: ["string", "null"], description: "Kurzname des Gegenübers für den Dateinamen (1–2 Wörter): bei Eingang der Absender, bei Ausgang der Empfänger, z. B. 'Huber', 'Jobcenter', 'Haustechnik Muster'." },
-      details: { type: ["string", "null"], description: DETAILS_BESCHREIBUNG },
+      ...NAMENS_FELDER,
       zusammenfassung: { type: "string", description: "1 kurzer Satz: worum geht es?" },
     },
-    required: ["ordner", "art", "gegenueber_kurz", "details", "zusammenfassung"],
+    required: ["ordner", "art", "gegenueber_kurz", "thema", "betrag", "wohnung_id", "zusammenfassung"],
   },
 };
 
@@ -502,9 +523,12 @@ export async function ablageVorschlag(e: AblageAnfrage, zugriff: Zugriff): Promi
   if (!text.trim() && !titel.trim()) throw new Fehler(400, "Kein Text zum Ablegen.", "eingabe");
   const [{ namen: ordnerListe, hinweis: ordnerHinweis }, mieter, haus] = await Promise.all([
     dokumentOrdnerInfo(zugriff),
-    e.mieter_id ? rest(`mieter?id=eq.${enc(e.mieter_id)}&select=vorname,nachname,wohnung:wohnungen(bezeichnung,objekt:objekte(bezeichnung))`, zugriff).then((r) => r[0]).catch(() => null) : null,
+    e.mieter_id ? rest(`mieter?id=eq.${enc(e.mieter_id)}&select=vorname,nachname,wohnung_id,wohnung:wohnungen(bezeichnung,objekt_id,objekt:objekte(bezeichnung))`, zugriff).then((r) => r[0]).catch(() => null) : null,
     e.objekt_id ? rest(`objekte?id=eq.${enc(e.objekt_id)}&select=bezeichnung`, zugriff).then((r) => r[0]).catch(() => null) : null,
   ]);
+  // Wohnungen des betroffenen Hauses (für „WHG 1“ im Dateinamen)
+  const hausId = e.objekt_id ?? mieter?.wohnung?.objekt_id ?? null;
+  const { wohnungen, text: wohnungenText } = hausId ? await wohnungListe(zugriff, hausId) : { wohnungen: [], text: "" };
   const richtung = e.richtung === "ausgang" ? "Ausgang (von uns gesendet)" : e.richtung === "notiz" ? "eigene Notiz der Verwaltung" : "Eingang (an uns)";
   const werkzeug: Werkzeug = {
     ...WERKZEUG_ABLAGE,
@@ -523,6 +547,7 @@ export async function ablageVorschlag(e: AblageAnfrage, zugriff: Zugriff): Promi
     e.gegenueber ? `Gegenüber: ${String(e.gegenueber).slice(0, 120)}` : "",
     mieter ? `Mietpartei: ${[mieter.vorname, mieter.nachname].filter(Boolean).join(" ")} (${mieter.wohnung?.objekt?.bezeichnung ?? ""}, ${mieter.wohnung?.bezeichnung ?? ""})` : "",
     haus ? `Haus: ${haus.bezeichnung}` : "",
+    wohnungenText,
     `<text>\nTitel: ${titel}\n\n${text}\n</text>`,
   ].filter(Boolean).join("\n\n");
   const { daten } = await claude({
@@ -535,7 +560,9 @@ export async function ablageVorschlag(e: AblageAnfrage, zugriff: Zugriff): Promi
     ordner: nurAus(ordnerListe, daten.ordner, "Sonstiges"),
     art: nurAus(DOKUMENT_ARTEN, daten.art, nurAus(DOKUMENT_ARTEN, e.art, "Sonstiges")),
     gegenueber_kurz: ohneLeer(daten.gegenueber_kurz)?.slice(0, 40) ?? null,
-    details: ohneLeer(ohneIban(daten.details))?.slice(0, 80) ?? null,
+    thema: ohneLeer(ohneIban(daten.thema))?.slice(0, 40) ?? null,
+    betrag: betragKurz(daten.betrag),
+    wohnung_id: wohnungen.some((x: { id: string }) => x.id === daten.wohnung_id) ? daten.wohnung_id : (mieter?.wohnung_id ?? null),
     zusammenfassung: String(daten.zusammenfassung ?? "").slice(0, 300),
   };
 }

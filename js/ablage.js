@@ -73,31 +73,38 @@ export function dokumentTitel({ datum, objekt, art, details }) {
 
 // Mietpartei für Details und Wohnungsordner
 const mieterVon = (id) => (id ? (zustand.mieterKurz || []).find((m) => m.id === id) || null : null);
-/** Details-Vorschlag: bei einer Mietpartei „Wohnung_Nachname“, sonst der Vorschlag der KI bzw. das Gegenüber */
-export function detailsVorschlag({ mieterId = null, sonst = "" } = {}) {
+// Bei diesen Arten gehört der Name der Mietpartei nicht in den Dateinamen (z. B. Handwerkerrechnung)
+const OHNE_MIETERNAME = ["Rechnung", "Angebot", "Abrechnung", "Auftrag", "Vertrag"];
+/**
+ * Details für den Dateinamen: Thema_Wohnung_Name_Betrag, z. B. „Wasserschaden_WHG 1_2430,31“ oder „WHG 08_Meier“.
+ * ki: { thema, firma, betrag, wohnungId } aus dem Vorschlag der KI; die Mietpartei kommt aus der Auswahl im Dialog.
+ */
+export function detailsVorschlag({ mieterId = null, art = null, ki = {} } = {}) {
   const m = mieterVon(mieterId);
-  if (m) return [wohnungVon(m.wohnung_id)?.bezeichnung, m.nachname].filter(Boolean).join("_");
-  return namensTeil(sonst).slice(0, 80);
+  const w = wohnungVon(m?.wohnung_id || ki.wohnungId || null);
+  const name = m && !OHNE_MIETERNAME.includes(art) ? m.nachname : null;
+  // Ohne Thema: bei Rechnungen u. Ä. die Firma, sonst nur, wenn sonst gar nichts im Namen stünde
+  const vorne = ki.thema || (!name && (OHNE_MIETERNAME.includes(art) || !w) ? ki.firma : null);
+  return [vorne, w?.bezeichnung, name, ki.betrag].map(namensTeil).filter(Boolean).join("_").slice(0, 80);
 }
 
 /** Automatische Unterordner: „je Jahr“ (Jahr des Dokuments) oder „je Wohnung“ (Wohnung - Nachname) */
 export const ordnerAutomatik = (name) => zustand.dokOrdnerAuto?.get(name) || null;
-export function zielOrdner(basis, { datum = null, mieterId = null } = {}) {
+export function zielOrdner(basis, { datum = null, mieterId = null, wohnungId = null } = {}) {
   const art = ordnerAutomatik(basis);
   if (art === "jahr") {
     const jahr = String(datum || heuteISO()).slice(0, 4);
     return /^\d{4}$/.test(jahr) ? `${basis}/${jahr}` : basis;
   }
-  const m = art === "wohnung" ? mieterVon(mieterId) : null;
-  if (m) {
-    const teil = [wohnungVon(m.wohnung_id)?.bezeichnung, m.nachname].filter(Boolean).join(" - ").replace(/\//g, "-").trim();
-    if (teil) return `${basis}/${teil}`;
-  }
-  return basis;
+  if (art !== "wohnung") return basis;
+  const m = mieterVon(mieterId);
+  const w = wohnungVon(m?.wohnung_id || wohnungId);
+  const teil = [w?.bezeichnung, m?.nachname].filter(Boolean).join(" - ").replace(/\//g, "-").trim();
+  return teil ? `${basis}/${teil}` : basis;
 }
 
 // Name nach dem Schema, bis Robert ihn selbst ändert; Details folgen der Mietpartei; Zielordner wird angezeigt
-function verbindeNamen(bereich, { detailsSonst = "" } = {}) {
+function verbindeNamen(bereich, { ki = {} } = {}) {
   const feld = (n) => $(`[name=${n}]`, bereich);
   const titel = feld("titel"), details = feld("details");
   let titelVonHand = false, detailsVonHand = false;
@@ -109,17 +116,19 @@ function verbindeNamen(bereich, { detailsSonst = "" } = {}) {
     }
     const hinweis = $("[data-zielordner]", bereich);
     if (hinweis && feld("ordner")) {
-      const ziel = zielOrdner(feld("ordner").value, { datum: feld("datum").value, mieterId: feld("mieter_id")?.value || null });
+      const ziel = zielOrdner(feld("ordner").value, { datum: feld("datum").value, mieterId: feld("mieter_id")?.value || null, wohnungId: ki.wohnungId });
       hinweis.textContent = ziel !== feld("ordner").value ? `Landet in: ${ordnerAnzeige(ziel)}` : "";
     }
   };
   titel.addEventListener("input", () => { titelVonHand = true; });
   details.addEventListener("input", () => { detailsVonHand = true; setze(); });
-  feld("mieter_id")?.addEventListener("change", () => {
-    if (!detailsVonHand) details.value = detailsVorschlag({ mieterId: feld("mieter_id").value || null, sonst: detailsSonst });
+  const neueDetails = () => {
+    if (!detailsVonHand) details.value = detailsVorschlag({ mieterId: feld("mieter_id")?.value || null, art: feld("art").value, ki });
     setze();
-  });
-  for (const n of ["datum", "objekt_id", "art", "ordner"]) feld(n)?.addEventListener("change", setze);
+  };
+  feld("mieter_id")?.addEventListener("change", neueDetails);
+  feld("art").addEventListener("change", neueDetails);
+  for (const n of ["datum", "objekt_id", "ordner"]) feld(n)?.addEventListener("change", setze);
   setze();
 }
 
@@ -182,7 +191,7 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
   const hausStart = objektId !== undefined ? objektId : erkannt.objekt_id || null;
   const datumStart = erkannt.datum || heuteISO();
   const absenderStart = erkannt.absender_kurz || erkannt.absender_name || "";
-  const detailsSonst = erkannt.details || absenderStart;
+  const kiTeile = { thema: erkannt.thema || null, firma: absenderStart || null, betrag: erkannt.betrag || null, wohnungId: erkannt.wohnung_id || null };
   const [symbol, symbolKlasse] = symbolVon(office || (pdf ? "application/pdf" : "image/jpeg"));
   const artStart = erkannt.art || "Sonstiges";
   const name = norm(erkannt.absender_name);
@@ -205,7 +214,7 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
         <label class="feld"><span>Ordner</span><select name="ordner">${ordnerOptionen(ordnerL, ordnerL.includes(erkannt.ordner) ? erkannt.ordner : "Sonstiges")}</select>
           <span class="feldhinweis feldhinweis--leise" data-zielordner></span></label>
         <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, artStart)}</select></label>
-        <label class="feld"><span>Details (für den Namen)</span><input name="details" value="${esc(detailsVorschlag({ mieterId: erkannt.mieter_id || null, sonst: detailsSonst }))}" maxlength="80" placeholder="z. B. Sanitär Gruber_102,89"></label>
+        <label class="feld"><span>Details (für den Namen)</span><input name="details" value="${esc(detailsVorschlag({ mieterId: erkannt.mieter_id || null, art: artStart, ki: kiTeile }))}" maxlength="80" placeholder="z. B. Wasserschaden_WHG 1_2430,31"></label>
         <label class="feld"><span>Datum des Schreibens</span><input type="date" name="datum" value="${esc(datumStart)}" required></label>
       </div>
       <label class="feld"><span>Name in der Ablage</span><input name="titel" required maxlength="160" spellcheck="false"></label>
@@ -234,7 +243,7 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
       };
       for (const r of $$("[name=ziel]", form)) r.addEventListener("change", zeige);
       zeige();
-      verbindeNamen($("fieldset[data-ziel=dokument]", form), { detailsSonst });
+      verbindeNamen($("fieldset[data-ziel=dokument]", form), { ki: kiTeile });
     },
   });
   if (vorschau) setTimeout(() => URL.revokeObjectURL(vorschau), 5000);
@@ -248,7 +257,7 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
       await db.legeDokumentAb({
         objekt_id,
         mieter_id: daten.get("mieter_id") || null,
-        ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: daten.get("mieter_id") || null }),
+        ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: daten.get("mieter_id") || null, wohnungId: kiTeile.wohnungId }),
         art: daten.get("art"),
         absender: erkannt.absender_name || erkannt.absender_kurz || null,
         details: String(daten.get("details") || "").trim() || null,
@@ -804,7 +813,9 @@ async function vorschlagFuer(e) {
       ordner: liste.includes(r.ordner) ? r.ordner : ersatz.ordner,
       art: e.artFest ? e.art : DOKUMENT_ARTEN.includes(r.art) ? r.art : ersatz.art,
       gegenueber_kurz: r.gegenueber_kurz || null,
-      details: r.details || null,
+      thema: r.thema || null,
+      betrag: r.betrag || null,
+      wohnung_id: r.wohnung_id || null,
       zusammenfassung: r.zusammenfassung || "",
       vonKi: true,
     };
@@ -814,6 +825,7 @@ async function vorschlagFuer(e) {
 }
 
 const kurzName = (e, v) => String(e.gegenueberKurz || v.gegenueber_kurz || e.gegenueber || "").trim().slice(0, 40);
+const kiTeileVon = (e, v) => ({ thema: v.thema || null, firma: kurzName(e, v) || null, betrag: v.betrag || null, wohnungId: v.wohnung_id || null });
 
 async function legeEintragAb(e, f) {
   const { blob, typ } = await e.datei();
@@ -881,9 +893,10 @@ export async function automatischAblegen(e, { meldung = true, nachher = () => {}
   try {
     const [v] = await Promise.all([vorschlagFuer(e), zustand.mieterKurz ? null : mieterListe().catch(() => null)]);
     const datum = e.datum || heuteISO();
-    const details = detailsVorschlag({ mieterId: e.mieterId, sonst: e.details || v.details || kurzName(e, v) });
+    const ki = kiTeileVon(e, v);
+    const details = detailsVorschlag({ mieterId: e.mieterId, art: v.art, ki });
     const doc = await legeEintragAb(e, {
-      objekt_id: e.objektId, mieter_id: e.mieterId, ordner: zielOrdner(v.ordner, { datum, mieterId: e.mieterId }), art: v.art,
+      objekt_id: e.objektId, mieter_id: e.mieterId, ordner: zielOrdner(v.ordner, { datum, mieterId: e.mieterId, wohnungId: ki.wohnungId }), art: v.art,
       absender: e.gegenueber || kurzName(e, v), details, datum,
       titel: dokumentTitel({ datum, objekt: objektVon(e.objektId), art: v.art, details }),
       zusammenfassung: e.zusammenfassung || v.zusammenfassung,
@@ -919,7 +932,7 @@ export async function inAblageDialog(e, { nachher = () => {}, schon = [] } = {})
       <label class="feld"><span>Mietpartei (optional)</span><select name="mieter_id">${mieterOptionen(mieterL, e.mieterId || null)}</select></label>
       <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, v.art)}</select></label>
       <label class="feld"><span>Details (für den Namen)</span>
-        <input name="details" value="${esc(detailsVorschlag({ mieterId: e.mieterId, sonst: e.details || v.details || kurzName(e, v) }))}" maxlength="80"></label>
+        <input name="details" value="${esc(detailsVorschlag({ mieterId: e.mieterId, art: v.art, ki: kiTeileVon(e, v) }))}" maxlength="80"></label>
       <label class="feld"><span>Datum</span><input type="date" name="datum" value="${esc(datum)}" required></label>
     </div>
     <label class="feld"><span>Name in der Ablage</span><input name="titel" required maxlength="160" spellcheck="false"></label>
@@ -928,12 +941,12 @@ export async function inAblageDialog(e, { nachher = () => {}, schon = [] } = {})
     <div class="knopfreihe">
       <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
       <button class="knopf knopf--primaer" value="ok">Ablegen</button>
-    </div>`, { breit: true, vorbereiten: (form) => verbindeNamen(form, { detailsSonst: e.details || v.details || kurzName(e, v) }) });
+    </div>`, { breit: true, vorbereiten: (form) => verbindeNamen(form, { ki: kiTeileVon(e, v) }) });
   if (!daten) return null;
   const f = {
     objekt_id: daten.get("objekt_id") || null,
     mieter_id: daten.get("mieter_id") || null,
-    ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: daten.get("mieter_id") || null }),
+    ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: daten.get("mieter_id") || null, wohnungId: v.wohnung_id || null }),
     art: daten.get("art"),
     absender: e.gegenueber || kurzName(e, v) || null,
     details: String(daten.get("details") || "").trim() || null,
