@@ -77,16 +77,42 @@ export function verbindeDiktat(root) {
   }
 }
 
+// Fügt erkannten Text an. Chrome auf Android liefert jedes Ergebnis inklusive allem davor
+// („Heizung“, „Heizung ist“, „Heizung ist kalt“) und manchmal doppelt; andere Browser nur das neue Stück.
+// Darum: Enthält das neue Stück den bisherigen Text, ersetzt es ihn; überlappende Wörter zählen nur einmal.
+const woerter = (t) => String(t).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(" ").filter(Boolean);
+export function fuegeZusammen(bisher, neu) {
+  bisher = String(bisher || "").trim();
+  neu = String(neu || "").trim();
+  if (!neu) return bisher;
+  if (!bisher) return neu;
+  const a = woerter(bisher), b = woerter(neu);
+  const beginntMit = (x, y) => y.length <= x.length && y.every((w, i) => x[i] === w);
+  if (beginntMit(b, a)) return neu;                      // neu = bisher + mehr (Android)
+  if (beginntMit(a, b) || (b.length <= a.length && a.slice(-b.length).join(" ") === b.join(" "))) return bisher; // schon enthalten (doppelt)
+  for (let k = Math.min(a.length, b.length); k >= 2; k--) { // Ende von bisher = Anfang von neu
+    if (a.slice(-k).join(" ") === b.slice(0, k).join(" ")) {
+      return bisher + " " + neu.split(/\s+/).slice(k).join(" ");
+    }
+  }
+  return bisher + " " + neu;
+}
+
 function starteDiktat(knopf, feld) {
   const erkennung = new Erkennung();
   erkennung.lang = "de-DE";
   erkennung.continuous = true;
   erkennung.interimResults = true;
   const anfang = feld.value.trim() ? feld.value.replace(/\s*$/, " ") : "";
+  let fest = ""; // fertig erkannter Text dieses Diktats
   erkennung.onresult = (e) => {
-    let gesagt = "";
-    for (let i = 0; i < e.results.length; i++) gesagt += e.results[i][0].transcript;
-    feld.value = anfang + gesagt.trim();
+    let vorlaeufig = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const teil = e.results[i][0].transcript.trim();
+      if (e.results[i].isFinal) fest = fuegeZusammen(fest, teil);
+      else vorlaeufig = fuegeZusammen(vorlaeufig, teil);
+    }
+    feld.value = anfang + fuegeZusammen(fest, vorlaeufig);
     feld.dispatchEvent(new Event("input", { bubbles: true }));
   };
   erkennung.onerror = (e) => {
