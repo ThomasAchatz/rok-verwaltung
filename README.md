@@ -85,6 +85,9 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
     Tabelle `postfach` (in der App unter Einstellungen → Einrichtung) und optional die Resend-Signatur.
   - `versand`: nur für Mitglieder, nur per Klick. Ohne Resend-Schlüssel öffnet die App stattdessen das E-Mail-Programm.
     Aufträge an Handwerker gehen mit den gewählten Fotos aus dem Speicher raus.
+    Jede E-Mail trägt unter der Signatur den Briefkopf (Firma, Anschrift, Kontakt aus den Einstellungen).
+  - „Neues Schreiben“ geht an eine Mietpartei **oder** an einen Handwerker/Dienstleister (optional mit Haus).
+    Bei Handwerkern bekommt die KI keine Mieterdaten.
 - **Secrets** (Supabase → Edge Functions → Secrets, nie ins Repo):
   `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `VERSAND_ABSENDER` (z. B. `ROK Immobilien <verwaltung@rok-immobilien.com>`),
   optional `RESEND_WEBHOOK_SECRET` (`whsec_…`) und `KI_MODELL` (Standard `claude-sonnet-5-5`).

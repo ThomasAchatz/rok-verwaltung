@@ -155,6 +155,8 @@ type EntwurfAuftrag = {
   anweisung?: string | null;
   bisher?: { betreff?: string; text?: string } | null;
   aenderung?: string | null;
+  dienstleisterId?: string | null; // Schreiben an einen Handwerker/Dienstleister (dann keine Mieterdaten)
+  objektId?: string | null;        // betroffenes Haus (nur bei Schreiben an Handwerker)
 };
 
 // deno-lint-ignore no-explicit-any
@@ -234,9 +236,23 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
     [nachricht] = await rest(`nachrichten?id=eq.${enc(o.nachrichtId)}&select=*`, zugriff);
     if (!nachricht) throw new Fehler(404, "Nachricht nicht gefunden.", "nicht_gefunden");
   }
-  const mieterId = o.mieterId ?? nachricht?.mieter_id ?? null;
   const teile: string[] = [`Heute ist ${heuteDE()}.`];
   let objektId: string | null = null;
+  let dienstleister = null;
+  if (o.dienstleisterId && !nachricht) {
+    [dienstleister] = await rest(`dienstleister?id=eq.${enc(o.dienstleisterId)}&select=name,gewerk`, zugriff);
+    if (!dienstleister) throw new Fehler(404, "Handwerker nicht gefunden.", "nicht_gefunden");
+    teile.push(`<empfaenger>Handwerker/Dienstleister: ${dienstleister.name}${dienstleister.gewerk ? ` (${dienstleister.gewerk})` : ""}</empfaenger>`);
+    if (o.objektId) {
+      const [haus] = await rest(`objekte?id=eq.${enc(o.objektId)}&select=id,bezeichnung,strasse,plz,ort`, zugriff);
+      if (haus) {
+        objektId = haus.id;
+        teile.push(`<haus>${haus.bezeichnung}: ${haus.strasse}, ${haus.plz} ${haus.ort}</haus>`);
+      }
+    }
+  }
+  // An Handwerker gehen keine Mieterdaten (Miete, Rückstände, Kostenträger)
+  const mieterId = dienstleister ? null : o.mieterId ?? nachricht?.mieter_id ?? null;
   if (mieterId) {
     const b = await mieterBlock(mieterId, zugriff, o.nachrichtId ?? null);
     if (b.text) teile.push(b.text);
@@ -270,10 +286,16 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
     ? "Überarbeite den bisherigen Entwurf genau nach dem Änderungswunsch. Alles andere bleibt, wie es ist."
     : nachricht
     ? "Entwirf eine Antwort auf die eingegangene Nachricht." + (o.anweisung ? " Setze dabei die Anweisung von Robert um." : "")
+    : dienstleister
+    ? "Entwirf ein Schreiben an den Handwerker/Dienstleister nach der Anweisung von Robert."
     : "Entwirf ein Schreiben nach der Anweisung von Robert.";
   const system =
-    `Du schreibst im Namen von ${profil?.inhaber ?? "der Verwaltung"} (${profil?.firma ?? "Hausverwaltung"}) an Mieter, Ämter und Interessenten.\n` +
-    `Tonfall: ${profil?.ki_tonfall || "Sie-Form, freundlich, klar und kurz."}\n\nRegeln:\n` + REGELN_ENTWURF;
+    `Du schreibst im Namen von ${profil?.inhaber ?? "der Verwaltung"} (${profil?.firma ?? "Hausverwaltung"}) an Mieter, Ämter, Interessenten und Handwerker.\n` +
+    `Tonfall: ${profil?.ki_tonfall || "Sie-Form, freundlich, klar und kurz."}\n\nRegeln:\n` + REGELN_ENTWURF +
+    (dienstleister
+      ? "\n- Dieses Schreiben geht an einen Handwerker/Dienstleister: sachlich und geschäftlich, Anrede „Sehr geehrte Damen und Herren,“. " +
+        "Nenne nur, was Robert angibt (Ort, Auftrag, Termin, Kontakt). Keine Angaben zu Mieten, Rückständen, Kostenträgern oder Bankdaten."
+      : "");
   // deno-lint-ignore no-explicit-any
   return { system, text: `${teile.join("\n\n")}\n\nAufgabe: ${aufgabe}`, mieterId, bilder: bilder as any[], hinweise };
 }

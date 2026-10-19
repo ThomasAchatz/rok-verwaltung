@@ -466,9 +466,11 @@ export async function bearbeiteDienstleister(d, { nachher = () => {}, objektId =
     <div class="knopfreihe">
       ${neu ? "" : `<button class="knopf knopf--gefahr knopf--links" value="loeschen" formnovalidate>Löschen</button>`}
       <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      ${neu ? "" : `<button class="knopf" value="schreiben" formnovalidate>Schreiben</button>`}
       <button class="knopf knopf--primaer" value="ok">Speichern</button>
     </div>`, { breit: true });
   if (!daten) return;
+  if (daten.get("_aktion") === "schreiben") return geheZu(`#/schreiben/d-${d.id}`);
   try {
     if (daten.get("_aktion") === "loeschen") {
       if (!(await frage("Löschen?", `<p>„${esc(d.name)}“ wird aus der Liste gelöscht.</p>`, "Löschen", { gefahr: true }))) return;

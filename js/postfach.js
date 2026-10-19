@@ -33,6 +33,13 @@ const FILTER_LEER = {
   alle: "Das Postfach ist leer.",
 };
 
+// Briefkopf unter E-Mails (gleich wie in der Server-Funktion „versand“)
+function briefkopfText() {
+  const p = zustand.profil || {};
+  return [p.firma, [p.strasse, [p.plz, p.ort].filter(Boolean).join(" ")].filter(Boolean).join(", "),
+    [p.telefon ? `Tel. ${p.telefon}` : "", p.email, p.web].filter(Boolean).join(" · ")].filter(Boolean).join(" · ");
+}
+
 function signaturText() {
   const p = zustand.profil || {};
   return (p.email_signatur || "").trim() || [p.inhaber, p.firma].filter(Boolean).join("\n");
@@ -519,10 +526,12 @@ async function auftragStarten(n, mieter, bilder, objekt) {
 function baueEntwurf(el, k) {
   let antwort = k.antwort;
   const kiDa = !!zustand.ki?.ki;
-  const standardAn = k.nachricht?.absender_email || k.mieter?.email || "";
+  const standardAn = k.nachricht?.absender_email || k.dienstleister?.email || k.mieter?.email || "";
   const signatur = signaturText();
   const platzhalter = k.nachricht
     ? "z. B. „Handwerker ist beauftragt, meldet sich bis Freitag.“ Leer lassen: Die KI antwortet anhand des Wissens."
+    : k.dienstleister
+    ? "z. B. „Angebot für den Anstrich im Treppenhaus anfragen, Besichtigung nächste Woche möglich.“"
     : "z. B. „Frau Huber an die Mülltrennung erinnern, freundlich.“ oder „Termin zur Wohnungsbesichtigung am 3.11. um 10 Uhr ankündigen.“";
 
   el.innerHTML = `
@@ -545,7 +554,7 @@ function baueEntwurf(el, k) {
             <label class="feld"><span>Betreff</span><input name="betreff" value="${esc(antwort?.betreff || "")}"></label>
           </div>
           <label class="feld"><span>Text</span><textarea name="text" rows="10" class="entwurf__text">${esc(antwort?.text || "")}</textarea></label>
-          <p class="signatur">Wird automatisch angefügt:<br>Mit freundlichen Grüßen<br>${esc(signatur).replace(/\n/g, "<br>")}</p>
+          <p class="signatur">Wird automatisch angefügt:<br>Mit freundlichen Grüßen<br>${esc(signatur).replace(/\n/g, "<br>")}${briefkopfText() ? `<br><span class="signatur__kopf">${esc(briefkopfText())}</span>` : ""}</p>
           <div class="ueberarbeiten" ${k.auftrag ? "hidden" : ""}>
             <label class="feld"><span>Änderungswunsch an die KI</span>
               <span class="diktat"><input name="aenderung" placeholder="z. B. kürzer, oder: Termin Dienstag 10 Uhr nennen" autocomplete="off">${mikroKnopf()}</span></label>
@@ -598,7 +607,8 @@ function baueEntwurf(el, k) {
       nachricht_id: k.nachricht?.id || null,
       mieter_id: k.mieter?.id || null,
       empfaenger_email: v.an || null,
-      empfaenger_name: k.auftrag ? antwort.empfaenger_name : k.nachricht?.absender_name || (k.mieter ? mieterName(k.mieter) : null),
+      empfaenger_name: k.auftrag ? antwort.empfaenger_name : k.dienstleister ? k.dienstleister.name : k.nachricht?.absender_name || (k.mieter ? mieterName(k.mieter) : null),
+      ...(k.dienstleister ? { dienstleister_id: k.dienstleister.id } : {}),
       betreff: v.betreff,
       text: v.text,
       anweisung: v.anweisung || null,
@@ -641,6 +651,7 @@ function baueEntwurf(el, k) {
             ? await db.funktion("ki", { aktion: "auftrag", nachricht_id: k.nachricht.id, dienstleister_id: antwort.dienstleister_id, anweisung: v.anweisung || null })
             : await db.funktion("ki", {
               aktion: "entwurf", nachricht_id: k.nachricht?.id || null, mieter_id: k.mieter?.id || null, anweisung: v.anweisung || null,
+              dienstleister_id: k.dienstleister?.id || null, objekt_id: k.objektId?.() || null,
             });
           zeigeEditor(r);
           zeigeHinweise(r.hinweise);
@@ -688,6 +699,7 @@ function baueEntwurf(el, k) {
         try {
           const r = await db.funktion("ki", {
             aktion: "entwurf", nachricht_id: k.nachricht?.id || null, mieter_id: k.mieter?.id || null,
+            dienstleister_id: k.dienstleister?.id || null, objekt_id: k.objektId?.() || null,
             anweisung: v.anweisung || null, bisher: { betreff: v.betreff, text: v.text }, aenderung,
           });
           zeigeEditor(r);
@@ -700,7 +712,7 @@ function baueEntwurf(el, k) {
       });
     },
     selbst() {
-      const anrede = k.mieter ? briefanrede(k.mieter) + "," : "Guten Tag,";
+      const anrede = k.dienstleister ? "Sehr geehrte Damen und Herren," : k.mieter ? briefanrede(k.mieter) + "," : "Guten Tag,";
       zeigeEditor({
         betreff: k.nachricht ? (/^(aw|re):/i.test(k.nachricht.betreff || "") ? k.nachricht.betreff : `AW: ${k.nachricht.betreff || ""}`.trim()) : "",
         text: `${anrede}\n\n`,
@@ -735,7 +747,8 @@ function baueEntwurf(el, k) {
         const ok = await frage("E-Mail jetzt senden?", `
           <p>An <strong>${esc(v.an)}</strong><br>Betreff: ${esc(v.betreff || "Ihre Nachricht")}${anzahlFotos ? `<br>Anhang: ${anzahlFotos} ${anzahlFotos === 1 ? "Foto" : "Fotos"}` : ""}</p>
           <div class="mailvorschau">${esc(voll)}</div>
-          <p class="leise">Absender: ${esc(zustand.ki.absender || "")}${zustand.profil?.antwort_email ? `. Antworten gehen an ${esc(zustand.profil.antwort_email)}.` : ""}</p>`,
+          <p class="leise">Absender: ${esc(zustand.ki.absender || "")}${zustand.profil?.antwort_email ? `. Antworten gehen an ${esc(zustand.profil.antwort_email)}.` : ""}
+            Unter der Signatur steht der Briefkopf (Firma, Anschrift, Kontakt aus den Einstellungen).</p>`,
         "Jetzt senden");
         if (!ok) return;
         const erfolg = await beschaeftigt(el, knopf, "Wird gesendet …", async () => {
@@ -853,6 +866,10 @@ async function empfaengerDialog(k) {
   const vorschlaege = [];
   const m = k.mieter;
   let standard = null;
+  if (k.dienstleister) {
+    vorschlaege.push({ wert: "dienst", label: `Handwerker: ${k.dienstleister.name}`, name: k.dienstleister.name, zusatz: "", strasse: "", plz_ort: "" });
+    standard = "dienst";
+  }
   if (m) {
     const w = wohnungVon(m.wohnung_id);
     const o = w && objektVon(w.objekt_id);
@@ -907,25 +924,34 @@ async function empfaengerDialog(k) {
 // ---------------------------------------------------------------------------
 // Neues Schreiben (ohne eingegangene Nachricht), auch aus der Mieterakte
 // ---------------------------------------------------------------------------
-export async function zeigeNeuesSchreiben(mieterId = null, antwortId = null) {
+export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
+  // ziel: Mieter-ID oder „d-<ID>“ für einen Handwerker/Dienstleister
+  let mieterId = ziel && !ziel.startsWith("d-") ? ziel : null;
+  let dienstId = ziel?.startsWith("d-") ? ziel.slice(2) : null;
   let antwort = null;
   if (antwortId) {
     antwort = await db.ladeAntwort(antwortId);
     if (antwort.nachricht_id) return geheZu(`#/postfach/${antwort.nachricht_id}`);
     mieterId = antwort.mieter_id;
+    dienstId = antwort.dienstleister_id || null;
   }
-  const [mieterL] = await Promise.all([mieterListe(), ladeKiStatus()]);
-  const mieter = mieterId ? await db.ladeMieter(mieterId).catch(() => null) : null;
+  const [mieterL, alleDienst] = await Promise.all([mieterListe(), db.ladeDienstleister().catch(() => []), ladeKiStatus()]);
+  const dienstL = alleDienst.filter((d) => d.aktiv || d.id === dienstId);
+  const dienstleister = dienstId ? dienstL.find((d) => d.id === dienstId) || null : null;
+  const mieter = !dienstleister && mieterId ? await db.ladeMieter(mieterId).catch(() => null) : null;
   const entwuerfe = (await db.ladeAntworten({ mieterId: mieter?.id || null, anzahl: 30 }).catch(() => []))
-    .filter((a) => a.status === "entwurf" && !a.nachricht_id && a.id !== antwort?.id && (mieter || !a.mieter_id));
+    .filter((a) => a.status === "entwurf" && !a.nachricht_id && a.art !== "auftrag" && a.id !== antwort?.id && (mieter || !a.mieter_id));
   const w = mieter && wohnungVon(mieter.wohnung_id);
   const o = w && objektVon(w.objekt_id);
   const kt = mieter && kostentraegerVon(mieter.kostentraeger_id);
+  const zurueck = mieter ? `#/mieter/${mieter.id}` : dienstleister?.objekt_id ? `#/objekt/${dienstleister.objekt_id}` : "#/postfach";
+  const dienstOptionen = `<option value="">Keiner</option>` + dienstL.map((d) =>
+    `<option value="${esc(d.id)}" ${d.id === dienstleister?.id ? "selected" : ""}>${esc(d.name)}${d.gewerk ? " – " + esc(d.gewerk) : ""}</option>`).join("");
 
   inhalt().innerHTML = `
-    <a class="zurueck" href="${mieter ? `#/mieter/${esc(mieter.id)}` : "#/postfach"}">${mieter ? "Zur Akte" : "Zum Postfach"}</a>
+    <a class="zurueck" href="${esc(zurueck)}">${mieter ? "Zur Akte" : dienstleister?.objekt_id ? "Zum Haus" : "Zum Postfach"}</a>
     <div class="kopf"><div><h1>${antwort ? "Entwurf" : "Neues Schreiben"}</h1>
-      <p>Sagen oder tippen Sie, was drinstehen soll. Die KI entwirft das Schreiben mit den Daten der Mietpartei und dem Wissen.</p></div></div>
+      <p>Sagen oder tippen Sie, was drinstehen soll. Die KI entwirft das Schreiben ${dienstleister ? "an den Handwerker mit dem Wissen zum Haus" : "mit den Daten der Mietpartei und dem Wissen"}.</p></div></div>
     ${kiBanner()}
     <div class="akte">
       <div class="stapel"><div id="entwurf"></div></div>
@@ -933,20 +959,31 @@ export async function zeigeNeuesSchreiben(mieterId = null, antwortId = null) {
         <section class="flaeche">
           <div class="flaeche__kopf"><h2>An wen?</h2></div>
           <div class="flaeche__inhalt">
-            <label class="feld feld--eng"><span>Mietpartei</span><select id="empf-mieter" ${antwort ? "disabled" : ""}>${mieterOptionen(mieterL, mieter?.id || null, "Keine (z. B. Interessent)")}</select></label>
-            ${mieter ? `<dl class="datenliste">
+            <label class="feld"><span>Mietpartei</span><select id="empf-mieter" ${antwort ? "disabled" : ""}>${mieterOptionen(mieterL, mieter?.id || null, "Keine (z. B. Interessent)")}</select></label>
+            <label class="feld feld--eng"><span>Handwerker / Dienstleister</span><select id="empf-dienst" ${antwort ? "disabled" : ""}>${dienstOptionen}</select></label>
+            ${mieter ? `<dl class="datenliste datenliste--abstand">
                 <dt>Wohnung</dt><dd>${esc([o?.bezeichnung, w?.bezeichnung].filter(Boolean).join(", ") || "–")}</dd>
                 <dt>E-Mail</dt><dd>${esc(mieter.email || "–")}</dd>
                 ${kt ? `<dt>Kostenträger</dt><dd>${esc(kt.name)}</dd>` : ""}
               </dl>`
-              : `<p class="leise">Ohne Mietpartei nutzt die KI nur das allgemeine Wissen.</p>`}
+            : dienstleister ? `<dl class="datenliste datenliste--abstand">
+                ${dienstleister.gewerk ? `<dt>Gewerk</dt><dd>${esc(dienstleister.gewerk)}</dd>` : ""}
+                <dt>E-Mail</dt><dd>${dienstleister.email ? esc(dienstleister.email) : `<span class="betrag--offen">keine hinterlegt</span>`}</dd>
+                ${dienstleister.telefon ? `<dt>Telefon</dt><dd><a href="tel:${esc(String(dienstleister.telefon).replace(/[^\d+]/g, ""))}">${esc(dienstleister.telefon)}</a></dd>` : ""}
+              </dl>
+              <label class="feld feld--eng feld--oben"><span>Betrifft Haus (optional)</span><select id="empf-haus">
+                <option value="">–</option>
+                ${zustand.stamm.objekte.map((x) => `<option value="${esc(x.id)}" ${x.id === dienstleister.objekt_id ? "selected" : ""}>${esc(x.bezeichnung)}</option>`).join("")}
+              </select></label>
+              <p class="leise">Die KI bekommt keine Daten von Mietern, nur Haus und Wissen.</p>`
+            : `<p class="leise">Ohne Auswahl nutzt die KI nur das allgemeine Wissen.</p>`}
           </div>
         </section>
         ${entwuerfe.length ? `
         <section class="flaeche">
           <div class="flaeche__kopf"><h2>Weitere Entwürfe</h2></div>
           <div class="zeilen">${entwuerfe.map((a) => `<a class="entwurfzeile" href="#/entwurf/${esc(a.id)}">
-            <span>${esc(a.betreff || "(ohne Betreff)")}</span><span class="leise">${esc(zeitDE(a.aktualisiert_am))}</span></a>`).join("")}</div>
+            <span>${esc(a.betreff || "(ohne Betreff)")}${a.empfaenger_name ? ` <span class="leise">an ${esc(a.empfaenger_name)}</span>` : ""}</span><span class="leise">${esc(zeitDE(a.aktualisiert_am))}</span></a>`).join("")}</div>
         </section>` : ""}
       </div>
     </div>`;
@@ -954,10 +991,13 @@ export async function zeigeNeuesSchreiben(mieterId = null, antwortId = null) {
   const vorbelegt = zustand.vorbelegung && !zustand.vorbelegung.nachricht_id ? zustand.vorbelegung.anweisung : null;
   zustand.vorbelegung = null;
   baueEntwurf($("#entwurf"), {
-    nachricht: null, mieter, antwort, anweisung: vorbelegt,
-    nachEnde: () => geheZu(mieter ? `#/mieter/${mieter.id}` : "#/postfach"),
+    nachricht: null, mieter, dienstleister, antwort, anweisung: vorbelegt,
+    objektId: () => $("#empf-haus")?.value || null,
+    nachEnde: () => geheZu(zurueck),
   });
+  if (dienstleister && !dienstleister.email && !antwort) melde("Für diesen Handwerker ist keine E-Mail hinterlegt. Bitte im Feld „An“ eintragen oder als Brief drucken.", "info");
   $("#empf-mieter").addEventListener("change", (e) => geheZu(e.target.value ? `#/schreiben/${e.target.value}` : "#/schreiben"));
+  $("#empf-dienst").addEventListener("change", (e) => geheZu(e.target.value ? `#/schreiben/d-${e.target.value}` : "#/schreiben"));
 }
 
 // ---------------------------------------------------------------------------

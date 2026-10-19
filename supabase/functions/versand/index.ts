@@ -17,9 +17,24 @@ export function emailText(text: string, profil: Record<string, string | null>): 
   return `${text.trim()}\n\nMit freundlichen Grüßen\n${signatur}`;
 }
 
-export function emailHtml(volltext: string): string {
+// Briefkopf unter der E-Mail: Firma, Anschrift, Kontakt (aus den Einstellungen)
+export function briefkopfZeilen(profil: Record<string, string | null>): string[] {
+  const ort = [profil.plz, profil.ort].filter(Boolean).join(" ");
+  return [
+    profil.firma,
+    [profil.strasse, ort].filter(Boolean).join(", "),
+    [profil.telefon ? `Tel. ${profil.telefon}` : "", profil.email, profil.web].filter(Boolean).join(" · "),
+  ].map((z) => String(z ?? "").trim()).filter(Boolean);
+}
+
+export function emailHtml(volltext: string, profil: Record<string, string | null> = {}): string {
   const absaetze = volltext.split(/\n{2,}/).map((a) => `<p style="margin:0 0 12px">${escHtml(a).replace(/\n/g, "<br>")}</p>`);
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1d2430">${absaetze.join("")}</div>`;
+  const kopf = briefkopfZeilen(profil);
+  const fuss = kopf.length
+    ? `<div style="margin-top:20px;padding-top:10px;border-top:2px solid #b08d57;font-size:12px;line-height:1.5;color:#5a6270">` +
+      kopf.map((z, i) => (i === 0 ? `<strong style="color:#1f3a5f;font-size:13px">${escHtml(z)}</strong>` : escHtml(z))).join("<br>") + "</div>"
+    : "";
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1d2430">${absaetze.join("")}${fuss}</div>`;
 }
 
 export async function handler(req: Request): Promise<Response> {
@@ -41,19 +56,20 @@ export async function handler(req: Request): Promise<Response> {
     if (!istEmail(an)) throw new Fehler(400, "Bitte eine gültige Empfänger-Adresse angeben.", "eingabe");
     if (!antwort.text?.trim()) throw new Fehler(400, "Die Antwort ist leer.", "eingabe");
 
-    const [profil] = await rest("vermieter_profil?id=eq.1&select=firma,inhaber,email_signatur,antwort_email", zugriff);
+    const [profil] = await rest("vermieter_profil?id=eq.1&select=firma,inhaber,email_signatur,antwort_email,strasse,plz,ort,telefon,email,web", zugriff);
     let nachricht = null;
     if (antwort.nachricht_id) {
       [nachricht] = await rest(`nachrichten?id=eq.${enc(antwort.nachricht_id)}&select=id,extern_message_id`, zugriff);
     }
 
     const volltext = emailText(antwort.text, profil ?? {});
+    const kopf = briefkopfZeilen(profil ?? {});
     const nutzlast: Record<string, unknown> = {
       from: absender,
       to: [an],
       subject: String(antwort.betreff || "Ihre Nachricht").replace(/[\r\n]+/g, " ").slice(0, 200),
-      text: volltext,
-      html: emailHtml(volltext),
+      text: kopf.length ? `${volltext}\n\n--\n${kopf.join("\n")}` : volltext,
+      html: emailHtml(volltext, profil ?? {}),
     };
     if (profil?.antwort_email && istEmail(profil.antwort_email)) nutzlast.reply_to = profil.antwort_email;
     // Message-ID stammt aus einer fremden Mail: nur eine saubere <…@…>-Kennung übernehmen

@@ -437,6 +437,9 @@ details.ausklapp[open] > summary { border-bottom: 1px solid var(--linie); }
 .ki-vorschlag { margin: 0 0 0.9rem; padding: 0.55rem 0.75rem; background: var(--tinte-zart); border-radius: 4px; font-size: 0.9rem; }
 .mieterkarte { display: flex; flex-direction: column; margin-bottom: 0.3rem; }
 .feld--eng { margin-bottom: 0; }
+.feld--oben { margin-top: 0.9rem; }
+.signatur__kopf { display: inline-block; margin-top: 0.35rem; padding-top: 0.3rem; border-top: 2px solid var(--messing); overflow-wrap: anywhere; }
+.datenliste--abstand { margin-top: 0.9rem; }
 .antwort { border-bottom: 1px solid #edf0f4; }
 .antwort:last-child { border-bottom: none; }
 .antwort > summary {
