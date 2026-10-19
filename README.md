@@ -187,6 +187,8 @@ Danach die Zeile für die Antwortvorlage aus `supabase/migrations/20261015020000
 - [x] Ablage: Ordner bearbeitbar (mit Unterordnern), ZIP-Export, Download unter sauberem Namen
 - [x] Ablage aus der App: Mails, Notizen und Gesendetes mit KI-Ordnervorschlag, Word/Excel hochladen
 - [x] Roberts Ordnerstruktur (automatische Jahres- und Wohnungsordner) und Dateinamen-Schema
+- [x] Eingabemaske Stammdaten (`#/stammdaten`): Häuser, Wohnungen (auch „WHG 01–12“ auf einmal), Kostenträger,
+      neue Mietparteien; Details der Mietpartei weiter in der Akte
 - [ ] Später: Antwort als PDF-Anhang mailen, Import offener Posten aus immocloud (CSV)
 
 Die Mustertexte der Vorlagen sind ein Ausgangspunkt und vor dem echten Einsatz rechtlich prüfen zu lassen.

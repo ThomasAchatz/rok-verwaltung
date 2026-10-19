@@ -68,3 +68,5 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Roberts Struktur: `dokument_ordner.automatik` ('jahr' | 'wohnung') → `zielOrdner()` hängt den Unterordner an;
   Name über `dokumentTitel({ datum, objekt, art, details })` (JJMMTT_Kürzel_Straße_Art_Details), `objekte.kuerzel`,
   `dokumente.details`. Echte Namen/Wohnungen aus Roberts Vorlage NICHT ins Testsystem (erst nach dem Umzug).
+- Stammdaten-Maske: `js/stammdaten.js` (Route `#/stammdaten`, Links in Einstellungen und Mieterliste). Löschen nur,
+  wenn leer (Haus ohne Wohnungen, Wohnung ohne Mietpartei); Haus löschen kaskadiert auf Wissen/Handwerker des Hauses.

@@ -798,3 +798,18 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
   .ordnerzeile--unter input { grid-column: 1 / -1; font-size: 0.9rem; }
   .ordnerzeile--unter .ordnerzeile__zahl { display: block; grid-column: 1; min-width: 0; text-align: left; }
 }
+
+/* --- Stammdaten (Häuser, Wohnungen, Kostenträger) ------------------------ */
+.stamm-haus .flaeche__kopf { align-items: flex-start; gap: 0.75rem; }
+.stamm-haus .flaeche__kopf > div { min-width: 0; }
+.stamm-haus .flaeche__kopf .leise { display: block; font-size: 0.82rem; overflow-wrap: anywhere; }
+.stamm-zeile { display: flex; align-items: center; gap: 0.6rem; padding-right: 1.1rem; border-bottom: 1px solid #edf0f4; flex-wrap: wrap; }
+.stamm-zeile:last-child { border-bottom: none; }
+.stamm-zeile__haupt {
+  font: inherit; color: inherit; text-decoration: none; text-align: left; background: none; border: none; cursor: pointer;
+  display: flex; flex-direction: column; gap: 0.1rem; padding: 0.6rem 1.1rem; flex: 1 1 10rem; min-width: 0;
+}
+.stamm-zeile__haupt:hover { background: #f6f8fb; }
+.stamm-zeile__name { font-weight: 600; font-size: 0.92rem; overflow-wrap: anywhere; }
+.stamm-zeile__mieter { font-size: 0.88rem; padding: 0.3rem 0 0.3rem 1.1rem; overflow-wrap: anywhere; }
+.stamm-zeile__haupt + .stamm-zeile__mieter { padding-left: 0; }

@@ -12,6 +12,7 @@ import {
 import * as postfach from "./postfach.js";
 import * as start from "./start.js";
 import * as ablage from "./ablage.js";
+import * as stamm from "./stammdaten.js";
 import { oeffneChat } from "./chat.js";
 import {
   MONATE_KURZ, monatISO, letzteMonate, mietbuch, LEGENDE, naechsterSchritt, mieterZeile, schreibenKachel, oeffneSchreiben, emailDaten,
@@ -146,7 +147,7 @@ window.addEventListener("hashchange", () => route());
 async function route() {
   if ($("#app").hidden) return;
   const [, teil = "uebersicht", id] = (location.hash || "#/uebersicht").split("/");
-  const navTeil = { schreiben: "postfach", entwurf: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "uebersicht" }[teil] || teil;
+  const navTeil = { schreiben: "postfach", entwurf: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "uebersicht", stammdaten: "mieter" }[teil] || teil;
   for (const a of $$("[data-nav]")) {
     if (a.dataset.nav === navTeil) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -162,6 +163,7 @@ async function route() {
     else if (teil === "objekt" && id) await start.zeigeObjekt(id);
     else if (teil === "wissen") await ablage.zeigeWissen();
     else if (teil === "vorlagen") await zeigeVorlagen();
+    else if (teil === "stammdaten") await stamm.zeigeStammdaten();
     else if (teil === "einstellungen" || teil === "briefkopf") await postfach.zeigeEinstellungen();
     else await start.zeigeStart();
     window.scrollTo(0, 0);
@@ -188,7 +190,9 @@ async function zeigeMieterliste() {
 
   inhalt.innerHTML = `
     <div class="kopf">
-      <div><h1>Mieter</h1><p>${liste.length} Mietparteien in ${gruppen.size} Objekten</p></div>
+      <div><h1>Mieter</h1><p>${liste.length} Mietparteien in ${gruppen.size} Objekten</p>
+        <p class="knopfreihe"><button type="button" class="knopf knopf--klein" id="mieter-neu">+ Neue Mietpartei</button>
+          <a class="knopf knopf--klein" href="#/stammdaten">Häuser &amp; Wohnungen</a></p></div>
       <label class="feld suchfeld"><span>Suchen</span>
         <input type="search" id="suche" placeholder="Name, Wohnung oder Aktenzeichen"></label>
     </div>
@@ -207,6 +211,7 @@ async function zeigeMieterliste() {
       </div>
     </section>`;
 
+  $("#mieter-neu").addEventListener("click", () => stamm.neueMietpartei());
   $("#suche").addEventListener("input", (e) => {
     const q = e.target.value.trim().toLowerCase();
     let treffer = 0;

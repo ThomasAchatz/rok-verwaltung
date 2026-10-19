@@ -267,9 +267,30 @@ export async function loescheDienstleister(id) {
   pruefe(await sb.from("dienstleister").delete().eq("id", id));
 }
 
-// --- Häuser -------------------------------------------------------------------
+// --- Häuser, Wohnungen, Kostenträger, neue Mietparteien -----------------------
 export async function speichereObjekt(id, felder) {
+  if (!id) return pruefe(await sb.from("objekte").insert(felder).select().single());
   return pruefe(await sb.from("objekte").update(felder).eq("id", id).select().single());
+}
+export async function loescheObjekt(id) {
+  pruefe(await sb.from("objekte").delete().eq("id", id));
+}
+export async function speichereWohnung(id, felder) {
+  if (!id) return pruefe(await sb.from("wohnungen").insert(felder).select().single());
+  return pruefe(await sb.from("wohnungen").update(felder).eq("id", id).select().single());
+}
+export async function loescheWohnung(id) {
+  pruefe(await sb.from("wohnungen").delete().eq("id", id));
+}
+export async function speichereKostentraeger(id, felder) {
+  if (!id) return pruefe(await sb.from("kostentraeger").insert(felder).select().single());
+  return pruefe(await sb.from("kostentraeger").update(felder).eq("id", id).select().single());
+}
+export async function loescheKostentraeger(id) {
+  pruefe(await sb.from("kostentraeger").delete().eq("id", id));
+}
+export async function neuerMieter(felder) {
+  return pruefe(await sb.from("mieter").insert(felder).select().single());
 }
 
 // --- Dokumentenablage (privater Bucket "dokumente") -------------------------

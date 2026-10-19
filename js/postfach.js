@@ -1172,6 +1172,14 @@ export async function zeigeEinstellungen() {
       </section>
 
       <section class="flaeche">
+        <div class="flaeche__kopf"><h2>Häuser, Wohnungen &amp; Mieter</h2></div>
+        <div class="flaeche__inhalt">
+          <p>Häuser, Wohnungen, Kostenträger und neue Mietparteien anlegen und ändern.</p>
+          <a class="knopf" href="#/stammdaten">Öffnen</a>
+        </div>
+      </section>
+
+      <section class="flaeche">
         <div class="flaeche__kopf"><h2>Dokumentenablage</h2></div>
         <div class="flaeche__inhalt">
           <p>Ordner für Rechnungen, Verträge &amp; Co. (für alle Häuser gleich). Die KI legt nur in diese Ordner ab.</p>
