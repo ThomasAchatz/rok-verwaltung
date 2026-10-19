@@ -11,6 +11,12 @@ Robert kann auch einfach diktieren, was in ein Schreiben soll. **Die KI schreibt
 verschickt wird ausschließlich per Klick (E-Mail oder als Brief über die Vorschau). Die Finanzen
 bleiben in immocloud.
 
+Seit Stufe 3 (Roberts Wünsche): **Übersicht als priorisierte To-do-Liste** (Fristen, Wiedervorlagen,
+neue Nachrichten, fällige Mahnungen, Entwürfe), **Notizen mit Wiedervorlage** und KI-Prüfung
+(z. B. Mieterhöhung nach festen Regeln), **Seite je Haus** mit Mietparteien, Dokumenten, Wissen und
+Handwerkern, **Foto/PDF erfassen** mit Ablagevorschlag und Standardnamen, **Handwerker-Auftrag** mit Fotos,
+**Wissen einsprechen** und ein **Chat „Fragen“**, der nur liest und Aktionen als Knopf vorschlägt.
+
 > **Testversion:** In der Datenbank liegen ausschließlich erfundene Daten. Echte Mieterdaten
 > erst nach dem Umzug auf Roberts eigenes Supabase-Konto (Pro-Plan, AVV, Region Frankfurt) eintragen.
 
@@ -31,8 +37,13 @@ js/config.js          Supabase-URL + Publishable Key (öffentlich, das ist so ge
 js/daten.js           alle Datenbankzugriffe
 js/dokumente.js       Briefdaten zusammenstellen, Vorlagen befüllen
 js/vorschau.js        Vorschau-Fenster (Drucken/PDF, E-Mail, Herunterladen, in E-Mail ziehen)
-js/app.js             Oberfläche: Übersicht, Mieter, Akte, Vorlagen, Router
-js/postfach.js        Oberfläche: Postfach, Entwurf mit KI + Diktat, Wissen, Einstellungen
+js/app.js             Router, Mieterliste, Akte, Vorlagen
+js/start.js           Übersicht (To-do-Liste), Seite je Haus, Notizen/Wiedervorlagen
+js/postfach.js        Postfach, Nachricht (Frist, Anhänge, Handwerker-Auftrag), Entwurf mit KI + Diktat, Einstellungen
+js/ablage.js          Foto/PDF erfassen, Dokumente, Wissen (auch eingesprochen), Handwerker
+js/chat.js            Chat „Fragen an die App“
+js/bausteine.js       Mietbuch-Leiste, Zeilen, Schreiben-Kacheln
+js/ui.js              Diktat, Wartehinweise, Auswahllisten, Bilder verkleinern, Drucken
 js/helfer.js          gemeinsame Hilfen und Zustand
 PLATZHALTER.md        alle Platzhalter für eigene Vorlagen
 manifest.webmanifest, sw.js, icons/   installierbare App (PWA)
@@ -41,7 +52,12 @@ tools/vorlagen-erzeugen.js   erzeugt die Standardvorlagen neu (node, Paket "docx
 supabase/migrations/  Datenbankstruktur + Zugriffsschutz
 supabase/seed.sql     erfundene Testdaten
 supabase/seed_postfach.sql   erfundene Nachrichten, Wissen, Tonfall/Signatur
-supabase/functions/   Edge Functions: ki, posteingang, versand (+ _shared/gemeinsam.ts)
+supabase/seed_etappen.sql    erfundene Handwerker, Notizen, Angaben zur Mieterhöhung
+supabase/functions/   Edge Functions: ki, posteingang, versand
+  _shared/gemeinsam.ts   REST, Speicher, Claude-Aufruf, Hilfen
+  _shared/fach.ts        Einordnen (mit Frist), Entwürfe, Auftrag, Dokument lesen, Wissen ordnen, Notiz prüfen
+  _shared/mieterhoehung.ts  feste Regeln § 558 BGB (Sperrfrist, Kappungsgrenze, Vergleichsmiete)
+  _shared/chat.ts        Chat mit Lese-Werkzeugen und geprüften Vorschlägen
 vendor/               gebündelte Bibliotheken (siehe vendor/LIZENZEN.md)
 ```
 
@@ -63,10 +79,12 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
 ```
 
 - **Edge Functions** (`supabase/functions/`, deployt mit `verify_jwt = false`, die Prüfung passiert im Code):
-  - `ki`: nur für freigeschaltete Mitglieder. Aktionen `status`, `einordnen`, `entwurf`, `brief_lesen`.
+  - `ki`: nur für freigeschaltete Mitglieder. Aktionen `status`, `einordnen` (inkl. Frist mit wörtlicher Textstelle),
+    `entwurf`, `auftrag`, `brief_lesen` (Foto/PDF → Postfach oder Ablage), `wissen_ordnen`, `notiz_pruefen`, `chat`.
   - `posteingang`: Webhook für eingehende E-Mails, geschützt durch den Schlüssel `?token=…` aus der
     Tabelle `postfach` (in der App unter Einstellungen → Einrichtung) und optional die Resend-Signatur.
   - `versand`: nur für Mitglieder, nur per Klick. Ohne Resend-Schlüssel öffnet die App stattdessen das E-Mail-Programm.
+    Aufträge an Handwerker gehen mit den gewählten Fotos aus dem Speicher raus.
 - **Secrets** (Supabase → Edge Functions → Secrets, nie ins Repo):
   `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `VERSAND_ABSENDER` (z. B. `ROK Immobilien <verwaltung@rok-immobilien.com>`),
   optional `RESEND_WEBHOOK_SECRET` (`whsec_…`) und `KI_MODELL` (Standard `claude-sonnet-5-5`).
@@ -75,7 +93,18 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   **Nie** die IBAN/Bankdaten. Text aus eingehenden Nachrichten wird als Information behandelt, nicht als Anweisung.
 - **Diktat** nutzt die Spracherkennung des Browsers (Chrome: Google-Server, iPhone/Safari: Apple).
   Alternative ohne Browser-Diktat: das Mikrofon der iPhone-Tastatur.
-- Fotografierte Briefe liegen im privaten Bucket `eingang`.
+- Fotografierte Briefe und E-Mail-Anhänge liegen im privaten Bucket `eingang` (nur JPEG/PNG/WebP/PDF bis 10 MB,
+  Inhalt wird geprüft, alles andere wird verworfen und nur namentlich angezeigt). Abgelegte Dokumente im privaten
+  Bucket `dokumente` (`<haus|allgemein>/<uuid>.pdf|jpg`), Name nach Schema `JJJJ-MM-TT_Haus_Absender_Art`.
+- **Handwerker** bekommen nur Adresse, Wohnung, Name/Telefon der Mietpartei, Schadensbeschreibung und Fotos –
+  keine Miete, keine Rückstände, keinen Kostenträger, keine Bankdaten.
+- **Selbsthilfe-Tipps** in Entwürfen sind als „Unser Tipp (unverbindlich)“ markiert, nie bei Strom, Gas,
+  Wasser von oben, Heizungsanlage, Dach oder Statik.
+- **Mieterhöhung:** Die Zahlen (Sperrfrist, Kappungsgrenze 15/20 %, Vergleichsmiete × Fläche, Staffel/Index)
+  rechnet der Code nach festen Regeln, die KI erklärt nur. Immer mit Hinweis „keine Rechtsberatung“.
+- **Fristen** zeigt die App mit der Originalstelle aus der Nachricht; Robert bestätigt oder ändert sie.
+- **Chat:** liest mit Roberts Login, sieht keine Bankdaten, Summen kommen aus der Datenbank. Er kann nichts
+  ändern, senden oder löschen; Vorschläge (Notiz, Entwurf, Wissen, Öffnen) laufen erst nach Klick und Prüfung.
 
 ## Sicherheit
 
@@ -101,10 +130,12 @@ Empfohlen zusätzlich: Authentication → Sign In / Providers → „Allow new u
 
 ## Testdaten neu einspielen
 
-Im Supabase SQL Editor erst leeren, dann `supabase/seed.sql` und `supabase/seed_postfach.sql` ausführen:
+Im Supabase SQL Editor erst leeren, dann `supabase/seed.sql`, `supabase/seed_postfach.sql`,
+`supabase/seed_postfach_2.sql` und `supabase/seed_etappen.sql` ausführen:
 
 ```sql
-truncate public.antworten, public.nachrichten, public.wissen, public.vorgaenge, public.forderungen,
+truncate public.aufgaben, public.dokumente, public.dienstleister,
+         public.antworten, public.nachrichten, public.wissen, public.vorgaenge, public.forderungen,
          public.mieter, public.wohnungen, public.objekte, public.kostentraeger, public.vorlagen cascade;
 ```
 
@@ -128,7 +159,9 @@ Danach die Zeile für die Antwortvorlage aus `supabase/migrations/20261015020000
 - [x] Stufe 1: Mieter, offene Posten, Mahnungen und Nachweis per Klick, eigene Vorlagen
 - [x] Stufe 1b: Vorschau vor dem Download, Archiv der Schreiben, Ansicht ohne seitliches Scrollen
 - [x] Stufe 2: Postfach, KI-Einordnung, Antwortentwürfe mit Diktat, Wissen, Versand per Klick, Brief fotografieren
-- [ ] Später: Anhänge eingehender E-Mails in die App übernehmen, Antwort als PDF-Anhang mailen,
-      Import offener Posten aus immocloud (CSV)
+- [x] Stufe 3 (Roberts Feedback): To-do-Übersicht mit Fristen und Wiedervorlagen, Seiten je Haus,
+      Dokumentenablage mit KI-Vorschlag, Anhänge aus E-Mails, Handwerker-Auftrag, Wissen einsprechen,
+      Mieterhöhung prüfen, Chat mit Vorschlägen
+- [ ] Später: Antwort als PDF-Anhang mailen, Import offener Posten aus immocloud (CSV), mehr Ablage-Ordner
 
 Die Mustertexte der Vorlagen sind ein Ausgangspunkt und vor dem echten Einsatz rechtlich prüfen zu lassen.

@@ -4,18 +4,23 @@
 //   fremde Adressen laufen direkt ins Netz.
 // - „Netz zuerst“: Online gibt es immer die neueste Version, offline startet wenigstens die Hülle.
 // Bei jeder Änderung an der App VERSION hochzählen.
-const VERSION = "rok-v5";
+const VERSION = "rok-v6";
 const HUELLE = [
   "./",
   "index.html",
   "manifest.webmanifest",
   "css/app.css",
+  "js/ablage.js",
   "js/app.js",
+  "js/bausteine.js",
+  "js/chat.js",
   "js/config.js",
   "js/daten.js",
   "js/dokumente.js",
   "js/helfer.js",
   "js/postfach.js",
+  "js/start.js",
+  "js/ui.js",
   "js/vorschau.js",
   "vendor/docx-vendor.min.js",
   "vendor/jszip.min.js",

@@ -5,11 +5,13 @@
 //   - einfaches JSON { from, subject, text, html?, message_id?, id? } (z. B. aus einem Cloudflare Email Worker)
 //   - Postmark-Format { From, FromName, Subject, TextBody, HtmlBody, MessageID }
 // Ist RESEND_WEBHOOK_SECRET gesetzt, muss zusätzlich jede Anfrage gültig signiert sein (nur Resend).
+// Anhänge (nur Fotos und PDF, mit Größen- und Inhaltsprüfung) werden in den privaten Bucket „eingang“ übernommen.
 // Ist die KI eingerichtet, wird die Nachricht gleich eingeordnet.
 import {
-  CORS, Fehler, enc, env, fehlerAntwort, gleich, htmlZuText, json, kiEingerichtet, kuerze, ordneEin, pruefeSvix,
-  rest, zerlegeAdresse,
+  CORS, Fehler, dateiArt, enc, env, fehlerAntwort, gleich, htmlZuText, json, kiEingerichtet, kuerze, pruefeSvix,
+  rest, speichereDatei, zerlegeAdresse,
 } from "../_shared/gemeinsam.ts";
+import { ordneEin } from "../_shared/fach.ts";
 
 const ADMIN = { admin: true } as const;
 
@@ -23,6 +25,44 @@ async function ladeResendMail(id: string): Promise<any> {
   });
   if (!antwort.ok) throw new Fehler(502, `Resend: E-Mail ${id} konnte nicht geladen werden (${antwort.status})`, "resend");
   return await antwort.json();
+}
+
+const ERLAUBT = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_ANHAENGE = 6;
+const sichererName = (s: unknown) =>
+  String(s ?? "Anhang").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+/, "").slice(0, 80) || "Anhang";
+
+// Anhänge einer bei Resend eingegangenen Mail übernehmen. Alles andere als Fotos/PDF wird verworfen.
+export async function uebernimmAnhaenge(emailId: string, nachrichtId: string): Promise<unknown[]> {
+  const schluessel = env("RESEND_API_KEY");
+  if (!schluessel) return [];
+  const basis = env("RESEND_URL") ?? "https://api.resend.com";
+  const liste = await fetch(`${basis}/emails/receiving/${enc(emailId)}/attachments`, { headers: { Authorization: `Bearer ${schluessel}` } });
+  if (!liste.ok) throw new Fehler(502, `Resend: Anhänge nicht abrufbar (${liste.status})`, "resend");
+  // deno-lint-ignore no-explicit-any
+  const daten: any[] = (await liste.json())?.data ?? [];
+  const ergebnis: unknown[] = [];
+  for (const [i, a] of daten.entries()) {
+    const eintrag = { name: String(a.filename ?? "Anhang").slice(0, 120), typ: a.content_type ?? null, groesse: a.size ?? null };
+    if (i >= MAX_ANHAENGE || !ERLAUBT.includes(a.content_type) || (a.size && a.size > MAX_BYTES) || !a.download_url) {
+      ergebnis.push({ ...eintrag, verworfen: true });
+      continue;
+    }
+    try {
+      const r = await fetch(a.download_url);
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      const art = r.ok ? dateiArt(bytes) : null;
+      if (!art || bytes.length > MAX_BYTES) { ergebnis.push({ ...eintrag, verworfen: true }); continue; }
+      const pfad = `${nachrichtId}/${i + 1}_${sichererName(a.filename)}`;
+      await speichereDatei("eingang", pfad, bytes, art, ADMIN);
+      ergebnis.push({ name: eintrag.name, typ: art, groesse: bytes.length, pfad });
+    } catch (err) {
+      console.error("Anhang nicht übernommen:", err);
+      ergebnis.push({ ...eintrag, verworfen: true });
+    }
+  }
+  return ergebnis;
 }
 
 export async function handler(req: Request): Promise<Response> {
@@ -106,9 +146,18 @@ export async function handler(req: Request): Promise<Response> {
     const neu = Array.isArray(zeilen) ? zeilen[0] : null;
     if (!neu) return json({ ok: true, doppelt: true });
 
-    // 5. Gleich einordnen lassen (Fehler hier verhindern den Eingang nicht)
-    if (kiEingerichtet()) {
-      const arbeit = ordneEin(neu.id, ADMIN).catch((err) => console.error("Einordnen fehlgeschlagen:", err));
+    // 5. Im Hintergrund: Anhänge übernehmen, dann einordnen (Fehler verhindern den Eingang nicht)
+    const resendId = e.type === "email.received" ? e.data.email_id : null;
+    if (resendId || kiEingerichtet()) {
+      const arbeit = (async () => {
+        if (resendId && anhaenge.length) {
+          try {
+            const gespeichert = await uebernimmAnhaenge(resendId, neu.id);
+            if (gespeichert.length) await rest(`nachrichten?id=eq.${enc(neu.id)}`, ADMIN, { method: "PATCH", body: { anhaenge: gespeichert } });
+          } catch (err) { console.error("Anhänge fehlgeschlagen:", err); }
+        }
+        if (kiEingerichtet()) await ordneEin(neu.id, ADMIN);
+      })().catch((err) => console.error("Einordnen fehlgeschlagen:", err));
       // deno-lint-ignore no-explicit-any
       const laufzeit = (globalThis as any).EdgeRuntime;
       if (laufzeit?.waitUntil) laufzeit.waitUntil(arbeit);

@@ -74,6 +74,7 @@
       </nav>
       <div class="leiste__konto">
         <button type="button" class="knopf knopf--klein installieren" data-aktion="installieren" hidden>Installieren</button>
+        <button type="button" class="knopf knopf--klein knopf--ki" data-aktion="chat" title="Fragen an die App"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11 2l1.9 5.6L18.5 9.5l-5.6 1.9L11 17l-1.9-5.6L3.5 9.5l5.6-1.9zM18.5 13.5l.95 2.55 2.55.95-2.55.95-.95 2.55-.95-2.55L15 17l2.55-.95z"/></svg> Fragen</button>
         <span id="nutzer-email" class="leiste__email"></span>
         <button type="button" class="knopf knopf--leise" data-aktion="abmelden">Abmelden</button>
       </div>
@@ -84,6 +85,7 @@
 
   <div id="meldungen" class="meldungen" aria-live="polite"></div>
   <dialog id="dialog" class="dialog"></dialog>
+  <dialog id="chat" class="chat" aria-label="Fragen an die App"></dialog>
 
   <script src="vendor/docx-vendor.min.js"></script>
   <script src="vendor/jszip.min.js"></script>

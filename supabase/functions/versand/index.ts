@@ -2,7 +2,12 @@
 // Wird NUR per Klick aus der App ausgelöst (nie automatisch).
 //   { antwort_id, an?, anhang?: { dateiname, daten (base64) } }
 // Benötigt die Secrets RESEND_API_KEY und VERSAND_ABSENDER (z. B. "ROK Immobilien <verwaltung@rok-immobilien.com>").
-import { CORS, Fehler, enc, env, fehlerAntwort, istEmail, json, pruefeMitglied, rest } from "../_shared/gemeinsam.ts";
+import {
+  CORS, Fehler, base64, enc, env, fehlerAntwort, istEmail, json, ladeDatei, pruefeMitglied, rest,
+} from "../_shared/gemeinsam.ts";
+
+const BUCKETS = ["eingang", "dokumente"];
+const MAX_ANHANG_GESAMT = 20 * 1024 * 1024;
 
 const escHtml = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
@@ -57,11 +62,22 @@ export async function handler(req: Request): Promise<Response> {
     if (/^<[^<>\s]{1,250}@[^<>\s]{1,250}>$/.test(mid)) {
       nutzlast.headers = { "In-Reply-To": mid, References: mid };
     }
+    const anhaenge: { filename: string; content: string }[] = [];
+    const sauber = (n: unknown) => String(n ?? "").replace(/[\r\n\\/"]/g, "").slice(0, 120) || "Anhang";
     if (eingabe.anhang?.daten && eingabe.anhang?.dateiname) {
       if (eingabe.anhang.daten.length > 8_000_000) throw new Fehler(413, "Der Anhang ist zu groß.", "eingabe");
-      const dateiname = String(eingabe.anhang.dateiname).replace(/[\r\n\\/"]/g, "").slice(0, 120) || "Anhang";
-      nutzlast.attachments = [{ filename: dateiname, content: eingabe.anhang.daten }];
+      anhaenge.push({ filename: sauber(eingabe.anhang.dateiname), content: eingabe.anhang.daten });
     }
+    // Anhänge aus dem Speicher (z. B. Fotos zum Handwerker-Auftrag) – gelesen mit Roberts Rechten
+    let gesamt = 0;
+    for (const a of (Array.isArray(antwort.anhaenge) ? antwort.anhaenge : []).slice(0, 8)) {
+      if (!BUCKETS.includes(a?.bucket) || typeof a?.pfad !== "string") continue;
+      const { bytes } = await ladeDatei(a.bucket, a.pfad, zugriff);
+      gesamt += bytes.length;
+      if (gesamt > MAX_ANHANG_GESAMT) throw new Fehler(413, "Die Anhänge sind zusammen zu groß (max. 20 MB).", "eingabe");
+      anhaenge.push({ filename: sauber(a.name), content: base64(bytes) });
+    }
+    if (anhaenge.length) nutzlast.attachments = anhaenge;
 
     const basis = env("RESEND_URL") ?? "https://api.resend.com";
     const r = await fetch(`${basis}/emails`, {
@@ -83,7 +99,9 @@ export async function handler(req: Request): Promise<Response> {
       method: "PATCH",
       body: { status: "gesendet", gesendet_am: jetzt, versand_id: ergebnis?.id ?? null, empfaenger_email: an },
     });
-    if (antwort.nachricht_id) {
+    const istAuftrag = antwort.art === "auftrag";
+    // Ein Auftrag an den Handwerker beantwortet die Nachricht des Mieters noch nicht
+    if (antwort.nachricht_id && !istAuftrag) {
       await rest(`nachrichten?id=eq.${enc(antwort.nachricht_id)}`, zugriff, { method: "PATCH", body: { status: "beantwortet" } });
     }
     if (antwort.mieter_id) {
@@ -91,9 +109,9 @@ export async function handler(req: Request): Promise<Response> {
         method: "POST",
         body: {
           mieter_id: antwort.mieter_id,
-          typ: "antwort",
-          titel: `E-Mail: ${antwort.betreff || "Antwort"}`,
-          details: { antwort_id: antwort.id, an, kanal: "email", anhang: eingabe.anhang?.dateiname ?? null },
+          typ: istAuftrag ? "auftrag" : "antwort",
+          titel: `${istAuftrag ? `Auftrag an ${antwort.empfaenger_name || an}` : "E-Mail"}: ${antwort.betreff || "Antwort"}`,
+          details: { antwort_id: antwort.id, an, kanal: "email", anhaenge: anhaenge.map((a) => a.filename) },
         },
       });
     }

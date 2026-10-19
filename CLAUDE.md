@@ -36,10 +36,12 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 
 - Projekt `rok-verwaltung`, Ref `hjrmwdcvsngovhtrkobc`, Region eu-central-1.
 - Tabellen: mitglieder, vermieter_profil, objekte, wohnungen, kostentraeger, mieter, forderungen,
-  vorgaenge, vorlagen, nachrichten, antworten, wissen, postfach; View mieter_uebersicht (security_invoker);
-  Buckets `vorlagen`, `schreiben`, `eingang` (privat).
+  vorgaenge, vorlagen, nachrichten, antworten, wissen, postfach, aufgaben, dienstleister, dokumente;
+  View mieter_uebersicht (security_invoker); Buckets `vorlagen`, `schreiben`, `eingang`, `dokumente` (privat).
 - Edge Functions `ki`, `posteingang`, `versand` (Quellen in `supabase/functions/`, gemeinsamer Code in
-  `_shared/gemeinsam.ts`, deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw. Postfach-Token).
+  `_shared/` (gemeinsam, fach, mieterhoehung, chat), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
+  Postfach-Token). Beim Deploy über MCP alle importierten `_shared`-Dateien mitschicken (ki: alle vier,
+  posteingang: gemeinsam + fach + mieterhoehung, versand: gemeinsam).
   service_role hat nur die Rechte aus `20261015010200_rechte_server.sql` (Projekt vergibt keine automatischen Grants).
 - Secrets: ANTHROPIC_API_KEY, RESEND_API_KEY, VERSAND_ABSENDER, optional RESEND_WEBHOOK_SECRET, KI_MODELL.
 
@@ -49,5 +51,10 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   dazu Vorschau-Ablauf und Archiv der Schreiben.
 - Stufe 2 gebaut: Postfach (Resend-Webhook), KI-Einordnung, Entwürfe mit Diktat, Wissen, Versand per Klick,
   Brief fotografieren. Regeln: nur nötige Daten an die KI, nie IBAN; immer Entwurf, nie Autoversand.
-- Oberfläche Postfach/Wissen/Einstellungen in `js/postfach.js`, gemeinsame Hilfen in `js/helfer.js`.
+- Stufe 3 gebaut (Roberts Feedback): To-do-Übersicht + Häuser (`js/start.js`), Ablage/Wissen/Handwerker
+  (`js/ablage.js`), Chat (`js/chat.js`), Frist/Anhänge/Auftrag auf der Nachrichtenseite (`js/postfach.js`).
+  Grundsätze: KI schlägt nur vor (Fristen mit Zitat bestätigen, Wiedervorlage-Datum erst nach „Speichern“,
+  Chat-Aktionen öffnen vorbelegte Dialoge); Mieterhöhung rechnet `_shared/mieterhoehung.ts`, nicht die KI.
+- Gemeinsame UI-Hilfen in `js/ui.js` und `js/bausteine.js`, Zustand in `js/helfer.js`.
   Dialoge (`dialogFormular`) lösen erst beim close-Ereignis auf, sonst schließt sich der nächste Dialog sofort.
+  Der Chat ist ein eigenes `<dialog id="chat">`, damit Bestätigungsdialoge darüber gehen.

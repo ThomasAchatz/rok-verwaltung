@@ -10,12 +10,17 @@ import {
   zustand, wohnungVon, objektVon, kostentraegerVon,
 } from "./helfer.js";
 import * as postfach from "./postfach.js";
+import * as start from "./start.js";
+import * as ablage from "./ablage.js";
+import { oeffneChat } from "./chat.js";
+import {
+  MONATE_KURZ, monatISO, letzteMonate, mietbuch, LEGENDE, naechsterSchritt, mieterZeile, schreibenKachel, oeffneSchreiben, emailDaten,
+} from "./bausteine.js";
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
 // ---------------------------------------------------------------------------
 const inhalt = $("#inhalt");
-const MONATE_KURZ = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 const ARTEN = [
   ["kaltmiete", "Kaltmiete"],
   ["nebenkosten", "Nebenkostenvorauszahlung"],
@@ -33,14 +38,6 @@ const TYP_NAME = {
   sonstiges: "Schreiben",
 };
 
-const monatISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-function letzteMonate(anzahl) {
-  const jetzt = new Date();
-  const liste = [];
-  for (let i = anzahl - 1; i >= 0; i--) liste.push(monatISO(new Date(jetzt.getFullYear(), jetzt.getMonth() - i, 1)));
-  return liste;
-}
-const monatKurz = (iso) => MONATE_KURZ[Number(iso.slice(5, 7)) - 1];
 const zahl = (text) => {
   if (text === "" || text == null) return 0;
   const n = Number(String(text).replace(/\./g, "").replace(",", "."));
@@ -121,6 +118,7 @@ $("#anmeldeformular").addEventListener("submit", async (e) => {
 });
 
 document.addEventListener("click", async (e) => {
+  if (e.target.closest("[data-aktion=chat]")) return oeffneChat();
   if (e.target.closest("[data-aktion=abmelden]")) {
     await db.abmelden();
     zeigeBereich("anmeldung");
@@ -148,7 +146,7 @@ window.addEventListener("hashchange", () => route());
 async function route() {
   if ($("#app").hidden) return;
   const [, teil = "uebersicht", id] = (location.hash || "#/uebersicht").split("/");
-  const navTeil = { schreiben: "postfach", entwurf: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen" }[teil] || teil;
+  const navTeil = { schreiben: "postfach", entwurf: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "uebersicht" }[teil] || teil;
   for (const a of $$("[data-nav]")) {
     if (a.dataset.nav === navTeil) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -161,177 +159,17 @@ async function route() {
     else if (teil === "postfach") await postfach.zeigePostfach();
     else if (teil === "schreiben") await postfach.zeigeNeuesSchreiben(id || null);
     else if (teil === "entwurf" && id) await postfach.zeigeNeuesSchreiben(null, id);
-    else if (teil === "wissen") await postfach.zeigeWissen();
+    else if (teil === "objekt" && id) await start.zeigeObjekt(id);
+    else if (teil === "wissen") await ablage.zeigeWissen();
     else if (teil === "vorlagen") await zeigeVorlagen();
     else if (teil === "einstellungen" || teil === "briefkopf") await postfach.zeigeEinstellungen();
-    else await zeigeUebersicht();
+    else await start.zeigeStart();
     window.scrollTo(0, 0);
   } catch (err) {
     console.error(err);
     inhalt.innerHTML = `<div class="flaeche leer"><h2>Das hat nicht geklappt</h2><p>${esc(err.message)}</p>
       <button class="knopf" id="neu-laden">Seite neu laden</button></div>`;
     $("#neu-laden").addEventListener("click", () => location.reload());
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Bausteine
-// ---------------------------------------------------------------------------
-function mietbuch(forderungen, monate) {
-  return `<span class="mietbuch">${monate
-    .map((m) => {
-      const imMonat = forderungen.filter((f) => String(f.monat).slice(0, 7) === m.slice(0, 7));
-      const offen = imMonat.filter((f) => !f.bezahlt).reduce((s, f) => s + Number(f.betrag), 0);
-      let art = "leer", titel = `${monatDE(m)}: keine Forderung erfasst`;
-      if (imMonat.length && offen === 0) { art = "bezahlt"; titel = `${monatDE(m)}: bezahlt`; }
-      else if (imMonat.length && imMonat.every((f) => !f.bezahlt)) { art = "offen"; titel = `${monatDE(m)}: ${euro(offen)} offen`; }
-      else if (imMonat.length) { art = "teil"; titel = `${monatDE(m)}: teilweise offen (${euro(offen)})`; }
-      return `<span class="mietbuch__monat mietbuch__monat--${art}" title="${esc(titel)}" aria-label="${esc(titel)}">${monatKurz(m)}</span>`;
-    })
-    .join("")}</span>`;
-}
-const LEGENDE = `<div class="mietbuch-legende" aria-hidden="true">
-  <span><i class="l-bezahlt"></i>bezahlt</span>
-  <span><i class="l-teil"></i>teilweise offen</span>
-  <span><i class="l-offen"></i>offen</span>
-  <span><i class="l-leer"></i>nichts erfasst</span>
-</div>`;
-
-function naechsterSchritt(m, vorgaenge) {
-  const eigene = vorgaenge.filter((v) => v.mieter_id === m.id);
-  const hat = (typ) => eigene.some((v) => v.typ === typ);
-  const schritte = [];
-  if (hat("mahnung_2")) schritte.push("weitere Schritte prüfen");
-  else if (hat("mahnung_1")) schritte.push("2. Mahnung");
-  else schritte.push("1. Mahnung");
-  if (m.kostentraeger && !hat("nachweis_jobcenter")) schritte.push("Nachweis an Kostenträger");
-  return schritte.join(", ");
-}
-
-// Eine Zeile pro Mietpartei: passt sich der Breite an, ohne seitliches Scrollen
-function mieterZeile(m, forderungen, monate, zusatz = "", mitObjekt = false) {
-  const offen = Number(m.offen_summe) > 0;
-  return `
-    <a class="zeile" href="#/mieter/${esc(m.id)}">
-      <span class="zeile__wer">
-        <span class="zeile__name">${esc(mieterName(m))}</span>
-        <span class="zeile__ort">${esc(mitObjekt ? [m.objekt, m.wohnung].filter(Boolean).join(", ") : m.wohnung || "")}${m.kostentraeger ? ` <span class="marker marker--messing">${esc(m.kostentraeger)}</span>` : ""}</span>
-        ${zusatz}
-      </span>
-      <span class="zeile__buch">${mietbuch(forderungen.filter((f) => f.mieter_id === m.id), monate)}</span>
-      <span class="zeile__betrag ${offen ? "betrag--offen" : "betrag--null"}">${offen ? euro(m.offen_summe) : "bezahlt"}
-        <span class="zeile__klein">${offen ? "offen" : euro(m.monatlich_gesamt) + " / Monat"}</span></span>
-    </a>`;
-}
-
-// Kachel für ein erstelltes Schreiben (Übersicht und Verlauf)
-function schreibenKachel(v, empfaenger) {
-  const hatDatei = !!v.details?.datei_pfad;
-  return `
-    <button type="button" class="schreiben" data-schreiben="${esc(v.id)}" ${hatDatei ? "" : "data-ohne-datei"}>
-      <span class="schreiben__blatt" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-      <span class="schreiben__text">
-        <span class="schreiben__titel">${esc(v.titel)}</span>
-        <span class="leise">${empfaenger ? esc(empfaenger) + ", " : ""}${datumDE(v.erstellt_am)}${v.summe != null ? `, ${euro(v.summe)}` : ""}</span>
-        <span class="schreiben__aktion">${hatDatei ? "Ansehen" : "Testeintrag ohne Dokument"}</span>
-      </span>
-    </button>`;
-}
-
-async function oeffneSchreiben(v, mieter) {
-  if (!v.details?.datei_pfad) {
-    return melde("Zu diesem Eintrag ist kein Dokument gespeichert (Testeintrag).", "info");
-  }
-  try {
-    const bytes = await db.ladeSchreiben(v.details.datei_pfad);
-    const kt = mieter ? kostentraegerVon(mieter.kostentraeger_id) : null;
-    await zeigeDokument({
-      titel: v.titel,
-      untertitel: `${mieter ? mieterName(mieter) + ", " : ""}erstellt am ${datumDE(v.erstellt_am)}`,
-      bytes,
-      dateiname: v.details.datei || `${dateiTeil(v.titel)}.docx`,
-      hinweis: "Archivierte Fassung, so wie sie erstellt wurde.",
-      email: emailDaten(v.typ, mieter, kt, v.titel),
-      melde,
-    });
-  } catch (err) {
-    melde(err.message, "fehler");
-  }
-}
-
-function emailDaten(typ, mieter, kostentraeger, titel) {
-  const an = typ === "nachweis_jobcenter" ? kostentraeger?.email : mieter?.email;
-  const anrede = typ === "nachweis_jobcenter"
-    ? "Sehr geehrte Damen und Herren,"
-    : mieter?.anrede === "Frau" ? `Sehr geehrte Frau ${mieter.nachname},` : mieter?.anrede === "Herr" ? `Sehr geehrter Herr ${mieter.nachname},` : "Guten Tag,";
-  return {
-    an: an || "",
-    betreff: `${titel}${mieter && typ === "nachweis_jobcenter" && mieter.aktenzeichen ? " – " + mieter.aktenzeichen : ""}`,
-    text: `${anrede}\n\nim Anhang erhalten Sie unser Schreiben.\n\nMit freundlichen Grüßen\n${zustand.profil?.inhaber || ""}\n${zustand.profil?.firma || ""}`,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Übersicht
-// ---------------------------------------------------------------------------
-async function zeigeUebersicht() {
-  const monate = letzteMonate(4);
-  const [liste, forderungen, vorgaenge, postfachAbschnitt] = await Promise.all([
-    db.ladeUebersicht(),
-    db.ladeForderungen({ abMonat: monate[0] }),
-    db.ladeVorgaenge({ anzahl: 200 }),
-    postfach.uebersichtPostfach(),
-  ]);
-  const imRueckstand = liste.filter((m) => Number(m.offen_summe) > 0).sort((a, b) => b.offen_summe - a.offen_summe);
-  const gesamt = imRueckstand.reduce((s, m) => s + Number(m.offen_summe), 0);
-  const mitKT = imRueckstand.filter((m) => m.kostentraeger).length;
-  const namen = Object.fromEntries(liste.map((m) => [m.id, m]));
-  const neueste = vorgaenge.slice(0, 6);
-
-  inhalt.innerHTML = `
-    <div class="kopf">
-      <div><h1>Übersicht</h1><p>${esc(zustand.profil?.firma || "")}, Stand ${datumDE(new Date())}</p></div>
-    </div>
-    <div class="lage">
-      <div>
-        <div class="lage__wert ${gesamt > 0 ? "lage__wert--offen" : ""}">${euro(gesamt)}</div>
-        <div class="lage__text">offen über alle Mietverhältnisse</div>
-      </div>
-      <div>
-        <div class="lage__wert">${imRueckstand.length} <span class="leise">von ${liste.length}</span></div>
-        <div class="lage__text">Mietparteien im Rückstand</div>
-      </div>
-      <div>
-        <div class="lage__wert">${mitKT}</div>
-        <div class="lage__text">davon mit Kostenträger (Jobcenter, Sozialamt)</div>
-      </div>
-    </div>
-
-    <div class="stapel">
-      ${postfachAbschnitt}
-      <section class="flaeche">
-        <div class="flaeche__kopf"><h2>Handlungsbedarf</h2>${LEGENDE}</div>
-        ${imRueckstand.length
-          ? `<div class="zeilen">${imRueckstand.map((m) => mieterZeile(m, forderungen, monate,
-              `<span class="zeile__schritt">Als Nächstes: ${esc(naechsterSchritt(m, vorgaenge))}</span>`, true)).join("")}</div>`
-          : `<div class="leer">Alle Mieten sind bezahlt. Nichts zu tun.</div>`}
-      </section>
-
-      <section class="flaeche">
-        <div class="flaeche__kopf"><h2>Zuletzt erstellte Schreiben</h2>
-          ${vorgaenge.length ? `<span class="leise">Zum Ansehen anklicken</span>` : ""}</div>
-        ${neueste.length
-          ? `<div class="kacheln">${neueste.map((v) => schreibenKachel(v, mieterName(namen[v.mieter_id] || { nachname: "?" }))).join("")}</div>`
-          : `<div class="leer">Noch keine Schreiben erstellt.</div>`}
-      </section>
-    </div>`;
-
-  for (const b of $$("[data-schreiben]", inhalt)) {
-    b.addEventListener("click", async () => {
-      const v = vorgaenge.find((x) => x.id === b.dataset.schreiben);
-      const m = v && (await db.ladeMieter(v.mieter_id).catch(() => null));
-      oeffneSchreiben(v, m);
-    });
   }
 }
 
@@ -343,7 +181,7 @@ async function zeigeMieterliste() {
   const [liste, forderungen] = await Promise.all([db.ladeUebersicht(), db.ladeForderungen({ abMonat: monate[0] })]);
   const gruppen = new Map();
   for (const m of liste) {
-    const k = m.objekt || "Ohne Objekt";
+    const k = m.objekt_id || "";
     if (!gruppen.has(k)) gruppen.set(k, []);
     gruppen.get(k).push(m);
   }
@@ -357,9 +195,9 @@ async function zeigeMieterliste() {
     <section class="flaeche">
       <div class="flaeche__kopf"><h2>Zahlungen der letzten 6 Monate</h2>${LEGENDE}</div>
       <div id="mieterliste">
-        ${[...gruppen.entries()].map(([objekt, mieter]) => `
+        ${[...gruppen.entries()].map(([objektId, mieter]) => `
           <div class="objektgruppe">
-            <h3 class="objektgruppe__titel">${esc(objekt)} <span class="leise">${mieter.length} Mietparteien</span></h3>
+            <h3 class="objektgruppe__titel">${objektId ? `<a href="#/objekt/${esc(objektId)}">${esc(mieter[0].objekt)}</a>` : "Ohne Haus"} <span class="leise">${mieter.length} Mietparteien</span></h3>
             <div class="zeilen">
               ${mieter.map((m) => `<div data-suche="${esc([mieterName(m), m.wohnung, m.objekt, m.aktenzeichen, m.kostentraeger].join(" ").toLowerCase())}">
                 ${mieterZeile(m, forderungen, monate)}</div>`).join("")}
@@ -385,12 +223,14 @@ async function zeigeMieterliste() {
 // Mieter-Akte
 // ---------------------------------------------------------------------------
 async function zeigeAkte(id) {
-  const [mieter, forderungen, vorgaenge, nachrichten, antworten] = await Promise.all([
+  const [mieter, forderungen, vorgaenge, nachrichten, antworten, aufgaben, dokumente] = await Promise.all([
     db.ladeMieter(id),
     db.ladeForderungen({ mieterId: id }),
     db.ladeVorgaenge({ mieterId: id }),
     db.ladeNachrichten({ mieterId: id, anzahl: 8 }).catch(() => []),
     db.ladeAntworten({ mieterId: id, anzahl: 20 }).catch(() => []),
+    db.ladeAufgaben({ mieterId: id }).catch(() => []),
+    db.ladeDokumente({ mieterId: id }).catch(() => []),
   ]);
   const entwuerfe = antworten.filter((a) => a.status === "entwurf");
   sortiereForderungen(forderungen);
@@ -411,7 +251,7 @@ async function zeigeAkte(id) {
     <div class="akte__kopf">
       <h1>${esc(mieterName(mieter))}</h1>
       <div class="unter">
-        <span>${esc(objekt?.bezeichnung || "Keine Wohnung zugeordnet")}${wohnung ? ", " + esc(wohnung.bezeichnung) : ""}</span>
+        <span>${objekt ? `<a href="#/objekt/${esc(objekt.id)}">${esc(objekt.bezeichnung)}</a>` : "Keine Wohnung zugeordnet"}${wohnung ? ", " + esc(wohnung.bezeichnung) : ""}</span>
         ${kostentraeger ? `<span class="marker marker--messing">${esc(kostentraeger.name)}${mieter.aktenzeichen ? ": " + esc(mieter.aktenzeichen) : ""}</span>` : ""}
         ${mieter.direktzahlung ? `<span class="marker">Direktzahlung Unterkunftskosten</span>` : ""}
         ${summeOffen > 0 ? `<span class="marker marker--offen">${euro(summeOffen)} offen</span>` : `<span class="marker marker--ok">Keine offenen Posten</span>`}
@@ -524,6 +364,16 @@ async function zeigeAkte(id) {
             ? `<div class="posts">${nachrichten.map((n) => postfach.nachrichtZeile(n, { [mieter.id]: mieterName(mieter) })).join("")}</div>`
             : entwuerfe.length ? "" : `<div class="leer">Keine Nachrichten von dieser Mietpartei.</div>`}
         </section>
+        <section class="flaeche" id="notizen">
+          <div class="flaeche__kopf"><h2>Notizen &amp; Wiedervorlagen</h2><button type="button" class="knopf knopf--klein" id="notiz-neu">+ Notiz</button></div>
+          ${start.todoListe(start.aufgabenKurz(aufgaben), { leer: "Keine offenen Notizen." })}
+          <div class="flaeche__fuss"><button type="button" class="knopf knopf--klein knopf--ki" id="mh-pruefen">Mieterhöhung prüfen</button></div>
+        </section>
+        ${dokumente.length ? `
+        <details class="flaeche ausklapp">
+          <summary>Dokumente (${dokumente.length})</summary>
+          ${ablage.dokumentListe(dokumente)}
+        </details>` : ""}
         <section class="flaeche">
           <div class="flaeche__kopf"><h2>Schreiben</h2></div>
           ${vorgaenge.length
@@ -553,6 +403,11 @@ async function zeigeAkte(id) {
     if (!ids.length) return melde("Keine Posten ausgewählt.", "fehler");
     markiere(ids, true);
   });
+  const nachher = () => zeigeAkte(id);
+  start.verbindeTodos($("#notizen"), { aufgaben, nachher });
+  ablage.verbindeListen(inhalt, { dokumente, nachher });
+  $("#notiz-neu").addEventListener("click", () => start.aufgabeDialog({ mieter_id: id, objekt_id: objekt?.id || null }, { nachher }));
+  $("#mh-pruefen").addEventListener("click", () => start.mieterhoehungPruefen(mieter, aufgaben, nachher));
   $("#monat-anlegen").addEventListener("click", monatAnlegen);
   $("#posten-neu").addEventListener("click", postenHinzufuegen);
   verknuepfeStammdaten();
@@ -753,6 +608,15 @@ function stammdatenFormular(m) {
       ${geld("strom_pauschale", "Strompauschale €")}
       ${geld("internet_pauschale", "Internetpauschale €")}
     </div></div>
+    <div class="formgruppe"><h3>Für die Mieterhöhung</h3><div class="formraster">
+      <label class="feld"><span>Mietart</span><select name="mietart">
+        ${[["normal", "Normale Miete"], ["staffel", "Staffelmiete"], ["index", "Indexmiete"]].map(([k, n]) => `<option value="${k}" ${k === (m.mietart || "normal") ? "selected" : ""}>${n}</option>`).join("")}
+      </select></label>
+      ${f("vergleichsmiete_qm", "Vergleichsmiete €/m² (Mietspiegel)", m.vergleichsmiete_qm != null ? zahlFeld(m.vergleichsmiete_qm) : "", `inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" placeholder="z. B. 8,50"`)}
+      ${f("letzte_erhoehung_am", "Letzte Mieterhöhung am", m.letzte_erhoehung_am, `type="date"`)}
+      ${f("kaltmiete_vorher", "Kaltmiete davor €", m.kaltmiete_vorher != null ? zahlFeld(m.kaltmiete_vorher) : "", `inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?"`)}
+      <label class="feld"><span>Wohnfläche</span><input value="${esc(wohnungVon(m.wohnung_id)?.flaeche_qm != null ? String(wohnungVon(m.wohnung_id).flaeche_qm).replace(".", ",") + " m²" : "nicht erfasst")}" readonly tabindex="-1"></label>
+    </div></div>
     <div class="formgruppe"><h3>Mietkonto</h3><div class="formraster">
       <label class="feld breit" id="ibanfeld"><span>IBAN</span>
         <input name="mietkonto_iban" value="${esc(ibanFormat(m.mietkonto_iban))}" autocomplete="off" spellcheck="false">
@@ -802,6 +666,14 @@ function verknuepfeStammdaten() {
     felder.mietende = fd.get("mietende") || null;
     felder.direktzahlung = fd.get("direktzahlung") === "on";
     felder.mietkonto_iban = (fd.get("mietkonto_iban") || "").replace(/\s+/g, "").toUpperCase() || null;
+    felder.mietart = fd.get("mietart") || "normal";
+    felder.letzte_erhoehung_am = fd.get("letzte_erhoehung_am") || null;
+    for (const k of ["vergleichsmiete_qm", "kaltmiete_vorher"]) {
+      const roh = String(fd.get(k) || "").trim();
+      const n = roh ? zahl(roh) : null;
+      if (n != null && (!Number.isFinite(n) || n < 0)) return melde("Bitte gültige Zahlen eingeben.", "fehler");
+      felder[k] = n;
+    }
     for (const k of ["kaltmiete", "nebenkosten_vz", "strom_pauschale", "internet_pauschale"]) {
       const n = zahl(fd.get(k));
       if (!Number.isFinite(n) || n < 0) return melde("Bitte gültige Beträge eingeben.", "fehler");

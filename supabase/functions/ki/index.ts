@@ -1,22 +1,24 @@
-// Edge Function "ki": alle KI-Aufgaben der App.
-// Aufruf aus der App mit dem Login des Nutzers (nur freigeschaltete Mitglieder).
-//   { aktion: "status" }                                       → was ist eingerichtet?
-//   { aktion: "einordnen", nachricht_id }                       → Kategorie, Dringlichkeit, Mieter zuordnen
-//   { aktion: "entwurf", nachricht_id?, mieter_id?, anweisung?,
-//     bisher?: { betreff, text }, aenderung? }                  → Antwort / Schreiben entwerfen
-//   { aktion: "brief_lesen", bild: { daten (base64), typ } }    → fotografierten Brief abschreiben
-// verify_jwt ist aus: Die Prüfung von Login und Freischaltung passiert in pruefeMitglied().
-import {
-  CORS, Fehler, MODELL, entwirf, env, fehlerAntwort, json, kiEingerichtet, liesBrief, ordneEin, pruefeMitglied,
-} from "../_shared/gemeinsam.ts";
+// Edge Function "ki": alle KI-Aufgaben der App. Nur für freigeschaltete Mitglieder (pruefeMitglied).
+// Die KI liefert immer nur Vorschläge; gespeichert, gesendet oder geändert wird erst nach einem Klick in der App.
+//   { aktion: "status" }
+//   { aktion: "einordnen", nachricht_id }
+//   { aktion: "entwurf", nachricht_id?, mieter_id?, anweisung?, bisher?, aenderung? }
+//   { aktion: "auftrag", nachricht_id, dienstleister_id?, anweisung? }       → Auftrag an Handwerker
+//   { aktion: "brief_lesen", bild: { daten, typ } }                           → Foto/PDF lesen + Ablage vorschlagen
+//   { aktion: "wissen_ordnen", text, objekt_id? }                             → eingesprochenes Wissen ordnen
+//   { aktion: "notiz_pruefen", aufgabe_id }                                   → Notiz prüfen (z. B. Mieterhöhung)
+//   { aktion: "chat", verlauf: [{ rolle: "robert"|"ki", text }] }            → Fragen an die App
+import { CORS, Fehler, MODELL, env, fehlerAntwort, json, kiEingerichtet, pruefeMitglied } from "../_shared/gemeinsam.ts";
+import { auftrag, entwirf, liesDokument, ordneEin, ordneWissen, pruefeNotiz } from "../_shared/fach.ts";
+import { chat } from "../_shared/chat.ts";
 
 export async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ fehler: "Nur POST" }, 405);
   try {
     const zugriff = await pruefeMitglied(req);
-    const eingabe = await req.json().catch(() => ({}));
-    switch (eingabe.aktion) {
+    const e = await req.json().catch(() => ({}));
+    switch (e.aktion) {
       case "status":
         return json({
           ki: kiEingerichtet(),
@@ -26,23 +28,27 @@ export async function handler(req: Request): Promise<Response> {
           webhook_signatur: !!env("RESEND_WEBHOOK_SECRET"),
         });
       case "einordnen":
-        if (!eingabe.nachricht_id) throw new Fehler(400, "nachricht_id fehlt", "eingabe");
-        return json({ nachricht: await ordneEin(eingabe.nachricht_id, zugriff) });
+        if (!e.nachricht_id) throw new Fehler(400, "nachricht_id fehlt", "eingabe");
+        return json({ nachricht: await ordneEin(e.nachricht_id, zugriff) });
       case "entwurf":
-        if (!eingabe.nachricht_id && !eingabe.anweisung?.trim()) {
-          throw new Fehler(400, "Bitte sagen Sie der KI, was im Schreiben stehen soll.", "eingabe");
-        }
+        if (!e.nachricht_id && !e.anweisung?.trim()) throw new Fehler(400, "Bitte sagen Sie der KI, was im Schreiben stehen soll.", "eingabe");
         return json(await entwirf({
-          zugriff,
-          nachrichtId: eingabe.nachricht_id ?? null,
-          mieterId: eingabe.mieter_id ?? null,
-          anweisung: eingabe.anweisung ?? null,
-          bisher: eingabe.bisher ?? null,
-          aenderung: eingabe.aenderung ?? null,
+          zugriff, nachrichtId: e.nachricht_id ?? null, mieterId: e.mieter_id ?? null,
+          anweisung: e.anweisung ?? null, bisher: e.bisher ?? null, aenderung: e.aenderung ?? null,
         }));
+      case "auftrag":
+        if (!e.nachricht_id) throw new Fehler(400, "nachricht_id fehlt", "eingabe");
+        return json(await auftrag({ zugriff, nachrichtId: e.nachricht_id, dienstleisterId: e.dienstleister_id ?? null, anweisung: e.anweisung ?? null }));
       case "brief_lesen":
-        if (!eingabe.bild?.daten || !eingabe.bild?.typ) throw new Fehler(400, "Foto fehlt", "eingabe");
-        return json(await liesBrief(eingabe.bild));
+        if (!e.bild?.daten || !e.bild?.typ) throw new Fehler(400, "Foto oder PDF fehlt", "eingabe");
+        return json(await liesDokument(e.bild, zugriff));
+      case "wissen_ordnen":
+        return json(await ordneWissen(String(e.text ?? ""), zugriff, e.objekt_id ?? null));
+      case "notiz_pruefen":
+        if (!e.aufgabe_id) throw new Fehler(400, "aufgabe_id fehlt", "eingabe");
+        return json(await pruefeNotiz(e.aufgabe_id, zugriff));
+      case "chat":
+        return json(await chat(e.verlauf, zugriff));
       default:
         throw new Fehler(400, "Unbekannte Aktion", "eingabe");
     }

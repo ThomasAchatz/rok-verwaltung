@@ -235,3 +235,73 @@ export async function zaehleNeue() {
   if (error) throw new Error(error.message);
   return count ?? 0;
 }
+
+// --- Notizen und Wiedervorlagen (Tabelle aufgaben) -------------------------
+export async function ladeAufgaben({ status = "offen", mieterId = null, objektId = null } = {}) {
+  let q = sb.from("aufgaben").select("*").order("faellig_am", { ascending: true, nullsFirst: false }).order("erstellt_am", { ascending: false }).limit(300);
+  if (status) q = q.eq("status", status);
+  if (mieterId) q = q.eq("mieter_id", mieterId);
+  if (objektId) q = q.eq("objekt_id", objektId);
+  return pruefe(await q);
+}
+export async function ladeAufgabe(id) {
+  return pruefe(await sb.from("aufgaben").select("*").eq("id", id).single());
+}
+export async function speichereAufgabe(id, felder) {
+  if (!id) return pruefe(await sb.from("aufgaben").insert(felder).select().single());
+  return pruefe(await sb.from("aufgaben").update(felder).eq("id", id).select().single());
+}
+export async function loescheAufgabe(id) {
+  pruefe(await sb.from("aufgaben").delete().eq("id", id));
+}
+
+// --- Handwerker und Dienstleister ------------------------------------------
+export async function ladeDienstleister() {
+  return pruefe(await sb.from("dienstleister").select("*").order("gewerk").order("name"));
+}
+export async function speichereDienstleister(id, felder) {
+  if (!id) return pruefe(await sb.from("dienstleister").insert(felder).select().single());
+  return pruefe(await sb.from("dienstleister").update(felder).eq("id", id).select().single());
+}
+export async function loescheDienstleister(id) {
+  pruefe(await sb.from("dienstleister").delete().eq("id", id));
+}
+
+// --- Häuser -------------------------------------------------------------------
+export async function speichereObjekt(id, felder) {
+  return pruefe(await sb.from("objekte").update(felder).eq("id", id).select().single());
+}
+
+// --- Dokumentenablage (privater Bucket "dokumente") -------------------------
+export async function ladeDokumente({ objektId, mieterId = null } = {}) {
+  let q = sb.from("dokumente").select("*").order("datum", { ascending: false, nullsFirst: false }).order("erstellt_am", { ascending: false }).limit(500);
+  if (objektId === null) q = q.is("objekt_id", null);
+  else if (objektId) q = q.eq("objekt_id", objektId);
+  if (mieterId) q = q.eq("mieter_id", mieterId);
+  return pruefe(await q);
+}
+export async function legeDokumentAb(zeile, blob) {
+  const { error } = await sb.storage.from("dokumente").upload(zeile.pfad, blob, { upsert: false, contentType: blob.type });
+  if (error) throw new Error("Datei konnte nicht gespeichert werden: " + error.message);
+  try {
+    return pruefe(await sb.from("dokumente").insert(zeile).select().single());
+  } catch (err) {
+    await sb.storage.from("dokumente").remove([zeile.pfad]);
+    throw err;
+  }
+}
+export async function aendereDokument(id, felder) {
+  return pruefe(await sb.from("dokumente").update(felder).eq("id", id).select().single());
+}
+export async function loescheDokument(dok) {
+  const { error } = await sb.storage.from("dokumente").remove([dok.pfad]);
+  if (error) throw new Error(error.message);
+  pruefe(await sb.from("dokumente").delete().eq("id", dok.id));
+}
+/** Kurz gültige Adresse zum Ansehen einer privaten Datei (Bucket "dokumente" oder "eingang"). */
+export async function dateiAdresse(bucket, pfad, { download = false } = {}) {
+  if (!["dokumente", "eingang"].includes(bucket)) throw new Error("Unbekannter Speicher");
+  const { data, error } = await sb.storage.from(bucket).createSignedUrl(pfad, 600, download ? { download: true } : undefined);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
+}

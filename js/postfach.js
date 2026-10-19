@@ -8,6 +8,14 @@ import {
   zustand, wohnungVon, objektVon, kostentraegerVon,
 } from "./helfer.js";
 
+import {
+  ICON_MIKRO, ICON_KI, ICON_KAMERA, istEmail, kurz, norm, anschriftAnrede, zeitDE, datumZeit, geheZu,
+  mieterListe, ortVon, mieterOptionen, mikroKnopf, verbindeDiktat, stoppeDiktat, wachsen, wartehinweis, beschaeftigt,
+} from "./ui.js";
+import * as ablage from "./ablage.js";
+import { drucke } from "./ui.js";
+import { aufgabeDialog, fristVon } from "./start.js";
+
 const inhalt = () => $("#inhalt");
 
 const QUELLE = { email: "E-Mail", brief: "Brief", notiz: "Notiz" };
@@ -25,38 +33,11 @@ const FILTER_LEER = {
   alle: "Das Postfach ist leer.",
 };
 
-const ICON_MIKRO = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>`;
-const ICON_KI = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11 2l1.9 5.6L18.5 9.5l-5.6 1.9L11 17l-1.9-5.6L3.5 9.5l5.6-1.9zM18.5 13.5l.95 2.55 2.55.95-2.55.95-.95 2.55-.95-2.55L15 17l2.55-.95z"/></svg>`;
-const ICON_KAMERA = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M9 3 7.2 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9zm3 5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zm0 2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/></svg>`;
-
-const istEmail = (s) => /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(String(s || ""));
-const kurz = (t, n) => {
-  const s = String(t || "").replace(/\s+/g, " ").trim();
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
-};
-const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-const anschriftAnrede = (m) => (m.anrede === "Herr" ? "Herrn " : m.anrede === "Frau" ? "Frau " : "");
-
-function zeitDE(iso) {
-  if (!iso) return "";
-  const d = new Date(iso), jetzt = new Date();
-  if (d.toDateString() === jetzt.toDateString()) return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr";
-  if (d.getFullYear() === jetzt.getFullYear()) return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }).replace(/\.?$/, ".");
-  return datumDE(iso);
-}
-const datumZeit = (iso) =>
-  new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) + " Uhr";
-
 function signaturText() {
   const p = zustand.profil || {};
   return (p.email_signatur || "").trim() || [p.inhaber, p.firma].filter(Boolean).join("\n");
 }
 
-// Navigation auch dann auslösen, wenn die Adresse schon stimmt (Seite neu aufbauen)
-function geheZu(hash) {
-  if (location.hash === hash) window.dispatchEvent(new HashChangeEvent("hashchange"));
-  else location.hash = hash;
-}
 
 // ---------------------------------------------------------------------------
 // Was ist auf dem Server eingerichtet? (KI-Schlüssel, Versand)
@@ -95,133 +76,13 @@ export async function aktualisiereZaehler() {
 }
 
 // ---------------------------------------------------------------------------
-// Mietparteien (für Auswahllisten)
-// ---------------------------------------------------------------------------
-async function mieterListe() {
-  zustand.mieterKurz = await db.ladeMieterKurz();
-  return zustand.mieterKurz;
-}
-function ortVon(m) {
-  const w = wohnungVon(m.wohnung_id);
-  const o = w && objektVon(w.objekt_id);
-  return o ? `${o.strasse || o.bezeichnung}, ${w.bezeichnung}` : "";
-}
-function mieterOptionen(liste, gewaehlt, leer = "Keine Mietpartei") {
-  return `<option value="">${esc(leer)}</option>` + liste.map((m) => {
-    const ort = ortVon(m);
-    return `<option value="${esc(m.id)}" ${m.id === gewaehlt ? "selected" : ""}>${esc(mieterName(m))}${ort ? " – " + esc(ort) : ""}</option>`;
-  }).join("");
-}
-
-// ---------------------------------------------------------------------------
-// Diktat (Spracherkennung des Browsers). Auf dem iPhone geht auch das Mikrofon der Tastatur.
-// ---------------------------------------------------------------------------
-const Erkennung = window.SpeechRecognition || window.webkitSpeechRecognition;
-let diktat = null;
-
-const mikroKnopf = () =>
-  `<button type="button" class="mikro" data-diktat aria-pressed="false" title="Diktieren" aria-label="Diktieren">${ICON_MIKRO}</button>`;
-
-export function stoppeDiktat() {
-  try { diktat?.erkennung.stop(); } catch { /* schon beendet */ }
-}
-window.addEventListener("hashchange", stoppeDiktat);
-document.getElementById("dialog")?.addEventListener("close", stoppeDiktat);
-
-export function verbindeDiktat(root) {
-  for (const knopf of $$("[data-diktat]", root)) {
-    const feld = knopf.parentElement.querySelector("textarea, input");
-    if (!Erkennung || !feld) { knopf.hidden = true; continue; }
-    knopf.addEventListener("click", () => {
-      if (diktat?.knopf === knopf) return stoppeDiktat();
-      stoppeDiktat();
-      starteDiktat(knopf, feld);
-    });
-  }
-}
-
-function starteDiktat(knopf, feld) {
-  const erkennung = new Erkennung();
-  erkennung.lang = "de-DE";
-  erkennung.continuous = true;
-  erkennung.interimResults = true;
-  const anfang = feld.value.trim() ? feld.value.replace(/\s*$/, " ") : "";
-  erkennung.onresult = (e) => {
-    let gesagt = "";
-    for (let i = 0; i < e.results.length; i++) gesagt += e.results[i][0].transcript;
-    feld.value = anfang + gesagt.trim();
-    feld.dispatchEvent(new Event("input", { bubbles: true }));
-  };
-  erkennung.onerror = (e) => {
-    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-      melde("Bitte den Zugriff aufs Mikrofon erlauben. Alternativ das Mikrofon der Tastatur nutzen.", "fehler");
-    } else if (e.error !== "aborted" && e.error !== "no-speech") {
-      melde("Diktat nicht möglich (" + e.error + "). Alternativ das Mikrofon der Tastatur nutzen.", "fehler");
-    }
-  };
-  erkennung.onend = () => {
-    knopf.classList.remove("mikro--an");
-    knopf.setAttribute("aria-pressed", "false");
-    if (diktat?.erkennung === erkennung) diktat = null;
-  };
-  try {
-    erkennung.start();
-  } catch (err) {
-    return melde("Diktat nicht möglich: " + err.message, "fehler");
-  }
-  diktat = { knopf, erkennung };
-  knopf.classList.add("mikro--an");
-  knopf.setAttribute("aria-pressed", "true");
-  feld.focus();
-}
-
-// Textfelder wachsen mit dem Inhalt
-function wachsen(feld) {
-  const anpassen = () => {
-    feld.style.height = "auto";
-    feld.style.height = Math.min(feld.scrollHeight + 2, 900) + "px";
-  };
-  feld.addEventListener("input", anpassen);
-  requestAnimationFrame(anpassen);
-  return anpassen;
-}
-
-// Kurzer Wartehinweis als Dialog (z. B. während die KI einen Brief liest)
-function wartehinweis(text) {
-  const dlg = $("#dialog");
-  dlg.innerHTML = `<div class="warten"><span class="kreisel" aria-hidden="true"></span><p>${esc(text)}</p></div>`;
-  dlg.showModal();
-  // Wartet auf das close-Ereignis, damit es nicht beim nächsten Dialog ankommt
-  return {
-    ende: () => new Promise((fertig) => {
-      if (!dlg.open) return fertig();
-      dlg.addEventListener("close", () => fertig(), { once: true });
-      dlg.close();
-    }),
-  };
-}
-
-// Knopf zeigt „arbeitet“, alle Knöpfe im Bereich sind solange gesperrt
-async function beschaeftigt(bereich, knopf, text, arbeit) {
-  const knoepfe = $$("button", bereich).filter((b) => !b.disabled);
-  const vorher = knopf.innerHTML;
-  knoepfe.forEach((b) => (b.disabled = true));
-  knopf.innerHTML = `<span class="kreisel" aria-hidden="true"></span> ${esc(text)}`;
-  try {
-    return await arbeit();
-  } finally {
-    knoepfe.forEach((b) => (b.disabled = false));
-    knopf.innerHTML = vorher;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Zeile im Postfach
 // ---------------------------------------------------------------------------
 function marken(n, { mitStatus = true } = {}) {
   return [
     n.status === "neu" ? `<span class="marker marker--neu">neu</span>` : "",
     n.ki_dringlichkeit === "hoch" ? `<span class="marker marker--offen">dringend</span>` : "",
+    fristVon(n) && !["beantwortet", "erledigt"].includes(n.status) ? `<span class="marker marker--offen">Frist ${esc(datumDE(fristVon(n)))}</span>` : "",
     n.ki_kategorie ? `<span class="marker">${esc(n.ki_kategorie)}</span>` : "",
     n.quelle !== "email" ? `<span class="marker marker--messing">${esc(QUELLE[n.quelle] || n.quelle)}</span>` : "",
     mitStatus && n.status === "beantwortet" ? `<span class="marker marker--ok">beantwortet</span>` : "",
@@ -244,27 +105,6 @@ export function nachrichtZeile(n, namen = {}) {
     </a>`;
 }
 
-// Für die Übersicht
-export async function uebersichtPostfach() {
-  try {
-    const [liste, mieterL] = await Promise.all([db.ladeNachrichten({ status: FILTER.offen, anzahl: 50 }), mieterListe()]);
-    const namen = Object.fromEntries(mieterL.map((m) => [m.id, mieterName(m)]));
-    const neu = liste.filter((n) => n.status === "neu").length;
-    return `
-      <section class="flaeche">
-        <div class="flaeche__kopf"><h2>Postfach</h2>
-          <a class="leise" href="#/postfach">${liste.length ? `${liste.length} offen${neu ? `, davon ${neu} neu` : ""}` : "Zum Postfach"}</a></div>
-        ${liste.length
-          ? `<div class="posts">${liste.slice(0, 4).map((n) => nachrichtZeile(n, namen)).join("")}</div>
-             ${liste.length > 4 ? `<div class="flaeche__fuss"><a href="#/postfach">Alle ${liste.length} offenen Nachrichten ansehen</a></div>` : ""}`
-          : `<div class="leer">Keine offenen Nachrichten.</div>`}
-      </section>`;
-  } catch (err) {
-    console.warn("Postfach:", err);
-    return "";
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Postfach-Liste
 // ---------------------------------------------------------------------------
@@ -285,8 +125,8 @@ export async function zeigePostfach() {
       <div><h1>Postfach</h1>
         <p>${pf?.adresse ? `Eingang: <strong class="umbruch">${esc(pf.adresse)}</strong>` : "Anfragen von Mietern, Ämtern und Interessenten"}</p></div>
       <div class="knopfreihe">
-        <label class="knopf">${ICON_KAMERA} Brief fotografieren<input type="file" accept="image/*" id="foto" hidden></label>
-        <button type="button" class="knopf" id="notiz">Notiz / Anruf</button>
+        <label class="knopf">${ICON_KAMERA} Foto / PDF<input type="file" accept="image/*,application/pdf" id="foto" hidden></label>
+        <button type="button" class="knopf" id="notiz">Anruf erfassen</button>
         <a class="knopf knopf--primaer" href="#/schreiben">Neues Schreiben</a>
       </div>
     </div>
@@ -300,7 +140,7 @@ export async function zeigePostfach() {
     </section>`;
 
   for (const b of $$("[data-filter]")) b.addEventListener("click", () => { filter = b.dataset.filter; zeigePostfach(); });
-  $("#foto").addEventListener("change", (e) => { const d = e.target.files[0]; e.target.value = ""; briefFotografieren(d); });
+  $("#foto").addEventListener("change", (e) => { const d = e.target.files[0]; e.target.value = ""; ablage.erfasse(d); });
   $("#notiz").addEventListener("click", notizErfassen);
   aktualisiereZaehler();
   if (zustand.ki?.ki) ordneNachEin(liste.filter((n) => !n.ki_am).slice(0, 8), namen);
@@ -349,8 +189,9 @@ async function ordneEinMitHinweis(id) {
 async function notizErfassen() {
   const mieterL = await mieterListe();
   const daten = await dialogFormular(`
-    <h2>Notiz oder Anruf erfassen</h2>
-    <p class="leise">Zum Beispiel ein Anruf oder ein Gespräch im Treppenhaus. Danach können Sie wie auf eine E-Mail antworten.</p>
+    <h2>Anruf oder Gespräch erfassen</h2>
+    <p class="leise">Zum Beispiel ein Anruf oder ein Gespräch im Treppenhaus. Danach können Sie wie auf eine E-Mail antworten.
+      Für eigene Erinnerungen gibt es „Notiz“ auf der Übersicht.</p>
     <label class="feld"><span>Mietpartei</span><select name="mieter_id">${mieterOptionen(mieterL, null)}</select></label>
     <label class="feld"><span>Von (wenn keine Mietpartei)</span><input name="absender" placeholder="Name"></label>
     <label class="feld"><span>Betreff</span><input name="betreff" required placeholder="z. B. Anruf: Wasserhahn tropft"></label>
@@ -381,109 +222,12 @@ async function notizErfassen() {
 }
 
 // ---------------------------------------------------------------------------
-// Brief fotografieren: Foto verkleinern, von der KI abschreiben lassen, ins Postfach
-// ---------------------------------------------------------------------------
-const alsBase64 = (blob) => new Promise((ok, fehler) => {
-  const r = new FileReader();
-  r.onload = () => ok(String(r.result).split(",")[1]);
-  r.onerror = () => fehler(r.error);
-  r.readAsDataURL(blob);
-});
-
-function verkleinere(datei, max = 1568) {
-  return new Promise((ok, fehler) => {
-    const url = URL.createObjectURL(datei);
-    const bild = new Image();
-    bild.onload = () => {
-      const f = Math.min(1, max / Math.max(bild.naturalWidth, bild.naturalHeight));
-      const c = document.createElement("canvas");
-      c.width = Math.round(bild.naturalWidth * f);
-      c.height = Math.round(bild.naturalHeight * f);
-      c.getContext("2d").drawImage(bild, 0, 0, c.width, c.height);
-      URL.revokeObjectURL(url);
-      c.toBlob(async (blob) => {
-        if (!blob) return fehler(new Error("Umwandlung fehlgeschlagen"));
-        ok({ blob, base64: await alsBase64(blob), url: URL.createObjectURL(blob) });
-      }, "image/jpeg", 0.85);
-    };
-    bild.onerror = () => { URL.revokeObjectURL(url); fehler(new Error("Bildformat wird nicht unterstützt")); };
-    bild.src = url;
-  });
-}
-
-async function briefFotografieren(datei) {
-  if (!datei) return;
-  let bild;
-  try {
-    bild = await verkleinere(datei);
-  } catch (err) {
-    return melde("Das Foto konnte nicht gelesen werden: " + err.message, "fehler");
-  }
-  let erkannt = {};
-  if (zustand.ki?.ki) {
-    const warte = wartehinweis("Die KI liest den Brief …");
-    try {
-      erkannt = await db.funktion("ki", { aktion: "brief_lesen", bild: { daten: bild.base64, typ: "image/jpeg" } });
-      if (erkannt.lesbar === false) melde("Der Brief war schwer lesbar. Bitte den Text prüfen.", "info");
-    } catch (err) {
-      melde(err.message, "fehler");
-    } finally {
-      await warte.ende();
-    }
-  }
-  const mieterL = await mieterListe();
-  const name = norm(erkannt.absender_name);
-  const vermutet = name
-    ? mieterL.find((m) => name.includes(norm(m.nachname)) && (!m.vorname || name.includes(norm(m.vorname))))
-    : null;
-
-  const daten = await dialogFormular(`
-    <h2>Brief ins Postfach</h2>
-    <img class="fotovorschau" src="${bild.url}" alt="Foto des Briefs">
-    <p class="leise">${zustand.ki?.ki ? "Von der KI abgeschrieben. Bitte kurz prüfen." : "Die KI ist noch nicht eingerichtet. Bitte das Wichtigste selbst eintragen."}</p>
-    <label class="feld"><span>Absender</span><input name="absender" value="${esc(erkannt.absender_name || "")}"></label>
-    <label class="feld"><span>Mietpartei</span><select name="mieter_id">${mieterOptionen(mieterL, vermutet?.id || null)}</select></label>
-    <label class="feld"><span>Betreff</span><input name="betreff" required value="${esc(erkannt.betreff || "")}"></label>
-    <label class="feld"><span>Text</span>
-      <span class="diktat"><textarea name="text" rows="8">${esc(erkannt.text || "")}</textarea>${mikroKnopf()}</span></label>
-    <div class="knopfreihe">
-      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
-      <button class="knopf knopf--primaer" value="ok">Ins Postfach</button>
-    </div>`, { breit: true, vorbereiten: verbindeDiktat });
-  setTimeout(() => URL.revokeObjectURL(bild.url), 5000);
-  if (!daten) return;
-
-  const m = mieterL.find((x) => x.id === daten.get("mieter_id"));
-  try {
-    const n = await db.neueNachricht({
-      quelle: "brief",
-      status: "offen",
-      absender_name: String(daten.get("absender")).trim() || (m ? mieterName(m) : null),
-      absender_email: istEmail(erkannt.absender_email) ? erkannt.absender_email : (m?.email || null),
-      mieter_id: m?.id || null,
-      zuordnung: m ? "manuell" : null,
-      betreff: String(daten.get("betreff")).trim(),
-      text: String(daten.get("text")).trim(),
-    });
-    const pfad = `${n.id}.jpg`;
-    try {
-      await db.ladeFotoHoch(pfad, bild.blob);
-      await db.aendereNachricht(n.id, { anhaenge: [{ name: "Foto des Briefs.jpg", typ: "image/jpeg", pfad }] });
-    } catch (err) {
-      melde(err.message, "fehler");
-    }
-    await ordneEinMitHinweis(n.id);
-    geheZu(`#/postfach/${n.id}`);
-  } catch (err) {
-    melde(err.message, "fehler");
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Eine Nachricht mit Antwort
 // ---------------------------------------------------------------------------
 function antwortEintrag(a) {
-  const art = a.status === "gesendet" ? `E-Mail an ${a.empfaenger_email || "?"}` : "Als Brief erstellt";
+  const art = a.art === "auftrag"
+    ? `Auftrag an ${a.empfaenger_name || a.empfaenger_email || "Handwerker"}${a.status === "gesendet" ? " (E-Mail)" : " (gedruckt)"}`
+    : a.status === "gesendet" ? `E-Mail an ${a.empfaenger_email || "?"}` : "Als Brief erstellt";
   const wann = a.gesendet_am || a.aktualisiert_am || a.erstellt_am;
   return `
     <details class="antwort">
@@ -505,9 +249,37 @@ function einordnungHtml(n) {
         ${n.ki_zusammenfassung ? `<p class="ki-text">${esc(n.ki_zusammenfassung)}</p>` : ""}
         ${n.ki_vorschlag ? `<p class="ki-vorschlag"><strong>Vorschlag:</strong> ${esc(n.ki_vorschlag)}</p>` : ""}`
         : `<p class="leise">${kiDa ? "Noch nicht eingeordnet." : "Die KI ist noch nicht eingerichtet."}</p>`}
-      <button type="button" class="knopf knopf--klein" id="einordnen" ${kiDa ? "" : "disabled"}>${ICON_KI} ${n.ki_am ? "Neu einordnen" : "Mit KI einordnen"}</button>
+      <div class="knopfreihe">
+        <button type="button" class="knopf knopf--klein" id="einordnen" ${kiDa ? "" : "disabled"}>${ICON_KI} ${n.ki_am ? "Neu einordnen" : "Mit KI einordnen"}</button>
+        ${fristVon(n) ? "" : `<button type="button" class="knopf knopf--klein" data-frist="aendern">Frist eintragen</button>`}
+      </div>
     </div>`;
 }
+
+// Frist: von der KI erkannt (mit wörtlicher Textstelle) oder von Robert bestätigt
+function fristHtml(n) {
+  const frist = fristVon(n);
+  if (!frist) return "";
+  const tage = Math.round((new Date(frist + "T12:00:00") - new Date(heuteISO() + "T12:00:00")) / 86400000);
+  const wann = tage < 0 ? `seit ${-tage} ${-tage === 1 ? "Tag" : "Tagen"} vorbei` : tage === 0 ? "heute" : tage === 1 ? "morgen" : `in ${tage} Tagen`;
+  return `
+    <section class="flaeche frist ${tage <= 3 ? "frist--knapp" : ""}">
+      <div class="flaeche__kopf"><h2>Frist</h2>${n.frist_bestaetigt ? `<span class="marker marker--ok">bestätigt</span>` : `<span class="marker marker--messing">von der KI erkannt</span>`}</div>
+      <div class="flaeche__inhalt">
+        <p class="frist__datum">bis ${esc(datumDE(frist))} <span class="leise">(${esc(wann)})</span></p>
+        ${!n.frist_bestaetigt && n.ki_frist_zitat ? `<blockquote class="zitat">„${esc(n.ki_frist_zitat)}“</blockquote><p class="leise">Stelle aus der Nachricht. Stimmt das Datum?</p>` : ""}
+        ${!n.frist_bestaetigt && !n.ki_frist_zitat ? `<p class="leise">Keine eindeutige Textstelle gefunden. Bitte im Text prüfen.</p>` : ""}
+        <div class="knopfreihe">
+          ${n.frist_bestaetigt ? "" : `<button type="button" class="knopf knopf--klein knopf--primaer" data-frist="stimmt">Stimmt</button>`}
+          <button type="button" class="knopf knopf--klein" data-frist="aendern">Ändern</button>
+          <button type="button" class="knopf knopf--klein" data-frist="keine">${n.frist_bestaetigt ? "Entfernen" : "Keine Frist"}</button>
+        </div>
+      </div>
+    </section>`;
+}
+
+const istBild = (a) => /^image\//.test(a.typ || "") || /\.(jpe?g|png|webp)$/i.test(a.pfad || "");
+const hinweisSpeicher = new Map(); // KI-Hinweise zu frisch erstellten Aufträgen (bis zum nächsten Aufbau)
 
 export async function zeigeNachricht(id) {
   let [n, mieterL, antworten] = await Promise.all([
@@ -518,14 +290,19 @@ export async function zeigeNachricht(id) {
     aktualisiereZaehler();
   }
   const mieter = n.mieter_id ? await db.ladeMieter(n.mieter_id).catch(() => null) : null;
-  const entwurf = antworten.find((a) => a.status === "entwurf") || null;
+  const entwurf = antworten.find((a) => a.status === "entwurf" && a.art !== "auftrag") || null;
+  const auftraege = antworten.filter((a) => a.status === "entwurf" && a.art === "auftrag");
   const fertige = antworten.filter((a) => a.status !== "entwurf");
   const w = mieter && wohnungVon(mieter.wohnung_id);
   const o = w && objektVon(w.objekt_id);
   const absender = [n.absender_name, n.absender_email ? `<${n.absender_email}>` : ""].filter(Boolean).join(" ") || "Unbekannt";
-  const foto = (n.anhaenge || []).find((a) => a.pfad);
-  const andere = (n.anhaenge || []).filter((a) => !a.pfad);
+  const anhaenge = n.anhaenge || [];
+  const bilder = anhaenge.filter((a) => a.pfad && istBild(a));
+  const pdfs = anhaenge.filter((a) => a.pfad && a.typ === "application/pdf");
+  const ohne = anhaenge.filter((a) => !a.pfad);
   const erledigt = n.status === "erledigt" || n.status === "beantwortet";
+  const vorbelegt = zustand.vorbelegung?.nachricht_id === id ? zustand.vorbelegung.anweisung : null;
+  zustand.vorbelegung = null;
 
   inhalt().innerHTML = `
     <a class="zurueck" href="#/postfach">Zum Postfach</a>
@@ -543,15 +320,21 @@ export async function zeigeNachricht(id) {
           <div class="flaeche__kopf"><h2>${n.quelle === "brief" ? "Brief" : n.quelle === "notiz" ? "Notiz" : "Nachricht"}</h2></div>
           <div class="flaeche__inhalt">
             <div class="nachricht__text">${esc(n.text || "(kein Text)")}</div>
-            ${foto ? `<a class="fotolink" data-foto="${esc(foto.pfad)}" target="_blank" rel="noopener"><img class="fotovorschau" alt="Foto des Briefs"></a>` : ""}
-            ${andere.length ? `<p class="leise anhaenge">Anhänge: ${andere.map((a) => esc(a.name || "Datei")).join(", ")}
-              <br>(Die Dateien selbst liegen beim E-Mail-Dienst und werden noch nicht in die App übernommen.)</p>` : ""}
+            ${bilder.length || pdfs.length ? `<div class="anhangliste">
+              ${bilder.map((a) => `<a class="anhang-bild" data-datei="${esc(a.pfad)}" target="_blank" rel="noopener" title="${esc(a.name || "Foto")}"><img alt="${esc(a.name || "Foto")}"></a>`).join("")}
+              ${pdfs.map((a) => `<a class="knopf knopf--klein" data-datei="${esc(a.pfad)}" target="_blank" rel="noopener"><span class="dok__icon">PDF</span> ${esc(a.name || "Dokument.pdf")}</a>`).join("")}
+            </div>` : ""}
+            ${ohne.length ? `<p class="leise anhaenge">${ohne.some((a) => a.verworfen)
+              ? `Nicht übernommen: ${ohne.map((a) => esc(a.name || "Datei")).join(", ")}. Gespeichert werden nur Fotos und PDFs bis 10 MB.`
+              : `Anhänge: ${ohne.map((a) => esc(a.name || "Datei")).join(", ")} (liegen nur beim E-Mail-Dienst).`}</p>` : ""}
           </div>
         </section>
         <div id="entwurf"></div>
-        ${fertige.length ? `<section class="flaeche"><div class="flaeche__kopf"><h2>Bisherige Antworten</h2></div>${fertige.map(antwortEintrag).join("")}</section>` : ""}
+        ${auftraege.map((a) => `<div data-auftrag="${esc(a.id)}"></div>`).join("")}
+        ${fertige.length ? `<section class="flaeche"><div class="flaeche__kopf"><h2>Bisher erledigt</h2></div>${fertige.map(antwortEintrag).join("")}</section>` : ""}
       </div>
       <div class="stapel">
+        ${fristHtml(n)}
         <section class="flaeche" id="einordnung">${einordnungHtml(n)}</section>
         <section class="flaeche">
           <div class="flaeche__kopf"><h2>Mietpartei</h2></div>
@@ -566,7 +349,9 @@ export async function zeigeNachricht(id) {
           </div>
         </section>
         <section class="flaeche">
-          <div class="flaeche__inhalt knopfreihe">
+          <div class="flaeche__inhalt knopfreihe knopfreihe--senkrecht">
+            <button type="button" class="knopf" id="handwerker">Handwerker beauftragen</button>
+            <button type="button" class="knopf" id="wiedervorlage">Wiedervorlage / Notiz</button>
             ${erledigt
               ? `<button type="button" class="knopf" id="wiederoffen">Wieder öffnen</button>`
               : `<button type="button" class="knopf" id="erledigt">Erledigt, keine Antwort nötig</button>`}
@@ -575,35 +360,45 @@ export async function zeigeNachricht(id) {
       </div>
     </div>`;
 
-  baueEntwurf($("#entwurf"), { nachricht: n, mieter, antwort: entwurf, nachEnde: () => zeigeNachricht(id) });
+  const neu = () => zeigeNachricht(id);
+  baueEntwurf($("#entwurf"), { nachricht: n, mieter, antwort: entwurf, anweisung: vorbelegt, nachEnde: neu });
+  for (const a of auftraege) {
+    baueEntwurf($(`[data-auftrag="${a.id}"]`), { nachricht: n, mieter, antwort: a, auftrag: true, hinweise: hinweisSpeicher.get(a.id), nachEnde: neu });
+    hinweisSpeicher.delete(a.id);
+  }
 
-  if (foto) {
-    db.fotoAdresse(foto.pfad).then((url) => {
-      const a = $(`[data-foto]`);
-      if (!a) return;
+  for (const a of $$("[data-datei]")) {
+    db.dateiAdresse("eingang", a.dataset.datei).then((url) => {
       a.href = url;
-      $("img", a).src = url;
+      const img = $("img", a);
+      if (img) img.src = url;
     }).catch(() => {});
   }
   $("#einordnen").addEventListener("click", (e) =>
     beschaeftigt($("#einordnung"), e.currentTarget, "KI ordnet ein …", async () => {
       try {
         await db.funktion("ki", { aktion: "einordnen", nachricht_id: id });
-        await zeigeNachricht(id);
+        await neu();
       } catch (err) {
         melde(err.message, "fehler");
       }
     }));
+  for (const b of $$("[data-frist]")) b.addEventListener("click", () => fristSetzen(n, b.dataset.frist, neu));
   $("#zuordnung").addEventListener("change", async (e) => {
     const v = e.target.value || null;
     try {
       await db.aendereNachricht(id, { mieter_id: v, zuordnung: v ? "manuell" : null });
       melde(v ? "Mietpartei zugeordnet." : "Zuordnung entfernt.", "ok");
-      await zeigeNachricht(id);
+      await neu();
     } catch (err) {
       melde(err.message, "fehler");
     }
   });
+  $("#handwerker").addEventListener("click", () => auftragStarten(n, mieter, bilder, o));
+  $("#wiedervorlage").addEventListener("click", () => aufgabeDialog({
+    titel: `Nachfassen: ${n.betreff || "Nachricht"}`.slice(0, 200), mieter_id: n.mieter_id, objekt_id: o?.id || null,
+    nachricht_id: n.id, faellig_am: fristVon(n) || "", vorlauf_tage: 3,
+  }, { nachher: neu }));
   $("#erledigt")?.addEventListener("click", async () => {
     try {
       await db.aendereNachricht(id, { status: "erledigt" });
@@ -614,14 +409,112 @@ export async function zeigeNachricht(id) {
   $("#wiederoffen")?.addEventListener("click", async () => {
     try {
       await db.aendereNachricht(id, { status: "offen" });
-      await zeigeNachricht(id);
+      await neu();
     } catch (err) { melde(err.message, "fehler"); }
   });
 }
 
+async function fristSetzen(n, art, nachher) {
+  let felder;
+  if (art === "stimmt") felder = { frist: fristVon(n), frist_bestaetigt: true };
+  else if (art === "keine") felder = { frist: null, frist_bestaetigt: true };
+  else {
+    const daten = await dialogFormular(`
+      <h2>Frist</h2>
+      ${n.ki_frist_zitat ? `<blockquote class="zitat">„${esc(n.ki_frist_zitat)}“</blockquote>` : ""}
+      <label class="feld"><span>Bis wann muss etwas passieren?</span><input type="date" name="frist" required value="${esc(fristVon(n) || "")}" min="2020-01-01" max="2099-12-31"></label>
+      <div class="knopfreihe">
+        <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+        <button class="knopf knopf--primaer" value="ok">Speichern</button>
+      </div>`);
+    if (!daten) return;
+    felder = { frist: daten.get("frist"), frist_bestaetigt: true };
+  }
+  try {
+    await db.aendereNachricht(n.id, felder);
+    melde(felder.frist ? "Frist gespeichert." : "Frist entfernt.", "ok");
+    nachher();
+  } catch (err) {
+    melde(err.message, "fehler");
+  }
+}
+
+// Auftrag an einen Handwerker: Firma und Fotos wählen, die KI schreibt das Briefing
+async function auftragStarten(n, mieter, bilder, objekt) {
+  const alle = (await db.ladeDienstleister().catch(() => [])).filter((d) => d.aktiv);
+  // Vorauswahl: Gewerk, das zum Text passt (Heizung, Wasser, Strom …); Robert kann frei wählen
+  const text = norm(`${n.betreff || ""} ${n.text || ""} ${n.ki_zusammenfassung || ""}`);
+  const PASST = [
+    [/heiz|warmwasser|therme|kalt/, /heiz|sanit/], [/wasser|rohr|tropf|abfluss|verstopf|wc|toilette|dusche|bad|feucht|schimmel/, /sanit|heiz/],
+    [/strom|licht|steckdose|sicherung|elektr|kabel/, /elektr/], [/schluessel|schloss|tuer|ausgesperrt/, /schluess|schloss/],
+    [/dach|regen|undicht|ziegel/, /dach/], [/wand|farbe|tapete|streichen/, /maler/],
+  ];
+  const punkte = (d) => {
+    const g = norm(d.gewerk);
+    return PASST.reduce((s, [t, gw]) => s + (t.test(text) && gw.test(g) ? 1 : 0), 0) * 10 + (objekt && d.objekt_id === objekt.id ? 1 : 0);
+  };
+  const passend = alle.filter((d) => !objekt || !d.objekt_id || d.objekt_id === objekt.id)
+    .sort((a, b) => punkte(b) - punkte(a) || String(a.gewerk).localeCompare(String(b.gewerk)));
+  if (!passend.length) {
+    return melde("Noch keine Handwerker eingetragen. Unter Wissen → Handwerker & Dienstleister hinzufügen.", "fehler");
+  }
+  const kiDa = !!zustand.ki?.ki;
+  const daten = await dialogFormular(`
+    <h2>Handwerker beauftragen</h2>
+    <label class="feld"><span>Wer soll kommen?</span><select name="dienstleister_id" required>
+      ${passend.map((d) => `<option value="${esc(d.id)}">${esc(d.name)}${d.gewerk ? " – " + esc(d.gewerk) : ""}${d.email ? "" : " (keine E-Mail)"}</option>`).join("")}
+    </select></label>
+    ${bilder.length ? `<fieldset class="gruppe"><legend>Fotos mitschicken</legend>
+      <div class="fotowahl">${bilder.map((a, i) => `<label><input type="checkbox" name="foto" value="${i}" checked><img data-datei="${esc(a.pfad)}" alt="${esc(a.name || "Foto")}"></label>`).join("")}</div>
+    </fieldset>` : `<p class="leise">Zu dieser Nachricht gibt es keine Fotos.</p>`}
+    <label class="feld"><span>Hinweis an die KI (optional)</span>
+      <span class="diktat"><textarea name="anweisung" rows="2" placeholder="z. B. Termin bitte direkt mit der Mieterin absprechen."></textarea>${mikroKnopf()}</span></label>
+    <p class="leise">Der Handwerker erfährt nur Adresse, Wohnung, Name und Telefon der Mietpartei, die Schadensbeschreibung und die Fotos.
+      Keine Miete, keine Rückstände, keine Bankdaten.</p>
+    <div class="knopfreihe">
+      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      <button class="knopf knopf--primaer" value="ok">${kiDa ? `${ICON_KI} Auftrag entwerfen` : "Auftrag schreiben"}</button>
+    </div>`, {
+    breit: true,
+    vorbereiten: (form) => {
+      verbindeDiktat(form);
+      for (const img of $$("img[data-datei]", form)) db.dateiAdresse("eingang", img.dataset.datei).then((u) => (img.src = u)).catch(() => {});
+    },
+  });
+  if (!daten) return;
+  const d = passend.find((x) => x.id === daten.get("dienstleister_id"));
+  const fotos = daten.getAll("foto").map((i) => bilder[Number(i)]).filter(Boolean);
+  const anweisung = String(daten.get("anweisung") || "").trim();
+  let r = { betreff: `Auftrag: ${n.betreff || "Reparatur"}`.slice(0, 200), text: "Sehr geehrte Damen und Herren,\n\n", hinweise: [] };
+  if (kiDa) {
+    const warte = wartehinweis("Die KI schreibt den Auftrag …");
+    try {
+      r = await db.funktion("ki", { aktion: "auftrag", nachricht_id: n.id, dienstleister_id: d.id, anweisung: anweisung || null });
+    } catch (err) {
+      melde(err.message, "fehler");
+    } finally {
+      await warte.ende();
+    }
+  }
+  try {
+    const a = await db.speichereAntwort(null, {
+      art: "auftrag", nachricht_id: n.id, mieter_id: mieter?.id || null, dienstleister_id: d.id,
+      empfaenger_email: d.email || null, empfaenger_name: d.name, betreff: r.betreff, text: r.text,
+      anweisung: anweisung || null, ki_modell: r.modell || null,
+      anhaenge: fotos.map((f) => ({ bucket: "eingang", pfad: f.pfad, name: f.name || "Foto.jpg" })),
+    });
+    if (r.hinweise?.length) hinweisSpeicher.set(a.id, r.hinweise);
+    await zeigeNachricht(n.id);
+    $(`[data-auftrag="${a.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (err) {
+    melde(err.message, "fehler");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Entwurf: Anweisung (tippen oder diktieren) → KI-Entwurf → bearbeiten → senden oder als Brief
-// k = { nachricht, mieter, antwort, nachEnde }
+// k = { nachricht, mieter, antwort, nachEnde, auftrag?, anweisung?, hinweise? }
+// auftrag: Entwurf eines Auftrags an einen Handwerker (antwort.art = "auftrag")
 // ---------------------------------------------------------------------------
 function baueEntwurf(el, k) {
   let antwort = k.antwort;
@@ -634,35 +527,37 @@ function baueEntwurf(el, k) {
 
   el.innerHTML = `
     <section class="flaeche entwurf">
-      <div class="flaeche__kopf"><h2>${k.nachricht ? "Antwort" : "Schreiben"}</h2>
+      <div class="flaeche__kopf"><h2>${k.auftrag ? `Auftrag an ${esc(antwort.empfaenger_name || "Handwerker")}` : k.nachricht ? "Antwort" : "Schreiben"}</h2>
         ${antwort ? `<span class="marker marker--messing">Entwurf gespeichert</span>` : ""}</div>
       <div class="flaeche__inhalt">
-        <label class="feld"><span>${k.nachricht ? "Was soll in der Antwort stehen? (optional)" : "Was soll im Schreiben stehen?"}</span>
-          <span class="diktat"><textarea name="anweisung" rows="3" placeholder="${esc(platzhalter)}">${esc(antwort?.anweisung || "")}</textarea>${mikroKnopf()}</span></label>
+        <label class="feld"><span>${k.auftrag ? "Hinweis an die KI (optional)" : k.nachricht ? "Was soll in der Antwort stehen? (optional)" : "Was soll im Schreiben stehen?"}</span>
+          <span class="diktat"><textarea name="anweisung" rows="${k.auftrag ? 2 : 3}" placeholder="${esc(k.auftrag ? "z. B. Termin bitte direkt mit der Mieterin absprechen." : platzhalter)}">${esc(antwort?.anweisung || k.anweisung || "")}</textarea>${mikroKnopf()}</span></label>
         <div class="knopfreihe">
           <button type="button" class="knopf knopf--ki" data-k="entwerfen" ${kiDa ? "" : `aria-disabled="true"`}>${ICON_KI} ${antwort ? "Neu entwerfen" : "Entwurf mit KI"}</button>
+          ${k.nachricht && !k.auftrag && kiDa ? `<button type="button" class="knopf knopf--ki" data-k="fotos" title="Entwurf, der freundlich um Fotos bittet">${ICON_KI} Fotos anfordern</button>` : ""}
           ${antwort ? "" : `<button type="button" class="knopf" data-k="selbst">Selbst schreiben</button>`}
         </div>
         <div class="entwurf__editor" data-teil="editor" ${antwort ? "" : "hidden"}>
           <div class="ki-hinweise" data-teil="hinweise" hidden></div>
+          ${k.auftrag && antwort?.anhaenge?.length ? `<p class="leise">Im Anhang: ${antwort.anhaenge.length} ${antwort.anhaenge.length === 1 ? "Foto" : "Fotos"} aus der Nachricht.</p>` : ""}
           <div class="formraster formraster--zwei">
             <label class="feld"><span>An (E-Mail)</span><input type="email" name="an" value="${esc(antwort?.empfaenger_email || standardAn)}" placeholder="name@beispiel.de" autocomplete="off"></label>
             <label class="feld"><span>Betreff</span><input name="betreff" value="${esc(antwort?.betreff || "")}"></label>
           </div>
           <label class="feld"><span>Text</span><textarea name="text" rows="10" class="entwurf__text">${esc(antwort?.text || "")}</textarea></label>
           <p class="signatur">Wird automatisch angefügt:<br>Mit freundlichen Grüßen<br>${esc(signatur).replace(/\n/g, "<br>")}</p>
-          <div class="ueberarbeiten">
+          <div class="ueberarbeiten" ${k.auftrag ? "hidden" : ""}>
             <label class="feld"><span>Änderungswunsch an die KI</span>
               <span class="diktat"><input name="aenderung" placeholder="z. B. kürzer, oder: Termin Dienstag 10 Uhr nennen" autocomplete="off">${mikroKnopf()}</span></label>
             <button type="button" class="knopf" data-k="ueberarbeiten">${ICON_KI} Überarbeiten</button>
           </div>
           <div class="entwurf__aktionen">
             <button type="button" class="knopf knopf--primaer" data-k="senden">Per E-Mail senden</button>
-            <button type="button" class="knopf" data-k="brief">Als Brief</button>
+            ${k.auftrag ? `<button type="button" class="knopf" data-k="drucken">Drucken</button>` : `<button type="button" class="knopf" data-k="brief">Als Brief</button>`}
             <button type="button" class="knopf" data-k="speichern">Entwurf speichern</button>
             <button type="button" class="knopf knopf--leise knopf--gefahr" data-k="verwerfen">Verwerfen</button>
           </div>
-          <p class="leise entwurf__hinweis">Nichts geht automatisch raus. Erst „Per E-Mail senden“ oder „Als Brief“ verlässt die App.</p>
+          <p class="leise entwurf__hinweis">Nichts geht automatisch raus. Erst „Per E-Mail senden“ oder „${k.auftrag ? "Drucken" : "Als Brief"}“ verlässt die App.</p>
         </div>
       </div>
     </section>`;
@@ -674,6 +569,7 @@ function baueEntwurf(el, k) {
   const textGroesse = wachsen(feld("text"));
   wachsen(feld("anweisung"));
 
+  if (k.hinweise?.length) setTimeout(() => zeigeHinweise(k.hinweise));
   const werte = () => ({
     an: feld("an").value.trim(),
     betreff: feld("betreff").value.trim(),
@@ -702,7 +598,7 @@ function baueEntwurf(el, k) {
       nachricht_id: k.nachricht?.id || null,
       mieter_id: k.mieter?.id || null,
       empfaenger_email: v.an || null,
-      empfaenger_name: k.nachricht?.absender_name || (k.mieter ? mieterName(k.mieter) : null),
+      empfaenger_name: k.auftrag ? antwort.empfaenger_name : k.nachricht?.absender_name || (k.mieter ? mieterName(k.mieter) : null),
       betreff: v.betreff,
       text: v.text,
       anweisung: v.anweisung || null,
@@ -720,11 +616,12 @@ function baueEntwurf(el, k) {
   }
 
   async function alsGesendetMarkieren(an, kanal) {
-    await db.speichereAntwort(antwort.id, { status: "gesendet", gesendet_am: new Date().toISOString(), empfaenger_email: an });
-    if (k.nachricht) await db.aendereNachricht(k.nachricht.id, { status: "beantwortet" });
+    await db.speichereAntwort(antwort.id, { status: kanal === "druck" ? "als_brief" : "gesendet", gesendet_am: new Date().toISOString(), empfaenger_email: an || antwort.empfaenger_email || null });
+    if (k.nachricht && !k.auftrag) await db.aendereNachricht(k.nachricht.id, { status: "beantwortet" });
     if (k.mieter) {
       await db.protokolliereVorgang({
-        mieter_id: k.mieter.id, typ: "antwort", titel: `E-Mail: ${werte().betreff || "Antwort"}`,
+        mieter_id: k.mieter.id, typ: k.auftrag ? "auftrag" : "antwort",
+        titel: k.auftrag ? `Auftrag an ${antwort.empfaenger_name || "Handwerker"}: ${werte().betreff || "Auftrag"}` : `E-Mail: ${werte().betreff || "Antwort"}`,
         details: { antwort_id: antwort.id, an, kanal },
       });
     }
@@ -740,9 +637,11 @@ function baueEntwurf(el, k) {
       }
       await beschaeftigt(el, knopf, "KI schreibt …", async () => {
         try {
-          const r = await db.funktion("ki", {
-            aktion: "entwurf", nachricht_id: k.nachricht?.id || null, mieter_id: k.mieter?.id || null, anweisung: v.anweisung || null,
-          });
+          const r = k.auftrag
+            ? await db.funktion("ki", { aktion: "auftrag", nachricht_id: k.nachricht.id, dienstleister_id: antwort.dienstleister_id, anweisung: v.anweisung || null })
+            : await db.funktion("ki", {
+              aktion: "entwurf", nachricht_id: k.nachricht?.id || null, mieter_id: k.mieter?.id || null, anweisung: v.anweisung || null,
+            });
           zeigeEditor(r);
           zeigeHinweise(r.hinweise);
           await speichere({ ki_modell: r.modell || null });
@@ -754,6 +653,27 @@ function baueEntwurf(el, k) {
       if (antwort) {
         knopf.innerHTML = `${ICON_KI} Neu entwerfen`;
         el.querySelector('[data-k="selbst"]')?.remove();
+      }
+    },
+    async fotos(knopf) {
+      const f = feld("anweisung");
+      if (!/foto/i.test(f.value)) f.value = [f.value.trim(), "Bitte freundlich um 1 bis 3 Fotos vom Schaden bitten (einfach als Antwort auf diese E-Mail) und fragen, seit wann es so ist."].filter(Boolean).join("\n");
+      return aktionen.entwerfen(el.querySelector('[data-k="entwerfen"]') || knopf);
+    },
+    async drucken(knopf) {
+      const v = werte();
+      if (!v.text.trim()) return melde("Der Text ist leer.", "fehler");
+      try { await speichere(); } catch (err) { return melde(err.message, "fehler"); }
+      await beschaeftigt(el, knopf, "Druckansicht …", async () => {
+        const urls = await Promise.all((antwort.anhaenge || []).map((a) => db.dateiAdresse(a.bucket, a.pfad).catch(() => null)));
+        await druckeAuftrag({ an: antwort.empfaenger_name, betreff: v.betreff, text: v.text, signatur, fotos: urls.filter(Boolean) });
+      });
+      if (await frage("Gedruckt?", "<p>Dann wird der Auftrag im Verlauf vermerkt.</p>", "Ja, vermerken")) {
+        try {
+          await alsGesendetMarkieren(null, "druck");
+          melde("Auftrag vermerkt.", "ok");
+          k.nachEnde();
+        } catch (err) { melde(err.message, "fehler"); }
       }
     },
     async ueberarbeiten(knopf) {
@@ -810,9 +730,10 @@ function baueEntwurf(el, k) {
       try { await speichere(); } catch (err) { return melde(err.message, "fehler"); }
       const voll = `${v.text.trim()}\n\nMit freundlichen Grüßen\n${signatur}`;
 
+      const anzahlFotos = k.auftrag ? (antwort.anhaenge || []).length : 0;
       if (zustand.ki?.versand) {
         const ok = await frage("E-Mail jetzt senden?", `
-          <p>An <strong>${esc(v.an)}</strong><br>Betreff: ${esc(v.betreff || "Ihre Nachricht")}</p>
+          <p>An <strong>${esc(v.an)}</strong><br>Betreff: ${esc(v.betreff || "Ihre Nachricht")}${anzahlFotos ? `<br>Anhang: ${anzahlFotos} ${anzahlFotos === 1 ? "Foto" : "Fotos"}` : ""}</p>
           <div class="mailvorschau">${esc(voll)}</div>
           <p class="leise">Absender: ${esc(zustand.ki.absender || "")}${zustand.profil?.antwort_email ? `. Antworten gehen an ${esc(zustand.profil.antwort_email)}.` : ""}</p>`,
         "Jetzt senden");
@@ -834,11 +755,11 @@ function baueEntwurf(el, k) {
       // Rückfall: Das eigene E-Mail-Programm öffnen
       const ok = await frage("Im E-Mail-Programm öffnen", `
         <p>Der direkte Versand aus der App ist noch nicht eingerichtet. Die E-Mail öffnet sich in Ihrem E-Mail-Programm.
-        Dort prüfen und abschicken.</p>`, "E-Mail-Programm öffnen");
+        Dort prüfen und abschicken.</p>${anzahlFotos ? `<p><strong>Die Fotos bitte im E-Mail-Programm selbst anhängen</strong> (oder „Drucken“ nutzen).</p>` : ""}`, "E-Mail-Programm öffnen");
       if (!ok) return;
       window.location.href = `mailto:${encodeURIComponent(v.an)}?subject=${encodeURIComponent(v.betreff)}&body=${encodeURIComponent(voll)}`;
       await new Promise((r) => setTimeout(r, 600));
-      if (await frage("Abgeschickt?", "<p>Wenn die E-Mail raus ist, wird die Nachricht als beantwortet markiert.</p>", "Ja, als beantwortet markieren")) {
+      if (await frage("Abgeschickt?", `<p>Wenn die E-Mail raus ist, wird ${k.auftrag ? "der Auftrag im Verlauf vermerkt" : "die Nachricht als beantwortet markiert"}.</p>`, k.auftrag ? "Ja, vermerken" : "Ja, als beantwortet markieren")) {
         try {
           await alsGesendetMarkieren(v.an, "email-programm");
           melde("Als beantwortet markiert.", "ok");
@@ -912,6 +833,19 @@ function baueEntwurf(el, k) {
   for (const b of $$("[data-k]", el)) {
     b.addEventListener("click", () => aktionen[b.dataset.k](b));
   }
+}
+
+// Druckansicht für einen Auftrag (Text und Fotos), ohne Datei-Download
+async function druckeAuftrag({ an, betreff, text, signatur, fotos }) {
+  const p = zustand.profil || {};
+  const kopf = [p.firma, p.strasse, [p.plz, p.ort].filter(Boolean).join(" "), p.telefon ? `Tel. ${p.telefon}` : "", p.email].filter(Boolean);
+  await drucke(`
+    <div class="druck__kopf">${kopf.map(esc).join(" · ")}</div>
+    <p>${esc(an || "")}</p>
+    <p class="druck__datum">${esc(datumDE(new Date()))}</p>
+    <h1>${esc(betreff || "Auftrag")}</h1>
+    <div class="druck__text">${esc(text)}\n\nMit freundlichen Grüßen\n${esc(signatur)}</div>
+    ${fotos.map((u, i) => `<figure><img src="${esc(u)}" alt="Foto ${i + 1}"><figcaption>Foto ${i + 1}</figcaption></figure>`).join("")}`);
 }
 
 // Anschrift für den Brief wählen (Mietpartei, Kostenträger, Absender oder frei)
@@ -1017,83 +951,13 @@ export async function zeigeNeuesSchreiben(mieterId = null, antwortId = null) {
       </div>
     </div>`;
 
+  const vorbelegt = zustand.vorbelegung && !zustand.vorbelegung.nachricht_id ? zustand.vorbelegung.anweisung : null;
+  zustand.vorbelegung = null;
   baueEntwurf($("#entwurf"), {
-    nachricht: null, mieter, antwort,
+    nachricht: null, mieter, antwort, anweisung: vorbelegt,
     nachEnde: () => geheZu(mieter ? `#/mieter/${mieter.id}` : "#/postfach"),
   });
   $("#empf-mieter").addEventListener("change", (e) => geheZu(e.target.value ? `#/schreiben/${e.target.value}` : "#/schreiben"));
-}
-
-// ---------------------------------------------------------------------------
-// Wissen
-// ---------------------------------------------------------------------------
-export async function zeigeWissen() {
-  const liste = await db.ladeWissen();
-  const gruppen = [{ titel: "Gilt für alle Objekte", objekt_id: null }, ...zustand.stamm.objekte.map((o) => ({ titel: o.bezeichnung, objekt_id: o.id }))];
-  inhalt().innerHTML = `
-    <div class="kopf">
-      <div><h1>Wissen</h1>
-        <p>Das weiß die KI, wenn sie Antworten entwirft: Abläufe, Ansprechpartner, Hausordnung. Je konkreter, desto besser die Entwürfe.</p></div>
-      <button type="button" class="knopf knopf--primaer" id="wissen-neu">Neuer Eintrag</button>
-    </div>
-    <div class="banner banner--leise">Bitte keine Bankdaten und nichts über einzelne Mieter eintragen. Das holt sich die KI aus der Akte, die IBAN bekommt sie nie.</div>
-    <div class="stapel">
-      ${gruppen.map((g) => {
-        const eintraege = liste.filter((w) => (w.objekt_id || null) === g.objekt_id);
-        if (!eintraege.length && g.objekt_id) return "";
-        return `
-          <section class="flaeche">
-            <div class="flaeche__kopf"><h2>${esc(g.titel)}</h2><span class="leise">${eintraege.length} ${eintraege.length === 1 ? "Eintrag" : "Einträge"}</span></div>
-            ${eintraege.length
-              ? `<div class="wissensliste">${eintraege.map((w) => `
-                  <button type="button" class="wissen ${w.aktiv ? "" : "wissen--aus"}" data-wissen="${esc(w.id)}">
-                    <span class="wissen__titel">${esc(w.titel)}${w.aktiv ? "" : ` <span class="marker marker--leise">ausgeschaltet</span>`}</span>
-                    <span class="wissen__text">${esc(w.inhalt)}</span>
-                  </button>`).join("")}</div>`
-              : `<div class="leer">Noch keine Einträge.</div>`}
-          </section>`;
-      }).join("")}
-    </div>`;
-
-  $("#wissen-neu").addEventListener("click", () => bearbeiteWissen(null));
-  for (const b of $$("[data-wissen]")) b.addEventListener("click", () => bearbeiteWissen(liste.find((w) => w.id === b.dataset.wissen)));
-}
-
-async function bearbeiteWissen(w) {
-  const daten = await dialogFormular(`
-    <h2>${w ? "Eintrag bearbeiten" : "Neuer Eintrag"}</h2>
-    <label class="feld"><span>Titel</span><input name="titel" required value="${esc(w?.titel || "")}" placeholder="z. B. Schlüsseldienst"></label>
-    <label class="feld"><span>Gilt für</span><select name="objekt_id">
-      <option value="">Alle Objekte</option>
-      ${zustand.stamm.objekte.map((o) => `<option value="${esc(o.id)}" ${o.id === w?.objekt_id ? "selected" : ""}>${esc(o.bezeichnung)}</option>`).join("")}
-    </select></label>
-    <label class="feld"><span>Inhalt</span>
-      <span class="diktat"><textarea name="inhalt" rows="8" required placeholder="z. B. Schlüsseldienst Muster, Tel. 0123 4567. Kosten trägt der Mieter, wenn er den Schlüssel verloren hat.">${esc(w?.inhalt || "")}</textarea>${mikroKnopf()}</span></label>
-    <label class="checkfeld"><input type="checkbox" name="aktiv" ${w?.aktiv === false ? "" : "checked"}> Aktiv (die KI nutzt diesen Eintrag)</label>
-    <div class="knopfreihe">
-      ${w ? `<button class="knopf knopf--gefahr knopf--links" value="loeschen" formnovalidate>Löschen</button>` : ""}
-      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
-      <button class="knopf knopf--primaer" value="ok">Speichern</button>
-    </div>`, { breit: true, vorbereiten: verbindeDiktat });
-  if (!daten) return;
-  try {
-    if (daten.get("_aktion") === "loeschen") {
-      if (!(await frage("Eintrag löschen?", `<p>„${esc(w.titel)}“ wird gelöscht.</p>`, "Löschen", { gefahr: true }))) return;
-      await db.loescheWissen(w.id);
-      melde("Eintrag gelöscht.", "ok");
-    } else {
-      await db.speichereWissen(w?.id, {
-        titel: String(daten.get("titel")).trim(),
-        inhalt: String(daten.get("inhalt")).trim(),
-        objekt_id: daten.get("objekt_id") || null,
-        aktiv: daten.get("aktiv") === "on",
-      });
-      melde("Gespeichert.", "ok");
-    }
-    await zeigeWissen();
-  } catch (err) {
-    melde(err.message, "fehler");
-  }
 }
 
 // ---------------------------------------------------------------------------
