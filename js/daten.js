@@ -339,6 +339,13 @@ export async function loescheDokumentOrdner(id) {
   pruefe(await sb.from("dokument_ordner").delete().eq("id", id));
 }
 /** Alle Dokumente eines Ordners in einen anderen verschieben (beim Umbenennen oder Löschen) */
-export async function verschiebeDokumente(alt, neu) {
+export async function verschiebeDokumente(alt, neu, { flach = false, ausser = [] } = {}) {
   pruefe(await sb.from("dokumente").update({ ordner: neu }).eq("ordner", alt));
+  // Dokumente in Unterordnern (auch automatischen wie „/2026“) gehen mit; flach = alle direkt in „neu“
+  const unter = pruefe(await sb.from("dokumente").select("id,ordner").like("ordner", `${alt.replace(/[%_\\]/g, "\\$&")}/%`));
+  for (const d of unter) {
+    // Unterordner, die es weiter gibt, bleiben, wo sie sind
+    if (ausser.some((n) => n.length > alt.length && (d.ordner === n || d.ordner.startsWith(n + "/")))) continue;
+    pruefe(await sb.from("dokumente").update({ ordner: flach ? neu : neu + d.ordner.slice(alt.length) }).eq("id", d.id));
+  }
 }

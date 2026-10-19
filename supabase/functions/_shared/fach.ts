@@ -19,16 +19,34 @@ export const DOKUMENT_ORDNER = [
   "Mietverhältnisse", "Sonstiges",
 ];
 export const DOKUMENT_ARTEN = [
-  "Rechnung", "Vertrag", "Bescheid", "Abrechnung", "Angebot", "Mahnung", "Brief", "E-Mail", "Auftrag", "Protokoll", "Notiz", "Sonstiges",
+  "Rechnung", "Vertrag", "Mietvertrag", "Kündigung", "Bescheid", "Abrechnung", "Angebot", "Mahnung", "Brief", "E-Mail", "Auftrag",
+  "Protokoll", "Notiz", "Sonstiges",
 ];
 
 /** Ordner der Dokumentenablage: bearbeitbare Liste aus der Datenbank, sonst die Standardliste */
 export async function dokumentOrdner(zugriff: Zugriff): Promise<string[]> {
-  const zeilen = await rest("dokument_ordner?select=name&order=reihenfolge,name", zugriff).catch(() => []);
-  const namen: string[] = (Array.isArray(zeilen) ? zeilen : []).map((z: { name: string }) => String(z.name ?? "").trim()).filter(Boolean);
-  if (!namen.length) return DOKUMENT_ORDNER;
-  return namen.includes("Sonstiges") ? namen : [...namen, "Sonstiges"];
+  return (await dokumentOrdnerInfo(zugriff)).namen;
 }
+/** Ordnerliste plus Hinweis für die KI, welche Ordner automatische Unterordner bekommen (je Jahr / je Wohnung) */
+export async function dokumentOrdnerInfo(zugriff: Zugriff): Promise<{ namen: string[]; hinweis: string }> {
+  const zeilen = await rest("dokument_ordner?select=name,automatik&order=reihenfolge,name", zugriff).catch(() => []);
+  const liste: { name: string; automatik?: string | null }[] = (Array.isArray(zeilen) ? zeilen : [])
+    .map((z: { name: string; automatik?: string | null }) => ({ name: String(z.name ?? "").trim(), automatik: z.automatik ?? null }))
+    .filter((z) => z.name);
+  if (!liste.length) return { namen: DOKUMENT_ORDNER, hinweis: "" };
+  const namen = liste.map((z) => z.name);
+  const auto = liste.filter((z) => z.automatik === "jahr" || z.automatik === "wohnung")
+    .map((z) => `${z.name} (${z.automatik === "jahr" ? "je Jahr" : "je Wohnung/Mietpartei"})`);
+  return {
+    namen: namen.includes("Sonstiges") ? namen : [...namen, "Sonstiges"],
+    hinweis: auto.length ? ` Diese Ordner bekommen ihre Unterordner automatisch, dort nur den Hauptordner wählen: ${auto.join(", ")}.` : "",
+  };
+}
+
+const DETAILS_BESCHREIBUNG =
+  "Details für den Dateinamen (Schema Datum_Ort_Straße_Art_Details), kurz, ohne Datum und Adresse: " +
+  "bei Rechnungen und Angeboten 'Gewerk oder Firma_Betrag', z. B. 'Sanitär Gruber_102,89'; bei Verträgen der Vertragspartner, z. B. 'Ista'; " +
+  "sonst Absender oder Stichwort (1–4 Wörter). Bei Schreiben zu einer Mietpartei setzt die App 'Wohnung_Name' selbst.";
 
 const nurAus = <T extends string>(liste: readonly T[], wert: unknown, sonst: T): T =>
   liste.includes(wert as T) ? (wert as T) : sonst;
@@ -396,6 +414,7 @@ const WERKZEUG_DOKUMENT: Werkzeug = {
       mieter_id: { type: ["string", "null"], description: "ID aus der Mieterliste, wenn eindeutig eine Mietpartei betroffen ist. Sonst null." },
       ordner: { type: "string", enum: DOKUMENT_ORDNER },
       art: { type: "string", enum: DOKUMENT_ARTEN },
+      details: { type: ["string", "null"], description: DETAILS_BESCHREIBUNG },
       lesbar: { type: "boolean", description: "false, wenn nichts Lesbares zu erkennen ist." },
     },
     required: ["eingang", "betreff", "text", "zusammenfassung", "ordner", "art", "lesbar", "objekt_id", "mieter_id"],
@@ -407,8 +426,8 @@ export async function liesDokument(datei: { daten: string; typ: string }, zugrif
   const istPdf = datei.typ === "application/pdf";
   if (!istPdf && !/^image\/(jpeg|png|webp|gif)$/.test(datei.typ)) throw new Fehler(400, "Bitte ein Foto (JPEG/PNG) oder ein PDF senden.", "eingabe");
   if (datei.daten.length > (istPdf ? 11_000_000 : 7_000_000)) throw new Fehler(413, "Die Datei ist zu groß.", "eingabe");
-  const [{ objekte, text: objekteText }, { mieter, text: mieterText }, ordnerListe] = await Promise.all([
-    objektListe(zugriff), mieterListe(zugriff), dokumentOrdner(zugriff),
+  const [{ objekte, text: objekteText }, { mieter, text: mieterText }, { namen: ordnerListe, hinweis: ordnerHinweis }] = await Promise.all([
+    objektListe(zugriff), mieterListe(zugriff), dokumentOrdnerInfo(zugriff),
   ]);
   // Werkzeug mit der aktuellen Ordnerliste (Unterordner mit „/“)
   const werkzeug: Werkzeug = {
@@ -417,7 +436,7 @@ export async function liesDokument(datei: { daten: string; typ: string }, zugrif
       ...WERKZEUG_DOKUMENT.input_schema,
       properties: {
         ...(WERKZEUG_DOKUMENT.input_schema.properties as Record<string, unknown>),
-        ordner: { type: "string", enum: ordnerListe, description: "Passendster Ordner der Ablage. Unterordner sind mit „/“ geschrieben; den genauesten passenden wählen." },
+        ordner: { type: "string", enum: ordnerListe, description: "Passendster Ordner der Ablage. Unterordner sind mit „/“ geschrieben; den genauesten passenden wählen." + ordnerHinweis },
       },
     },
   };
@@ -443,6 +462,7 @@ export async function liesDokument(datei: { daten: string; typ: string }, zugrif
     mieter_id: mieter.some((x: { id: string }) => x.id === daten.mieter_id) ? daten.mieter_id : null,
     ordner: nurAus(ordnerListe, daten.ordner, "Sonstiges"),
     art: nurAus(DOKUMENT_ARTEN, daten.art, "Sonstiges"),
+    details: ohneLeer(daten.details)?.slice(0, 80) ?? null,
     lesbar: daten.lesbar !== false,
   };
 }
@@ -463,9 +483,10 @@ const WERKZEUG_ABLAGE: Werkzeug = {
       ordner: { type: "string", enum: DOKUMENT_ORDNER, description: "Passendster Ordner. Unterordner sind mit „/“ geschrieben; den genauesten passenden wählen." },
       art: { type: "string", enum: DOKUMENT_ARTEN },
       gegenueber_kurz: { type: ["string", "null"], description: "Kurzname des Gegenübers für den Dateinamen (1–2 Wörter): bei Eingang der Absender, bei Ausgang der Empfänger, z. B. 'Huber', 'Jobcenter', 'Haustechnik Muster'." },
+      details: { type: ["string", "null"], description: DETAILS_BESCHREIBUNG },
       zusammenfassung: { type: "string", description: "1 kurzer Satz: worum geht es?" },
     },
-    required: ["ordner", "art", "gegenueber_kurz", "zusammenfassung"],
+    required: ["ordner", "art", "gegenueber_kurz", "details", "zusammenfassung"],
   },
 };
 
@@ -479,8 +500,8 @@ export async function ablageVorschlag(e: AblageAnfrage, zugriff: Zugriff): Promi
   const text = kuerze(ohneIban(e.text), 4000);
   const titel = ohneIban(e.titel).slice(0, 300);
   if (!text.trim() && !titel.trim()) throw new Fehler(400, "Kein Text zum Ablegen.", "eingabe");
-  const [ordnerListe, mieter, haus] = await Promise.all([
-    dokumentOrdner(zugriff),
+  const [{ namen: ordnerListe, hinweis: ordnerHinweis }, mieter, haus] = await Promise.all([
+    dokumentOrdnerInfo(zugriff),
     e.mieter_id ? rest(`mieter?id=eq.${enc(e.mieter_id)}&select=vorname,nachname,wohnung:wohnungen(bezeichnung,objekt:objekte(bezeichnung))`, zugriff).then((r) => r[0]).catch(() => null) : null,
     e.objekt_id ? rest(`objekte?id=eq.${enc(e.objekt_id)}&select=bezeichnung`, zugriff).then((r) => r[0]).catch(() => null) : null,
   ]);
@@ -489,7 +510,10 @@ export async function ablageVorschlag(e: AblageAnfrage, zugriff: Zugriff): Promi
     ...WERKZEUG_ABLAGE,
     input_schema: {
       ...WERKZEUG_ABLAGE.input_schema,
-      properties: { ...(WERKZEUG_ABLAGE.input_schema.properties as Record<string, unknown>), ordner: { ...((WERKZEUG_ABLAGE.input_schema.properties as Record<string, Record<string, unknown>>).ordner), enum: ordnerListe } },
+      properties: {
+        ...(WERKZEUG_ABLAGE.input_schema.properties as Record<string, unknown>),
+        ordner: { type: "string", enum: ordnerListe, description: "Passendster Ordner. Unterordner sind mit „/“ geschrieben; den genauesten passenden wählen." + ordnerHinweis },
+      },
     },
   };
   const kontext = [
@@ -511,6 +535,7 @@ export async function ablageVorschlag(e: AblageAnfrage, zugriff: Zugriff): Promi
     ordner: nurAus(ordnerListe, daten.ordner, "Sonstiges"),
     art: nurAus(DOKUMENT_ARTEN, daten.art, nurAus(DOKUMENT_ARTEN, e.art, "Sonstiges")),
     gegenueber_kurz: ohneLeer(daten.gegenueber_kurz)?.slice(0, 40) ?? null,
+    details: ohneLeer(ohneIban(daten.details))?.slice(0, 80) ?? null,
     zusammenfassung: String(daten.zusammenfassung ?? "").slice(0, 300),
   };
 }

@@ -112,6 +112,12 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
 - **Gesendetes automatisch ablegen** (E-Mail, Brief, Auftrag, Mahnung/Nachweis): Name nach Schema, Ordner von der KI,
   danach Meldung „Abgelegt in … – Ändern“. Schalter in den Einstellungen (`vermieter_profil.auto_ablage`).
 - **Upload vom Gerät:** Fotos, PDF, Word (.docx) und Excel (.xlsx); Word/Excel liest die KI nicht.
+- **Ordnerstruktur nach Robert** (je Haus gleich): 01_Kalkulation & Ankauf … 09_Archiv mit festen Unterordnern.
+  Automatische Unterordner (`dokument_ordner.automatik`): 04_Betriebskosten und 05_Instandhaltung **je Jahr**,
+  03_Vermietung **je Wohnung** („Wohnung - Nachname“ aus den Mietparteien, nie von Hand angelegt).
+- **Dateiname:** `JJMMTT_Kürzel_Straße Nr._Dokumentart_Details`, z. B. `261019_SR_Königsberger Str. 19_Rechnung_Sanitär Gruber_102,89`.
+  Orts-Kürzel je Haus (`objekte.kuerzel`, Hausseite → Einstellungen zum Haus). Details schlägt die KI vor
+  (Firma_Betrag, Vertragspartner …); bei einer Mietpartei setzt die App „Wohnung_Nachname“.
 - **Handwerker** bekommen nur Adresse, Wohnung, Name/Telefon der Mietpartei, Schadensbeschreibung und Fotos –
   keine Miete, keine Rückstände, keinen Kostenträger, keine Bankdaten.
 - **Selbsthilfe-Tipps** in Entwürfen sind als „Unser Tipp (unverbindlich)“ markiert, nie bei Strom, Gas,
@@ -180,6 +186,7 @@ Danach die Zeile für die Antwortvorlage aus `supabase/migrations/20261015020000
       Mieterhöhung prüfen, Chat mit Vorschlägen
 - [x] Ablage: Ordner bearbeitbar (mit Unterordnern), ZIP-Export, Download unter sauberem Namen
 - [x] Ablage aus der App: Mails, Notizen und Gesendetes mit KI-Ordnervorschlag, Word/Excel hochladen
+- [x] Roberts Ordnerstruktur (automatische Jahres- und Wohnungsordner) und Dateinamen-Schema
 - [ ] Später: Antwort als PDF-Anhang mailen, Import offener Posten aus immocloud (CSV)
 
 Die Mustertexte der Vorlagen sind ein Ausgangspunkt und vor dem echten Einsatz rechtlich prüfen zu lassen.

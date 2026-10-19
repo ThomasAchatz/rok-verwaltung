@@ -346,6 +346,9 @@ export async function zeigeObjekt(id) {
       <details class="flaeche ausklapp">
         <summary>Einstellungen zum Haus</summary>
         <form class="flaeche__inhalt" id="hausformular">
+          <label class="feld"><span>Orts-Kürzel für Dateinamen</span>
+            <input name="kuerzel" value="${esc(o.kuerzel || "")}" maxlength="10" placeholder="z. B. SR" autocomplete="off" style="max-width: 8rem">
+            <span class="feldhinweis feldhinweis--leise">Dateinamen: ${esc(ablage.dokumentTitel({ datum: heuteISO(), objekt: { ...o, kuerzel: o.kuerzel || "SR" }, art: "Rechnung", details: "Sanitär Gruber_102,89" }))}</span></label>
           <label class="feld"><span>Kappungsgrenze für Mieterhöhungen</span>
             <select name="kappungsgrenze">
               <option value="20" ${Number(o.kappungsgrenze) !== 15 ? "selected" : ""}>20 % in drei Jahren (Normalfall)</option>
@@ -369,7 +372,12 @@ export async function zeigeObjekt(id) {
   $("#hausformular")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      const neu = await db.speichereObjekt(o.id, { kappungsgrenze: Number(new FormData(e.currentTarget).get("kappungsgrenze")) });
+      const f = new FormData(e.currentTarget);
+      const neu = await db.speichereObjekt(o.id, {
+        kappungsgrenze: Number(f.get("kappungsgrenze")),
+        kuerzel: String(f.get("kuerzel") || "").trim().toUpperCase() || null,
+      });
+      Object.assign(objektVon(o.id) || {}, neu);
       Object.assign(o, neu);
       melde("Gespeichert.", "ok");
     } catch (err) { melde(err.message, "fehler"); }

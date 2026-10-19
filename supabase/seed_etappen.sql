@@ -45,3 +45,4 @@ select v.titel, v.notiz, v.faellig::date, v.vorlauf, o.id, m.id
 
 -- Offene Nachrichten neu einordnen lassen, damit Fristen erkannt werden
 update nachrichten set ki_am = null where status in ('neu', 'offen') and frist_bestaetigt = false;
+update public.objekte set kuerzel = 'MS' where ort = 'Musterstadt';

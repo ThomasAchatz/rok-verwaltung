@@ -65,3 +65,6 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   (Builder `eintragNachricht`/`eintragAntwort` in `js/postfach.js`, `eintragNotiz` in `js/start.js`).
   Verknüpfung über `dokumente.nachricht_id/antwort_id/aufgabe_id/vorgang_id`. PDF aus Text: `js/pdf.js`
   (Helvetica/WinAnsi, keine Bibliothek). Bucket `dokumente` erlaubt Fotos, PDF, docx, xlsx.
+- Roberts Struktur: `dokument_ordner.automatik` ('jahr' | 'wohnung') → `zielOrdner()` hängt den Unterordner an;
+  Name über `dokumentTitel({ datum, objekt, art, details })` (JJMMTT_Kürzel_Straße_Art_Details), `objekte.kuerzel`,
+  `dokumente.details`. Echte Namen/Wohnungen aus Roberts Vorlage NICHT ins Testsystem (erst nach dem Umzug).

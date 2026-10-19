@@ -781,6 +781,10 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
 /* --- Ordner der Ablage bearbeiten ----------------------------------------- */
 .ordnerliste { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
 .ordnerzeile { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; gap: 0.35rem; align-items: center; }
+.ordnerzeile__auto { grid-column: 1 / -1; font-size: 0.78rem; padding: 0.25rem 0.4rem; min-height: 0; color: var(--text-leise); }
+.ordnerzeile--unter { padding-left: 1.2rem; }
+.ordnerzeile--unter .ordnerzeile__auto { display: none; }
+.ordnerzeile + .ordnerzeile:not(.ordnerzeile--unter) { margin-top: 0.4rem; }
 .ordnerzeile--fest { grid-template-columns: minmax(0, 1fr) auto auto; }
 .ordnerzeile--fest input { color: var(--text-leise); background: #f7f9fb; }
 .ordnerzeile__zahl { min-width: 3.5rem; text-align: right; font-size: 0.78rem; }
@@ -789,4 +793,8 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
   .ordnerzeile { grid-template-columns: minmax(0, 1fr) auto auto auto; }
   .ordnerzeile .ordnerzeile__zahl { display: none; }
   .ordnerzeile--fest { grid-template-columns: minmax(0, 1fr) auto; }
+  /* Unterordner haben lange Namen: Eingabe über die ganze Breite, Knöpfe darunter */
+  .ordnerzeile--unter { grid-template-columns: minmax(0, 1fr) auto auto auto; padding-left: 0.8rem; }
+  .ordnerzeile--unter input { grid-column: 1 / -1; font-size: 0.9rem; }
+  .ordnerzeile--unter .ordnerzeile__zahl { display: block; grid-column: 1; min-width: 0; text-align: left; }
 }
