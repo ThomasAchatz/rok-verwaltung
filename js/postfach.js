@@ -1042,6 +1042,17 @@ export async function zeigeEinstellungen() {
       </section>
 
       <section class="flaeche">
+        <div class="flaeche__kopf"><h2>Dokumentenablage</h2></div>
+        <div class="flaeche__inhalt">
+          <p>Ordner für Rechnungen, Verträge &amp; Co. (für alle Häuser gleich). Die KI legt nur in diese Ordner ab.</p>
+          <div class="knopfreihe">
+            <button type="button" class="knopf" id="ordner-bearbeiten">Ordner bearbeiten</button>
+            <button type="button" class="knopf" id="zip-alle">Alle Dokumente als ZIP (Sicherung)</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="flaeche">
         <div class="flaeche__kopf"><h2>Briefvorlagen</h2></div>
         <div class="flaeche__inhalt">
           <p>Mahnungen, Nachweis an Kostenträger und Antwortschreiben als Word-Vorlagen. Eigene Vorlagen können hochgeladen werden.</p>
@@ -1086,6 +1097,8 @@ export async function zeigeEinstellungen() {
       } catch (err) { melde(err.message, "fehler"); }
     });
   };
+  $("#ordner-bearbeiten").addEventListener("click", () => ablage.ordnerBearbeiten());
+  $("#zip-alle").addEventListener("click", () => ablage.zipExport({}));
   speichernMit("#profilformular", ["firma", "inhaber", "strasse", "plz", "ort", "telefon", "email", "web"], "Briefkopf gespeichert.");
   speichernMit("#antwortformular", ["ki_tonfall", "email_signatur", "antwort_email"], "Gespeichert.");
 

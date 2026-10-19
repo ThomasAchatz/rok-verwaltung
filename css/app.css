@@ -762,3 +762,16 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
 @media (max-width: 420px) {
   .leiste__konto .knopf--ki { padding: 0.3rem 0.45rem; }
 }
+
+/* --- Ordner der Ablage bearbeiten ----------------------------------------- */
+.ordnerliste { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+.ordnerzeile { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; gap: 0.35rem; align-items: center; }
+.ordnerzeile--fest { grid-template-columns: minmax(0, 1fr) auto auto; }
+.ordnerzeile--fest input { color: var(--text-leise); background: #f7f9fb; }
+.ordnerzeile__zahl { min-width: 3.5rem; text-align: right; font-size: 0.78rem; }
+.ordnerzeile--weg input { text-decoration: line-through; opacity: 0.5; }
+@media (max-width: 420px) {
+  .ordnerzeile { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+  .ordnerzeile .ordnerzeile__zahl { display: none; }
+  .ordnerzeile--fest { grid-template-columns: minmax(0, 1fr) auto; }
+}

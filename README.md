@@ -99,6 +99,12 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
 - Fotografierte Briefe und E-Mail-Anhänge liegen im privaten Bucket `eingang` (nur JPEG/PNG/WebP/PDF bis 10 MB,
   Inhalt wird geprüft, alles andere wird verworfen und nur namentlich angezeigt). Abgelegte Dokumente im privaten
   Bucket `dokumente` (`<haus|allgemein>/<uuid>.pdf|jpg`), Name nach Schema `JJJJ-MM-TT_Haus_Absender_Art`.
+  Beim Herunterladen kommt die Datei unter diesem Namen statt der internen Kennung.
+- **Ordner der Ablage** stehen in der Tabelle `dokument_ordner` und sind in den Einstellungen bzw. auf der
+  Hausseite („Ordner bearbeiten“) änderbar: umbenennen, sortieren, löschen (Dokumente wandern nach „Sonstiges“),
+  neu anlegen. Unterordner mit „/“, z. B. `Versorger/Strom`. Die KI wählt nur aus dieser Liste.
+- **ZIP-Export** je Haus oder für alles (Einstellungen): echte Ordnerstruktur, saubere Dateinamen und
+  `Inhaltsverzeichnis.csv`. Taugt auch als Sicherungskopie.
 - **Handwerker** bekommen nur Adresse, Wohnung, Name/Telefon der Mietpartei, Schadensbeschreibung und Fotos –
   keine Miete, keine Rückstände, keinen Kostenträger, keine Bankdaten.
 - **Selbsthilfe-Tipps** in Entwürfen sind als „Unser Tipp (unverbindlich)“ markiert, nie bei Strom, Gas,
@@ -165,6 +171,7 @@ Danach die Zeile für die Antwortvorlage aus `supabase/migrations/20261015020000
 - [x] Stufe 3 (Roberts Feedback): To-do-Übersicht mit Fristen und Wiedervorlagen, Seiten je Haus,
       Dokumentenablage mit KI-Vorschlag, Anhänge aus E-Mails, Handwerker-Auftrag, Wissen einsprechen,
       Mieterhöhung prüfen, Chat mit Vorschlägen
-- [ ] Später: Antwort als PDF-Anhang mailen, Import offener Posten aus immocloud (CSV), mehr Ablage-Ordner
+- [x] Ablage: Ordner bearbeitbar (mit Unterordnern), ZIP-Export, Download unter sauberem Namen
+- [ ] Später: Antwort als PDF-Anhang mailen, Import offener Posten aus immocloud (CSV)
 
 Die Mustertexte der Vorlagen sind ein Ausgangspunkt und vor dem echten Einsatz rechtlich prüfen zu lassen.

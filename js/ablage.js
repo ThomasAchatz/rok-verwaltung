@@ -2,7 +2,7 @@
 // Die KI liest und schlägt Ablage, Namen und Ordner vor. Abgelegt wird erst nach „Ablegen“.
 import * as db from "./daten.js";
 import { datumDE, mieterName } from "./dokumente.js";
-import { $, $$, esc, melde, dialogFormular, frage, heuteISO, dateiTeil, zustand, objektVon } from "./helfer.js";
+import { $, $$, esc, melde, dialogFormular, frage, heuteISO, dateiTeil, herunterladen, zustand, objektVon } from "./helfer.js";
 import {
   ICON_KI, istEmail, norm, geheZu, mieterListe, mieterOptionen, mikroKnopf, verbindeDiktat, wartehinweis, verkleinere, alsBase64,
 } from "./ui.js";
@@ -20,6 +20,29 @@ const MAX_DATEI = 15 * 1024 * 1024;
 const MAX_PDF_KI = 8 * 1024 * 1024;
 
 const optionen = (liste, gewaehlt) => liste.map((x) => `<option ${x === gewaehlt ? "selected" : ""}>${esc(x)}</option>`).join("");
+// Unterordner werden mit „/“ gespeichert und mit „›“ angezeigt
+export const ordnerAnzeige = (n) => String(n || "").split("/").map((t) => t.trim()).join(" › ");
+const ordnerOptionen = (liste, gewaehlt) => {
+  const alle = gewaehlt && !liste.includes(gewaehlt) ? [...liste, gewaehlt] : liste;
+  return alle.map((x) => `<option value="${esc(x)}" ${x === gewaehlt ? "selected" : ""}>${esc(ordnerAnzeige(x))}</option>`).join("");
+};
+
+/** Aktuelle Ordnerliste der Ablage (aus der Datenbank, „Sonstiges“ immer dabei) */
+export async function ordnerListe(neu = false) {
+  if (!zustand.dokOrdner || neu) {
+    try {
+      zustand.dokOrdnerZeilen = await db.ladeDokumentOrdner();
+      const namen = zustand.dokOrdnerZeilen.map((o) => o.name);
+      zustand.dokOrdner = namen.length ? (namen.includes("Sonstiges") ? namen : [...namen, "Sonstiges"]) : DOKUMENT_ORDNER;
+    } catch {
+      zustand.dokOrdner = DOKUMENT_ORDNER;
+    }
+  }
+  return zustand.dokOrdner;
+}
+const endungVon = (d) => (d.typ === "application/pdf" ? "pdf" : d.typ === "image/png" ? "png" : "jpg");
+// Dateiname zum Speichern: Name aus der Ablage, nur Zeichen, die überall erlaubt sind
+const sichererDateiname = (s) => String(s || "Dokument").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 150) || "Dokument";
 const hausOptionen = (gewaehlt, leer = "Allgemein (kein bestimmtes Haus)") =>
   `<option value="">${esc(leer)}</option>` +
   zustand.stamm.objekte.map((o) => `<option value="${esc(o.id)}" ${o.id === gewaehlt ? "selected" : ""}>${esc(o.bezeichnung)}</option>`).join("");
@@ -77,7 +100,7 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
     melde("Das PDF ist zu groß für die KI. Bitte die Angaben selbst eintragen.", "info");
   }
 
-  const mieterL = await mieterListe();
+  const [mieterL, ordnerL] = await Promise.all([mieterListe(), ordnerListe()]);
   const ziel = nurAblage ? "dokument" : erkannt.eingang === "anfrage" ? "anfrage" : erkannt.eingang ? "dokument" : "anfrage";
   const hausStart = objektId !== undefined ? objektId : erkannt.objekt_id || null;
   const datumStart = erkannt.datum || heuteISO();
@@ -100,7 +123,7 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
       <div class="formraster formraster--zwei">
         <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(hausStart)}</select></label>
         <label class="feld"><span>Mietpartei (optional)</span><select name="mieter_id">${mieterOptionen(mieterL, erkannt.mieter_id || null)}</select></label>
-        <label class="feld"><span>Ordner</span><select name="ordner">${optionen(DOKUMENT_ORDNER, erkannt.ordner || "Sonstiges")}</select></label>
+        <label class="feld"><span>Ordner</span><select name="ordner">${ordnerOptionen(ordnerL, ordnerL.includes(erkannt.ordner) ? erkannt.ordner : "Sonstiges")}</select></label>
         <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, artStart)}</select></label>
         <label class="feld"><span>Absender (kurz)</span><input name="absender" value="${esc(absenderStart)}" maxlength="80" placeholder="z. B. Stadtwerke"></label>
         <label class="feld"><span>Datum des Schreibens</span><input type="date" name="datum" value="${esc(datumStart)}" required></label>
@@ -210,10 +233,10 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
 // ---------------------------------------------------------------------------
 // Listen (für die Seite eines Hauses und die Wissen-Seite)
 // ---------------------------------------------------------------------------
-function nachOrdner(liste, reihenfolge) {
+function nachOrdner(liste, reihenfolge, { unbekannteBehalten = false } = {}) {
   const gruppen = new Map(reihenfolge.map((o) => [o, []]));
   for (const x of liste) {
-    const k = gruppen.has(x.ordner) ? x.ordner : "Sonstiges";
+    const k = gruppen.has(x.ordner) || (unbekannteBehalten && x.ordner) ? x.ordner : "Sonstiges";
     if (!gruppen.has(k)) gruppen.set(k, []);
     gruppen.get(k).push(x);
   }
@@ -222,8 +245,8 @@ function nachOrdner(liste, reihenfolge) {
 
 export function dokumentListe(liste, { leer = "Keine Dokumente." } = {}) {
   if (!liste.length) return `<div class="leer">${esc(leer)}</div>`;
-  return nachOrdner(liste, DOKUMENT_ORDNER).map(([ordner, l]) => `
-    <div class="ordner"><h3 class="ordner__titel">${esc(ordner)} <span class="leise">${l.length}</span></h3>
+  return nachOrdner(liste, zustand.dokOrdner || DOKUMENT_ORDNER, { unbekannteBehalten: true }).map(([ordner, l]) => `
+    <div class="ordner"><h3 class="ordner__titel">${esc(ordnerAnzeige(ordner))} <span class="leise">${l.length}</span></h3>
       ${l.map((d) => `
         <button type="button" class="dok" data-dok="${esc(d.id)}">
           <span class="dok__icon ${d.typ === "application/pdf" ? "" : "dok__icon--bild"}">${d.typ === "application/pdf" ? "PDF" : "Foto"}</span>
@@ -268,7 +291,7 @@ export function verbindeListen(root, { dokumente = [], wissen = [], dienstleiste
 // ---------------------------------------------------------------------------
 async function oeffneDokument(d, { nachher }) {
   if (!d) return;
-  const mieterL = await mieterListe();
+  const [mieterL, ordnerL] = await Promise.all([mieterListe(), ordnerListe()]);
   const pdf = d.typ === "application/pdf";
   const daten = await dialogFormular(`
     <h2 class="umbruch">${esc(d.titel)}</h2>
@@ -283,7 +306,7 @@ async function oeffneDokument(d, { nachher }) {
         <label class="feld breit"><span>Name</span><input name="titel" required maxlength="160" value="${esc(d.titel)}"></label>
         <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(d.objekt_id)}</select></label>
         <label class="feld"><span>Mietpartei</span><select name="mieter_id">${mieterOptionen(mieterL, d.mieter_id)}</select></label>
-        <label class="feld"><span>Ordner</span><select name="ordner">${optionen(DOKUMENT_ORDNER, d.ordner)}</select></label>
+        <label class="feld"><span>Ordner</span><select name="ordner">${ordnerOptionen(ordnerL, d.ordner)}</select></label>
         <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, d.art || "Sonstiges")}</select></label>
         <label class="feld"><span>Datum</span><input type="date" name="datum" value="${esc(d.datum || "")}"></label>
         <label class="feld"><span>Absender</span><input name="absender" value="${esc(d.absender || "")}"></label>
@@ -297,7 +320,7 @@ async function oeffneDokument(d, { nachher }) {
     breit: true,
     vorbereiten: async (form) => {
       try {
-        const [ansehen, laden] = await Promise.all([db.dateiAdresse("dokumente", d.pfad), db.dateiAdresse("dokumente", d.pfad, { download: true })]);
+        const [ansehen, laden] = await Promise.all([db.dateiAdresse("dokumente", d.pfad), db.dateiAdresse("dokumente", d.pfad, { download: `${sichererDateiname(d.titel)}.${endungVon(d)}` })]);
         for (const a of $$("[data-ansehen]", form)) a.href = ansehen;
         $("[data-laden]", form).href = laden;
         const img = $("img", form);
@@ -493,5 +516,147 @@ export async function bearbeiteDienstleister(d, { nachher = () => {}, objektId =
     nachher();
   } catch (err) {
     melde(err.message, "fehler");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ordner der Ablage bearbeiten (gilt für alle Häuser)
+// ---------------------------------------------------------------------------
+const ordnerName = (s) => String(s || "").split("/").map((t) => t.trim().replace(/\s+/g, " ")).filter(Boolean).join("/").slice(0, 80);
+
+export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
+  await ordnerListe(true);
+  const zeilen = (zustand.dokOrdnerZeilen || []).filter((o) => o.name !== "Sonstiges");
+  const anzahl = {};
+  for (const d of await db.ladeDokumente({}).catch(() => [])) anzahl[d.ordner] = (anzahl[d.ordner] || 0) + 1;
+  const zeile = (o) => `
+    <div class="ordnerzeile" data-id="${esc(o.id)}" data-alt="${esc(o.name)}">
+      <input value="${esc(o.name)}" maxlength="80" aria-label="Ordnername" autocomplete="off">
+      <span class="leise ordnerzeile__zahl">${anzahl[o.name] ? `${anzahl[o.name]} Dok.` : ""}</span>
+      <button type="button" class="knopf knopf--klein" data-schritt="-1" aria-label="Nach oben">↑</button>
+      <button type="button" class="knopf knopf--klein" data-schritt="1" aria-label="Nach unten">↓</button>
+      <button type="button" class="knopf knopf--klein knopf--gefahr" data-weg aria-label="Löschen">✕</button>
+    </div>`;
+  let ergebnis = null;
+  const daten = await dialogFormular(`
+    <h2>Ordner der Ablage</h2>
+    <p class="leise">Gilt für alle Häuser. Unterordner mit „/“ schreiben, z. B. „Versorger/Strom“.
+      Die KI wählt beim Ablegen aus genau dieser Liste.</p>
+    <div class="ordnerliste">${zeilen.map(zeile).join("")}
+      <div class="ordnerzeile ordnerzeile--fest"><input value="Sonstiges" readonly tabindex="-1" aria-label="Sonstiges (immer da)">
+        <span class="leise ordnerzeile__zahl">${anzahl.Sonstiges ? `${anzahl.Sonstiges} Dok.` : ""}</span><span class="leise">immer da</span></div>
+    </div>
+    <label class="feld"><span>Neue Ordner (einer pro Zeile)</span><textarea name="neu" rows="2" placeholder="z. B. Versorger/Strom"></textarea></label>
+    <div class="knopfreihe">
+      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      <button class="knopf knopf--primaer" value="ok">Speichern</button>
+    </div>`, {
+    breit: true,
+    vorbereiten: (form) => {
+      const liste = $(".ordnerliste", form);
+      liste.addEventListener("click", (e) => {
+        const z = e.target.closest(".ordnerzeile");
+        if (!z) return;
+        const schritt = e.target.closest("[data-schritt]");
+        if (schritt) {
+          const nachbar = schritt.dataset.schritt === "-1" ? z.previousElementSibling : z.nextElementSibling;
+          if (nachbar && !nachbar.classList.contains("ordnerzeile--fest")) {
+            schritt.dataset.schritt === "-1" ? nachbar.before(z) : nachbar.after(z);
+          }
+        }
+        if (e.target.closest("[data-weg]")) {
+          const weg = z.classList.toggle("ordnerzeile--weg");
+          $("input", z).disabled = weg;
+          e.target.closest("[data-weg]").textContent = weg ? "↺" : "✕";
+          e.target.closest("[data-weg]").setAttribute("aria-label", weg ? "Doch behalten" : "Löschen");
+        }
+      });
+      form.addEventListener("submit", () => {
+        ergebnis = $$(".ordnerzeile[data-id]", form).map((z, i) => ({
+          id: z.dataset.id, alt: z.dataset.alt, name: ordnerName($("input", z).value),
+          weg: z.classList.contains("ordnerzeile--weg"), reihenfolge: (i + 1) * 10,
+        }));
+      });
+    },
+  });
+  if (!daten || !ergebnis) return;
+  const neue = String(daten.get("neu") || "").split(/\n+/).map(ordnerName).filter(Boolean);
+  const bleiben = ergebnis.filter((o) => !o.weg);
+  const namen = [...bleiben.map((o) => o.name), ...neue];
+  if (namen.some((n) => !n)) return melde("Bitte keinen Ordner ohne Namen speichern.", "fehler");
+  if (namen.some((n) => n.toLowerCase() === "sonstiges")) return melde("„Sonstiges“ gibt es schon.", "fehler");
+  if (new Set(namen.map((n) => n.toLowerCase())).size !== namen.length) return melde("Jeder Ordnername darf nur einmal vorkommen.", "fehler");
+  const loeschen = ergebnis.filter((o) => o.weg);
+  const betroffen = loeschen.reduce((s, o) => s + (anzahl[o.alt] || 0), 0);
+  if (betroffen && !(await frage("Ordner löschen?",
+    `<p>${betroffen} ${betroffen === 1 ? "Dokument liegt" : "Dokumente liegen"} in ${loeschen.length === 1 ? "diesem Ordner" : "diesen Ordnern"}.
+      Sie werden nach „Sonstiges“ verschoben, nichts wird gelöscht.</p>`, "Löschen und verschieben"))) return;
+  const warte = wartehinweis("Ordner werden gespeichert …");
+  try {
+    for (const o of loeschen) {
+      if (anzahl[o.alt]) await db.verschiebeDokumente(o.alt, "Sonstiges");
+      await db.loescheDokumentOrdner(o.id);
+    }
+    for (const o of bleiben) {
+      await db.speichereDokumentOrdner(o.id, { name: o.name, reihenfolge: o.reihenfolge });
+      if (o.name !== o.alt && anzahl[o.alt]) await db.verschiebeDokumente(o.alt, o.name);
+    }
+    let r = (bleiben.length + 1) * 10;
+    for (const n of neue) await db.speichereDokumentOrdner(null, { name: n, reihenfolge: (r += 10) });
+    await ordnerListe(true);
+    melde("Ordner gespeichert.", "ok");
+  } catch (err) {
+    melde(/duplicate|unique/i.test(err.message) ? "Diesen Ordnernamen gibt es schon." : err.message, "fehler");
+  } finally {
+    await warte.ende();
+  }
+  nachher();
+}
+
+// ---------------------------------------------------------------------------
+// Ablage als ZIP herunterladen (je Haus oder alles), mit Ordnern und sauberen Namen
+// objektId: Haus-ID, null = Allgemein, undefined = alle Häuser
+// ---------------------------------------------------------------------------
+export async function zipExport({ objektId } = {}) {
+  if (!window.JSZip) return melde("ZIP ist in diesem Browser nicht verfügbar.", "fehler");
+  const alle = objektId === undefined;
+  const docs = await db.ladeDokumente(alle ? {} : { objektId }).catch((err) => { melde(err.message, "fehler"); return null; });
+  if (!docs) return;
+  if (!docs.length) return melde("Hier liegen noch keine Dokumente.", "info");
+  const warte = wartehinweis(`Lade ${docs.length} Dokumente …`);
+  const text = $("#dialog .warten p");
+  const zip = new window.JSZip();
+  const vergeben = new Set();
+  const fehlen = [];
+  const csv = [["Pfad im ZIP", "Name", "Haus", "Ordner", "Art", "Datum", "Absender", "Zusammenfassung"]];
+  const teil = (s) => sichererDateiname(s).replace(/\.+$/, "");
+  try {
+    for (const [i, d] of docs.entries()) {
+      if (text) text.textContent = `Lade Dokument ${i + 1} von ${docs.length} …`;
+      const haus = d.objekt_id ? objektVon(d.objekt_id)?.bezeichnung || "Haus" : "Allgemein";
+      const ordner = String(d.ordner || "Sonstiges").split("/").map(teil).join("/");
+      let pfad = `${alle ? teil(haus) + "/" : ""}${ordner}/${teil(d.titel)}`;
+      let name = `${pfad}.${endungVon(d)}`;
+      for (let n = 2; vergeben.has(name.toLowerCase()); n++) name = `${pfad}_${n}.${endungVon(d)}`;
+      vergeben.add(name.toLowerCase());
+      try {
+        zip.file(name, await db.ladeDokumentDatei(d.pfad));
+        csv.push([name, d.titel, haus, d.ordner, d.art || "", d.datum || "", d.absender || "", d.zusammenfassung || ""]);
+      } catch {
+        fehlen.push(d.titel);
+      }
+    }
+    const zelle = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    zip.file("Inhaltsverzeichnis.csv", "﻿" + csv.map((z) => z.map(zelle).join(";")).join("\r\n"));
+    if (fehlen.length) zip.file("Nicht geladen.txt", fehlen.join("\r\n"));
+    if (text) text.textContent = "Packe das ZIP …";
+    const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    const wofuer = alle ? "Alle" : objektId ? objektKurz(objektVon(objektId)) : "Allgemein";
+    herunterladen(blob, `${heuteISO()}_Ablage_${wofuer}.zip`, "application/zip");
+    melde(fehlen.length ? `ZIP erstellt, ${fehlen.length} Datei(en) fehlten.` : "ZIP erstellt.", fehlen.length ? "info" : "ok");
+  } catch (err) {
+    melde("ZIP fehlgeschlagen: " + err.message, "fehler");
+  } finally {
+    await warte.ende();
   }
 }

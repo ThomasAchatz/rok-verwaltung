@@ -301,7 +301,31 @@ export async function loescheDokument(dok) {
 /** Kurz gültige Adresse zum Ansehen einer privaten Datei (Bucket "dokumente" oder "eingang"). */
 export async function dateiAdresse(bucket, pfad, { download = false } = {}) {
   if (!["dokumente", "eingang"].includes(bucket)) throw new Error("Unbekannter Speicher");
-  const { data, error } = await sb.storage.from(bucket).createSignedUrl(pfad, 600, download ? { download: true } : undefined);
+  // download: true oder ein Dateiname (so heißt die Datei dann beim Speichern)
+  const { data, error } = await sb.storage.from(bucket).createSignedUrl(pfad, 600, download ? { download } : undefined);
   if (error) throw new Error(error.message);
   return data.signedUrl;
+}
+
+/** Datei aus der Ablage laden (für den ZIP-Export) */
+export async function ladeDokumentDatei(pfad) {
+  const { data, error } = await sb.storage.from("dokumente").download(pfad);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+// --- Ordner der Dokumentenablage (für alle Häuser) --------------------------
+export async function ladeDokumentOrdner() {
+  return pruefe(await sb.from("dokument_ordner").select("*").order("reihenfolge").order("name"));
+}
+export async function speichereDokumentOrdner(id, felder) {
+  if (!id) return pruefe(await sb.from("dokument_ordner").insert(felder).select().single());
+  return pruefe(await sb.from("dokument_ordner").update(felder).eq("id", id).select().single());
+}
+export async function loescheDokumentOrdner(id) {
+  pruefe(await sb.from("dokument_ordner").delete().eq("id", id));
+}
+/** Alle Dokumente eines Ordners in einen anderen verschieben (beim Umbenennen oder Löschen) */
+export async function verschiebeDokumente(alt, neu) {
+  pruefe(await sb.from("dokumente").update({ ordner: neu }).eq("ordner", alt));
 }

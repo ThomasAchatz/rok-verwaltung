@@ -22,6 +22,14 @@ export const DOKUMENT_ARTEN = [
   "Rechnung", "Vertrag", "Bescheid", "Abrechnung", "Angebot", "Mahnung", "Brief", "Protokoll", "Notiz", "Sonstiges",
 ];
 
+/** Ordner der Dokumentenablage: bearbeitbare Liste aus der Datenbank, sonst die Standardliste */
+export async function dokumentOrdner(zugriff: Zugriff): Promise<string[]> {
+  const zeilen = await rest("dokument_ordner?select=name&order=reihenfolge,name", zugriff).catch(() => []);
+  const namen: string[] = (Array.isArray(zeilen) ? zeilen : []).map((z: { name: string }) => String(z.name ?? "").trim()).filter(Boolean);
+  if (!namen.length) return DOKUMENT_ORDNER;
+  return namen.includes("Sonstiges") ? namen : [...namen, "Sonstiges"];
+}
+
 const nurAus = <T extends string>(liste: readonly T[], wert: unknown, sonst: T): T =>
   liste.includes(wert as T) ? (wert as T) : sonst;
 const ohneLeer = (s: unknown) => (typeof s === "string" && s.trim() ? s.trim() : null);
@@ -399,14 +407,27 @@ export async function liesDokument(datei: { daten: string; typ: string }, zugrif
   const istPdf = datei.typ === "application/pdf";
   if (!istPdf && !/^image\/(jpeg|png|webp|gif)$/.test(datei.typ)) throw new Fehler(400, "Bitte ein Foto (JPEG/PNG) oder ein PDF senden.", "eingabe");
   if (datei.daten.length > (istPdf ? 11_000_000 : 7_000_000)) throw new Fehler(413, "Die Datei ist zu groß.", "eingabe");
-  const [{ objekte, text: objekteText }, { mieter, text: mieterText }] = await Promise.all([objektListe(zugriff), mieterListe(zugriff)]);
+  const [{ objekte, text: objekteText }, { mieter, text: mieterText }, ordnerListe] = await Promise.all([
+    objektListe(zugriff), mieterListe(zugriff), dokumentOrdner(zugriff),
+  ]);
+  // Werkzeug mit der aktuellen Ordnerliste (Unterordner mit „/“)
+  const werkzeug: Werkzeug = {
+    ...WERKZEUG_DOKUMENT,
+    input_schema: {
+      ...WERKZEUG_DOKUMENT.input_schema,
+      properties: {
+        ...(WERKZEUG_DOKUMENT.input_schema.properties as Record<string, unknown>),
+        ordner: { type: "string", enum: ordnerListe, description: "Passendster Ordner der Ablage. Unterordner sind mit „/“ geschrieben; den genauesten passenden wählen." },
+      },
+    },
+  };
   const block = istPdf
     ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: datei.daten } }
     : { type: "image", source: { type: "base64", media_type: datei.typ, data: datei.daten } };
   const { daten } = await claude({
     system: `Du liest Schreiben für eine Hausverwaltung ab und schlägst die Ablage vor. Heute ist ${heuteDE()}. ${KI_REGEL_FREMD} Antworte ausschließlich über das Werkzeug 'dokument'.`,
     inhalt: [block, { type: "text", text: `${objekteText}\n\n${mieterText}\n\nLies das Schreiben und ordne es ein.` }],
-    werkzeug: WERKZEUG_DOKUMENT,
+    werkzeug,
     maxTokens: 4000,
   });
   return {
@@ -420,7 +441,7 @@ export async function liesDokument(datei: { daten: string; typ: string }, zugrif
     zusammenfassung: String(daten.zusammenfassung ?? "").slice(0, 600),
     objekt_id: objekte.some((x: { id: string }) => x.id === daten.objekt_id) ? daten.objekt_id : null,
     mieter_id: mieter.some((x: { id: string }) => x.id === daten.mieter_id) ? daten.mieter_id : null,
-    ordner: nurAus(DOKUMENT_ORDNER, daten.ordner, "Sonstiges"),
+    ordner: nurAus(ordnerListe, daten.ordner, "Sonstiges"),
     art: nurAus(DOKUMENT_ARTEN, daten.art, "Sonstiges"),
     lesbar: daten.lesbar !== false,
   };

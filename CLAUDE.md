@@ -36,7 +36,8 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 
 - Projekt `rok-verwaltung`, Ref `hjrmwdcvsngovhtrkobc`, Region eu-central-1.
 - Tabellen: mitglieder, vermieter_profil, objekte, wohnungen, kostentraeger, mieter, forderungen,
-  vorgaenge, vorlagen, nachrichten, antworten, wissen, postfach, aufgaben, dienstleister, dokumente;
+  vorgaenge, vorlagen, nachrichten, antworten, wissen, postfach, aufgaben, dienstleister, dokumente,
+  dokument_ordner (bearbeitbare Ordnerliste, Unterordner mit „/“, „Sonstiges“ fest; KI liest sie über `dokumentOrdner()`);
   View mieter_uebersicht (security_invoker); Buckets `vorlagen`, `schreiben`, `eingang`, `dokumente` (privat).
 - Edge Functions `ki`, `posteingang`, `versand` (Quellen in `supabase/functions/`, gemeinsamer Code in
   `_shared/` (gemeinsam, fach, mieterhoehung, chat), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
@@ -58,3 +59,5 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Gemeinsame UI-Hilfen in `js/ui.js` und `js/bausteine.js`, Zustand in `js/helfer.js`.
   Dialoge (`dialogFormular`) lösen erst beim close-Ereignis auf, sonst schließt sich der nächste Dialog sofort.
   Der Chat ist ein eigenes `<dialog id="chat">`, damit Bestätigungsdialoge darüber gehen.
+- Ablage: `ordnerBearbeiten()` und `zipExport()` in `js/ablage.js` (JSZip aus `vendor/jszip.min.js`);
+  Downloads über `dateiAdresse(…, { download: "Name.ext" })`, damit nicht die UUID als Dateiname kommt.

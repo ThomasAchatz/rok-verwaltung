@@ -274,7 +274,7 @@ export async function zeigeObjekt(id) {
   const objektId = allgemein ? null : o.id;
   const monate = letzteMonate(6);
   const [liste, forderungen, vorgaenge, nachrichten, aufgaben, antworten, dokumente, wissen, dienstleister, mieterL] = await Promise.all([
-    db.ladeUebersicht(),
+    ablage.ordnerListe().then(() => db.ladeUebersicht()),
     allgemein ? [] : db.ladeForderungen({ abMonat: monate[0] }),
     db.ladeVorgaenge({ anzahl: 200 }),
     db.ladeNachrichten({ status: ["neu", "offen"], anzahl: 100 }).catch(() => []),
@@ -327,6 +327,10 @@ export async function zeigeObjekt(id) {
       <details class="flaeche ausklapp" ${dokumente.length && dokumente.length <= 12 ? "open" : ""}>
         <summary>Dokumente (${dokumente.length})</summary>
         ${ablage.dokumentListe(dokumente, { leer: "Noch keine Dokumente. Mit „Dokument ablegen“ ein Foto oder PDF hinzufügen." })}
+        <div class="flaeche__fuss knopfreihe">
+          <button type="button" class="knopf knopf--klein" id="ordner-bearbeiten">Ordner bearbeiten</button>
+          ${dokumente.length ? `<button type="button" class="knopf knopf--klein" id="zip">Als ZIP herunterladen</button>` : ""}
+        </div>
       </details>
       <details class="flaeche ausklapp">
         <summary>Wissen (${wissenHier.length})</summary>
@@ -360,6 +364,8 @@ export async function zeigeObjekt(id) {
   $("#wissen-sprechen").addEventListener("click", () => ablage.wissenEinsprechen({ objektId, nachher: neuLaden }));
   $("#wissen-neu").addEventListener("click", () => ablage.bearbeiteWissen({ objekt_id: objektId }, { nachher: neuLaden }));
   $("#dienst-neu").addEventListener("click", () => ablage.bearbeiteDienstleister({ objekt_id: objektId }, { nachher: neuLaden }));
+  $("#ordner-bearbeiten").addEventListener("click", () => ablage.ordnerBearbeiten({ nachher: neuLaden }));
+  $("#zip")?.addEventListener("click", () => ablage.zipExport({ objektId }));
   $("#hausformular")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
