@@ -5,6 +5,7 @@ import { Fehler, KI_REGEL_FREMD, type Werkzeug, type Zugriff, claude, datumOk, e
 
 export const VERLAUF_ARTEN = ["telefonat", "treffen", "email", "notiz"] as const;
 const ZIELE = ["mieter", "kontakt", "neuer_kontakt", "keiner"] as const;
+const EMPFAENGER = ["mieter", "handwerker", "kontakt", "kostentraeger", "neuer_kontakt"] as const;
 const IBAN = /\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b/g;
 const ohneIban = (s: unknown) => String(s ?? "").replace(IBAN, "[IBAN entfernt]");
 const kurz = (s: unknown, n: number) => {
@@ -65,8 +66,24 @@ const WERKZEUG_NOTIZ: Werkzeug = {
         },
       },
       ablegen: { type: "boolean", description: "true, wenn die Notiz ausdrücklich in der Akte/Ablage abgelegt werden soll." },
+      schreiben: {
+        type: "array",
+        description: "Schreiben, die Robert vorbereitet haben möchte: E-Mail, Brief, Auftrag an einen Handwerker, Bescheinigung, Antwort, Erinnerung " +
+          "(z. B. 'schick ihr …', 'Brief an …', 'Handwerker beauftragen', 'dem Jobcenter Bescheid geben'). Nur wenn ausdrücklich gewünscht oder klar nötig. Höchstens 3.",
+        items: {
+          type: "object",
+          properties: {
+            an: { type: "string", enum: [...EMPFAENGER], description: "mieter: aus <mieterliste>; handwerker: aus <handwerker>; kontakt: aus <kontakte>; kostentraeger: aus <kostentraeger> (Amt, Jobcenter); neuer_kontakt: der neue Kontakt aus dieser Notiz." },
+            id: { type: ["string", "null"], description: "ID aus der passenden Liste (bei neuer_kontakt null)." },
+            mieter_id: { type: ["string", "null"], description: "Nur bei handwerker/kostentraeger: betroffene Mietpartei aus <mieterliste>, sonst null." },
+            kanal: { type: "string", enum: ["email", "brief"], description: "brief nur, wenn ausdrücklich Brief/Post/ausdrucken gewünscht." },
+            anweisung: { type: "string", description: "Was im Schreiben stehen soll, mit allen genannten Fakten (Termine, Beträge, Wohnung, Schaden). Als Auftrag an die schreibende KI formuliert." },
+          },
+          required: ["an", "id", "mieter_id", "kanal", "anweisung"],
+        },
+      },
     },
-    required: ["ziel", "mieter_id", "kontakt_id", "neuer_kontakt", "art", "datum", "notiz", "kontakt_info", "geburtstag", "aufgaben", "ablegen"],
+    required: ["ziel", "mieter_id", "kontakt_id", "neuer_kontakt", "art", "datum", "notiz", "kontakt_info", "geburtstag", "aufgaben", "ablegen", "schreiben"],
   },
 };
 
@@ -88,9 +105,11 @@ function geburtstagOk(g: unknown): { tag: number; monat: number; jahr: number | 
 export async function liesNotiz(text: string, zugriff: Zugriff, o: { kontaktId?: string | null; mieterId?: string | null } = {}): Promise<any> {
   const roh = String(text ?? "").trim();
   if (!roh) throw new Fehler(400, "Bitte erst etwas einsprechen oder eintippen.", "eingabe");
-  const [mieter, kontakte] = await Promise.all([
+  const [mieter, kontakte, handwerker, aemter] = await Promise.all([
     rest("mieter?select=id,vorname,nachname,wohnung:wohnungen(bezeichnung,objekt:objekte(bezeichnung))&order=nachname", zugriff),
     rest("kontakte?select=id,vorname,nachname,firma,rolle&order=nachname", zugriff),
+    rest("dienstleister?aktiv=is.true&select=id,name,gewerk&order=name", zugriff).catch(() => []),
+    rest("kostentraeger?select=id,name&order=name", zugriff).catch(() => []),
   ]);
   const mieterText = mieter.map((m: { id: string; vorname: string; nachname: string; wohnung?: { bezeichnung?: string; objekt?: { bezeichnung?: string } } }) =>
     `${m.id} | ${name(m)} | ${m.wohnung?.objekt?.bezeichnung ?? ""}, ${m.wohnung?.bezeichnung ?? ""}`).join("\n");
@@ -107,14 +126,17 @@ export async function liesNotiz(text: string, zugriff: Zugriff, o: { kontaktId?:
       `Du hilfst Robert (Hausverwaltung) beim Festhalten von Gesprächen in einem kleinen Kontakt-Verlauf. Heute ist ${heuteDE()} (${heuteISO()}). ` +
       "Ordne die Notiz der richtigen Person zu. Bei Mietparteien und Kontakten nur IDs aus den Listen verwenden, niemals raten. " +
       "Ähnliche Schreibweisen von Namen sind dieselbe Person. Übernimm nur, was gesagt wurde, erfinde nichts. " +
+      "Will Robert, dass etwas geschrieben, geschickt oder beauftragt wird (E-Mail, Brief, Auftrag an Handwerker, Nachricht ans Amt), trage es unter 'schreiben' ein; die Notiz hält trotzdem fest, was passiert ist. " +
       `${KI_REGEL_FREMD} Antworte ausschließlich über das Werkzeug 'notiz', auf Deutsch.`,
     inhalt: [{
       type: "text",
       text: `<mieterliste>\nID | Name | Haus, Wohnung\n${mieterText}\n</mieterliste>\n\n<kontakte>\nID | Name | Firma | Rolle\n${kontakteText}\n</kontakte>\n\n` +
+        `<handwerker>\nID | Name | Gewerk\n${handwerker.map((d: { id: string; name: string; gewerk: string }) => `${d.id} | ${d.name} | ${d.gewerk ?? "-"}`).join("\n")}\n</handwerker>\n\n` +
+        `<kostentraeger>\nID | Name\n${aemter.map((k: { id: string; name: string }) => `${k.id} | ${k.name}`).join("\n")}\n</kostentraeger>\n\n` +
         `${gerade}<diktat>\n${kuerze(ohneIban(roh), 6000)}\n</diktat>`,
     }],
     werkzeug: WERKZEUG_NOTIZ,
-    maxTokens: 1500,
+    maxTokens: 2500,
   });
 
   let ziel = (ZIELE as readonly string[]).includes(daten.ziel) ? daten.ziel : "keiner";
@@ -136,6 +158,23 @@ export async function liesNotiz(text: string, zugriff: Zugriff, o: { kontaktId?:
     .map((a: any) => ({ titel: kurz(a?.titel, 200), faellig_am: datumOk(a?.faellig_am) ? a.faellig_am : null }))
     .filter((a: { titel: string | null }) => a.titel);
 
+  // Vorbereitete Schreiben: nur gültige IDs, höchstens 3
+  const gibt = (liste: { id: string }[], id: unknown) => liste.some((x) => x.id === id) ? (id as string) : null;
+  const schreiben = (Array.isArray(daten.schreiben) ? daten.schreiben : []).slice(0, 8)
+    // deno-lint-ignore no-explicit-any
+    .map((x: any) => {
+      const an = (EMPFAENGER as readonly string[]).includes(x?.an) ? x.an : null;
+      const id = an === "mieter" ? gibt(mieter, x.id) : an === "handwerker" ? gibt(handwerker, x.id) : an === "kontakt" ? gibt(kontakte, x.id)
+        : an === "kostentraeger" ? gibt(aemter, x.id) : null;
+      const anweisung = kurz(x?.anweisung, 2000);
+      if (!an || !anweisung || (an !== "neuer_kontakt" && !id) || (an === "neuer_kontakt" && !neu)) return null;
+      return {
+        an, id, kanal: x?.kanal === "brief" ? "brief" : "email", anweisung,
+        mieter_id: an === "handwerker" || an === "kostentraeger" ? gibt(mieter, x.mieter_id) ?? mieterId : null,
+      };
+    })
+    .filter(Boolean).slice(0, 3);
+
   return {
     ziel,
     mieter_id: mieterId,
@@ -148,6 +187,7 @@ export async function liesNotiz(text: string, zugriff: Zugriff, o: { kontaktId?:
     geburtstag: geburtstagOk(daten.geburtstag),
     aufgaben,
     ablegen: daten.ablegen === true,
+    schreiben,
   };
 }
 

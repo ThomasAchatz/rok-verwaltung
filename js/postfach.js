@@ -17,6 +17,7 @@ import * as ablage from "./ablage.js";
 import { drucke } from "./ui.js";
 import { aufgabeDialog, fristVon } from "./start.js";
 import { kontakteListe, kontaktName } from "./kontakte.js";
+import * as vorgaenge from "./vorgaenge.js";
 
 const inhalt = () => $("#inhalt");
 
@@ -406,6 +407,7 @@ export async function zeigeNachricht(id) {
   const erledigt = n.status === "erledigt" || n.status === "beantwortet";
   const vorbelegt = zustand.vorbelegung?.nachricht_id === id ? zustand.vorbelegung.anweisung : null;
   zustand.vorbelegung = null;
+  const vorgangKasten = await vorgaenge.vorgangKastenHtml(n).catch(() => "");
 
   inhalt().innerHTML = `
     <a class="zurueck" href="#/postfach">Zum Postfach</a>
@@ -437,6 +439,7 @@ export async function zeigeNachricht(id) {
         ${fertige.length ? `<section class="flaeche"><div class="flaeche__kopf"><h2>Bisher erledigt</h2></div>${fertige.map((a) => antwortEintrag(a, abgelegtVon(a.id))).join("")}</section>` : ""}
       </div>
       <div class="stapel">
+        ${vorgangKasten}
         ${fristHtml(n)}
         <section class="flaeche" id="einordnung">${einordnungHtml(n)}</section>
         <section class="flaeche">
@@ -447,8 +450,7 @@ export async function zeigeNachricht(id) {
                 <span class="leise">${esc([o?.bezeichnung, w?.bezeichnung].filter(Boolean).join(", "))}</span></p>
               <p class="leise">${esc(ZUORDNUNG[n.zuordnung] || "")}</p>`
               : `<p class="leise">Keiner Mietpartei zugeordnet. Die KI kennt dann nur das allgemeine Wissen.</p>`}
-            <label class="feld feld--eng"><span>${mieter ? "Andere Mietpartei wählen" : "Mietpartei zuordnen"}</span>
-              <select id="zuordnung">${mieterOptionen(mieterL, n.mieter_id)}</select></label>
+            <div id="zuordnung">${suchauswahlHtml({ label: mieter ? "Andere Mietpartei wählen" : "Mietpartei zuordnen", placeholder: "Name suchen …", wert: mieter ? mieterName(mieter) : "" })}</div>
           </div>
         </section>
         <section class="flaeche">
@@ -489,10 +491,15 @@ export async function zeigeNachricht(id) {
       }
     }));
   for (const b of $$("[data-frist]")) b.addEventListener("click", () => fristSetzen(n, b.dataset.frist, neu));
-  $("#zuordnung").addEventListener("change", async (e) => {
-    const v = e.target.value || null;
+  verbindeSuchauswahl($("#zuordnung .suchauswahl"), [
+    { wert: "", name: "Keine Mietpartei", gruppe: "" },
+    ...mieterL.map((m) => ({ wert: m.id, name: mieterName(m), zusatz: ortVon(m), gruppe: "Mietparteien" })),
+  ], async (wahl) => {
+    const v = wahl.wert || null;
+    if (v === (n.mieter_id || null)) return;
     try {
       await db.aendereNachricht(id, { mieter_id: v, zuordnung: v ? "manuell" : null });
+      await vorgaenge.mieterNachziehen(n.thema_id, v, n.mieter_id);
       melde(v ? "Mietpartei zugeordnet." : "Zuordnung entfernt.", "ok");
       await neu();
     } catch (err) {
@@ -574,9 +581,7 @@ async function auftragStarten(n, mieter, bilder, objekt) {
   const kiDa = !!zustand.ki?.ki;
   const daten = await dialogFormular(`
     <h2>Handwerker beauftragen</h2>
-    <label class="feld"><span>Wer soll kommen?</span><select name="dienstleister_id" required>
-      ${passend.map((d) => `<option value="${esc(d.id)}">${esc(d.name)}${d.gewerk ? " – " + esc(d.gewerk) : ""}${d.email ? "" : " (keine E-Mail)"}</option>`).join("")}
-    </select></label>
+    ${suchauswahlHtml({ label: "Wer soll kommen?", placeholder: "Handwerker suchen …", wert: passend[0].name, name: "dienstleister_id", versteckt: passend[0].id, inline: true })}
     ${bilder.length ? `<fieldset class="gruppe"><legend>Fotos mitschicken</legend>
       <div class="fotowahl">${bilder.map((a, i) => `<label><input type="checkbox" name="foto" value="${i}" checked><img data-datei="${esc(a.pfad)}" alt="${esc(a.name || "Foto")}"></label>`).join("")}</div>
     </fieldset>` : `<p class="leise">Zu dieser Nachricht gibt es keine Fotos.</p>`}
@@ -591,6 +596,14 @@ async function auftragStarten(n, mieter, bilder, objekt) {
     breit: true,
     vorbereiten: (form) => {
       verbindeDiktat(form);
+      // Suche statt langer Auswahlliste; passende Gewerke stehen oben
+      verbindeSuchauswahl($(".suchauswahl", form), passend.map((d) => ({
+        wert: d.id, name: d.name, gruppe: punkte(d) >= 10 ? "Passt zur Meldung" : "Weitere Handwerker",
+        zusatz: [d.gewerk, d.email ? "" : "keine E-Mail"].filter(Boolean).join(" · "),
+      })));
+      form.addEventListener("submit", (e) => {
+        if (e.submitter?.value === "ok" && !form.dienstleister_id.value) { e.preventDefault(); $(".suchauswahl input", form).focus(); }
+      });
       for (const img of $$("img[data-datei]", form)) db.dateiAdresse("eingang", img.dataset.datei).then((u) => (img.src = u)).catch(() => {});
     },
   });
@@ -610,8 +623,9 @@ async function auftragStarten(n, mieter, bilder, objekt) {
     }
   }
   try {
+    const thema = await vorgaenge.themaFuerNachricht(n).catch(() => null);
     const a = await db.speichereAntwort(null, {
-      art: "auftrag", nachricht_id: n.id, mieter_id: mieter?.id || null, dienstleister_id: d.id,
+      thema_id: thema, art: "auftrag", nachricht_id: n.id, mieter_id: mieter?.id || null, dienstleister_id: d.id,
       empfaenger_email: d.email || null, empfaenger_name: d.name, betreff: r.betreff, text: r.text,
       anweisung: anweisung || null, ki_modell: r.modell || null,
       anhaenge: fotos.map((f) => ({ bucket: "eingang", pfad: f.pfad, name: f.name || "Foto.jpg" })),
@@ -634,6 +648,8 @@ function baueEntwurf(el, k) {
   const kiDa = !!zustand.ki?.ki;
   const standardAn = k.nachricht?.absender_email || k.dienstleister?.email || k.kontakt?.email || k.kostentraeger?.email || k.mieter?.email || "";
   const signatur = signaturText();
+  // Beim Einsprechen „als Brief“ gewünscht: Brief ist der Hauptknopf
+  const briefZuerst = !k.auftrag && !!antwort && !!zustand.briefWunsch?.has(antwort.id);
   const platzhalter = k.nachricht
     ? "z. B. „Handwerker ist beauftragt, meldet sich bis Freitag.“ Leer lassen: Die KI antwortet anhand des Wissens."
     : k.dienstleister
@@ -671,8 +687,9 @@ function baueEntwurf(el, k) {
             <button type="button" class="knopf" data-k="ueberarbeiten">${ICON_KI} Überarbeiten</button>
           </div>
           <div class="entwurf__aktionen">
-            <button type="button" class="knopf knopf--primaer" data-k="senden">Per E-Mail senden</button>
-            ${k.auftrag ? `<button type="button" class="knopf" data-k="drucken">Drucken</button>` : `<button type="button" class="knopf" data-k="brief">Als Brief</button>`}
+            ${briefZuerst ? `<button type="button" class="knopf knopf--primaer" data-k="brief">Als Brief</button>` : ""}
+            <button type="button" class="knopf ${briefZuerst ? "" : "knopf--primaer"}" data-k="senden">Per E-Mail senden</button>
+            ${k.auftrag ? `<button type="button" class="knopf" data-k="drucken">Drucken</button>` : briefZuerst ? "" : `<button type="button" class="knopf" data-k="brief">Als Brief</button>`}
             <button type="button" class="knopf" data-k="speichern">Entwurf speichern</button>
             <button type="button" class="knopf knopf--leise knopf--gefahr" data-k="verwerfen">Verwerfen</button>
           </div>
@@ -711,9 +728,26 @@ function baueEntwurf(el, k) {
       : "";
   }
 
+  // Vorgang: der der Nachricht, ein vorgegebener (aus der Vorgangsseite) oder ein neuer
+  let eigenesThema = !k.nachricht && !k.themaId;
+  async function themaId(v) {
+    if (antwort?.thema_id) return antwort.thema_id;
+    if (k.nachricht) return vorgaenge.themaFuerNachricht(k.nachricht);
+    if (k.themaId) return k.themaId;
+    return vorgaenge.neuesThema({
+      betreff: v.betreff, an: v.an, mieterId: k.mieter?.id, kontaktId: k.kontakt?.id, dienstleisterId: k.dienstleister?.id,
+      kostentraegerId: k.kostentraeger?.id, objektId: k.objektId?.() || null,
+    });
+  }
   async function speichere(extra = {}) {
     const v = werte();
+    const thema = await themaId(v);
+    // Eigenes Schreiben: Vorgang heißt wie der Betreff, solange noch nichts gesendet ist
+    if (eigenesThema && antwort?.thema_id && (!antwort.status || antwort.status === "entwurf") && v.betreff) {
+      await db.speichereThema(thema, { titel: vorgaenge.betreffTitel(v.betreff), betreff_norm: vorgaenge.betreffNorm(v.betreff), partner_email: v.an ? v.an.toLowerCase() : null }).catch(() => null);
+    }
     antwort = await db.speichereAntwort(antwort?.id, {
+      thema_id: thema,
       nachricht_id: k.nachricht?.id || null,
       mieter_id: k.mieter?.id || null,
       empfaenger_email: v.an || null,
@@ -755,6 +789,7 @@ function baueEntwurf(el, k) {
 
   async function alsGesendetMarkieren(an, kanal) {
     await db.speichereAntwort(antwort.id, { status: kanal === "druck" ? "als_brief" : "gesendet", gesendet_am: new Date().toISOString(), empfaenger_email: an || antwort.empfaenger_email || null });
+    await vorgaenge.beruehre(antwort.thema_id);
     if (k.nachricht && !k.auftrag) await db.aendereNachricht(k.nachricht.id, { status: "beantwortet" });
     if (k.kontakt) await vermerkeBeimKontakt(kanal === "druck" ? "Brief" : "E-Mail");
     if (k.mieter) {
@@ -906,6 +941,7 @@ function baueEntwurf(el, k) {
         });
         if (erfolg) {
           melde(`E-Mail an ${v.an} gesendet.`, "ok");
+          await vorgaenge.beruehre(antwort.thema_id);
           if (k.kontakt) await vermerkeBeimKontakt("E-Mail");
           ablegenNachVersand("email", v.an, { vorgabe: ok.vorgabe });
           return k.nachEnde();
@@ -987,6 +1023,7 @@ function baueEntwurf(el, k) {
             });
           }
           await db.speichereAntwort(antwort.id, { status: "als_brief" });
+          await vorgaenge.beruehre(antwort.thema_id);
           if (k.kontakt) await vermerkeBeimKontakt("Brief");
           if (k.nachricht) await db.aendereNachricht(k.nachricht.id, { status: "beantwortet" });
           const h = $("#dialog [data-v=hinweis]");
@@ -1143,12 +1180,12 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
   // Eine Suche über alle, an die man schreiben kann (Roberts Wunsch: ein Feld statt mehrerer Listen)
   const eintraege = [
     ...mieterL.map((m) => ({ wert: m.id, name: mieterName(m), zusatz: ortVon(m), gruppe: "Mietparteien" })),
-    ...kontaktL.map((x) => ({ wert: `k-${x.id}`, name: kontaktName(x), zusatz: [x.vorname || x.nachname ? x.firma : "", x.rolle].filter(Boolean).join(" · "), gruppe: "Kontakte" })),
     ...dienstL.map((d) => ({ wert: `d-${d.id}`, name: d.name, zusatz: d.gewerk || "", gruppe: "Handwerker" })),
+    ...kontaktL.map((x) => ({ wert: `k-${x.id}`, name: kontaktName(x), zusatz: [x.vorname || x.nachname ? x.firma : "", x.rolle].filter(Boolean).join(" · "), gruppe: "Sonstige" })),
     ...zustand.stamm.kostentraeger.map((x) => ({ wert: `t-${x.id}`, name: x.name, zusatz: x.abteilung || "", gruppe: "Kostenträger" })),
   ];
   const gewaehlt = kontakt ? kontaktName(kontakt) : dienstleister ? dienstleister.name : kostentraeger ? kostentraeger.name : mieter ? mieterName(mieter) : "";
-  const gruppe = kontakt ? "Kontakt" : dienstleister ? "Handwerker" : kostentraeger ? "Kostenträger" : mieter ? "Mietpartei" : "";
+  const gruppe = kontakt ? "Sonstige" : dienstleister ? "Handwerker" : kostentraeger ? "Kostenträger" : mieter ? "Mietpartei" : "";
   const hausWahl = (vorwahl) => `<label class="feld feld--eng feld--oben"><span>Betrifft Haus (optional)</span><select id="empf-haus" ${antwort ? "disabled" : ""}>
       <option value="">–</option>
       ${zustand.stamm.objekte.map((x) => `<option value="${esc(x.id)}" ${x.id === vorwahl ? "selected" : ""}>${esc(x.bezeichnung)}</option>`).join("")}
@@ -1222,8 +1259,11 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
 
   const vorbelegt = zustand.vorbelegung && !zustand.vorbelegung.nachricht_id ? zustand.vorbelegung.anweisung : null;
   zustand.vorbelegung = null;
+  const themaVorgabe = antwort ? null : zustand.themaVorgabe || null;
+  zustand.themaVorgabe = null;
   baueEntwurf($("#entwurf"), {
-    nachricht: null, mieter, dienstleister, kontakt, kostentraeger, antwort, anweisung: vorbelegt,
+    nachricht: null, mieter, dienstleister, kontakt, kostentraeger, antwort, anweisung: vorbelegt, themaId: themaVorgabe,
+    hinweise: antwort ? zustand.entwurfHinweise?.get(antwort.id) : null,
     objektId: () => $("#empf-haus")?.value || null,
     nachEnde: () => geheZu(zurueck),
   });

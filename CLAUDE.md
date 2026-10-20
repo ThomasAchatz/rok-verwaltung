@@ -37,11 +37,12 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Projekt `rok-verwaltung`, Ref `hjrmwdcvsngovhtrkobc`, Region eu-central-1.
 - Tabellen: mitglieder, vermieter_profil, objekte, wohnungen, kostentraeger, mieter, forderungen,
   vorgaenge, vorlagen, nachrichten, antworten, wissen, postfach, aufgaben, dienstleister, dokumente, kontakte, verlauf,
+  themen (E-Mail-Vorgänge: nachrichten/antworten.thema_id, Status offen|erledigt, Abschluss-PDF in dokument_id),
   dokument_ordner (bearbeitbare Ordnerliste, Unterordner mit „/“, „Sonstiges“ fest; KI liest sie über `dokumentOrdner()`);
   View mieter_uebersicht (security_invoker); Buckets `vorlagen`, `schreiben`, `eingang`, `dokumente` (privat).
 - Edge Functions `ki`, `posteingang`, `versand` (Quellen in `supabase/functions/`, gemeinsamer Code in
   `_shared/` (gemeinsam, fach, mieterhoehung, chat, notiz), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
-  Postfach-Token). Beim Deploy über MCP alle importierten `_shared`-Dateien mitschicken (ki: alle fünf,
+  Postfach-Token). Beim Deploy über MCP alle importierten `_shared`-Dateien mitschicken (ki: alle fünf = 6 Dateien mit index,
   posteingang: gemeinsam + fach + mieterhoehung, versand: gemeinsam).
   service_role hat nur die Rechte aus `20261015010200_rechte_server.sql` (Projekt vergibt keine automatischen Grants).
 - Secrets: ANTHROPIC_API_KEY, RESEND_API_KEY, VERSAND_ABSENDER, optional RESEND_WEBHOOK_SECRET, KI_MODELL.
@@ -100,3 +101,18 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   `detailsVorschlag`/`zielOrdner` nehmen eine KI-Wohnung nur, wenn sie zum Haus passt.
 - Stammdaten-Maske: `js/stammdaten.js` (Route `#/stammdaten`, Links in Einstellungen und Mieterliste). Löschen nur,
   wenn leer (Haus ohne Wohnungen, Wohnung ohne Mietpartei); Haus löschen kaskadiert auf Wissen/Handwerker des Hauses.
+- Vorgänge (`js/vorgaenge.js`, Route `#/thema/<id>`, Migration `20261020210000_themen_verlauf.sql`): Posteingang ordnet über
+  In-Reply-To/References, sonst gleichen Betreff (`betreff_norm`, gleiche Regel in SQL, fach.ts und App) + Mietpartei/Adresse
+  (offen, 120 Tage) zu, sonst neu (`themaFuerEingang`). Eigene Schreiben: `themaFuerNachricht`/`neuesThema` in baueEntwurf.
+  „Erledigt“ → `abschliessen()`: PDF des Verlaufs (Art „Schriftverkehr“, optional KI-Zusammenfassung `thema_zusammenfassen`),
+  Name sichtbar über `ablageBlockHtml({ immer: true })`. Akte und Kontaktseite zeigen „Schriftverkehr“ (`ladeListe`).
+- ZIP-Import (`js/zipimport.js`): `planeZip()` erkennt Häuser in der obersten Ebene oder ein Haus für alles, bildet Ordner per
+  `norm()` auf `dokument_ordner` ab, legt fehlende an, Namen bleiben 1:1. Danach optional „Für die KI erschließen“
+  (`erschliessen()`, KI-Aktion `datei_erschliessen`, schreibt nur `dokumente.zusammenfassung`). Kein Import von zipimport.js
+  in Modulen auf oberster Ebene benutzen (Kreis ablage↔zipimport), Konstanten lokal halten.
+- Suchfelder: `suchauswahlHtml({ inline })` + `verbindeSuchauswahl()` gibt `{ setze }` zurück und füllt ein verstecktes Feld
+  (`name`) mit change-Ereignis. Genutzt für Empfänger, Notiz „Betrifft“ (m:/d:/k:, `aufgaben.dienstleister_id`),
+  Auftrag „Wer soll kommen?“, Mietpartei einer Nachricht, „Gehört zu“ beim Einsprechen.
+- Assistent beim Einsprechen: `notiz_lesen` liefert zusätzlich `schreiben` [{ an, id, mieter_id, kanal, anweisung }]
+  (höchstens 3, IDs geprüft); `notizPruefen` zeigt sie als änderbare Zeilen, `bereiteSchreibenVor()` erzeugt die Entwürfe
+  und öffnet den ersten (`zustand.briefWunsch`, `zustand.entwurfHinweise`). Nie automatisch senden.

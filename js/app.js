@@ -15,6 +15,7 @@ import * as ablage from "./ablage.js";
 import * as stamm from "./stammdaten.js";
 import * as objekte from "./objekte.js";
 import * as kontakte from "./kontakte.js";
+import * as themen from "./vorgaenge.js";
 import { oeffneChat } from "./chat.js";
 import {
   MONATE_KURZ, monatISO, letzteMonate, mietbuch, LEGENDE, naechsterSchritt, mieterZeile, schreibenKachel, oeffneSchreiben, emailDaten,
@@ -149,7 +150,7 @@ window.addEventListener("hashchange", () => route());
 async function route() {
   if ($("#app").hidden) return;
   const [, teil = "uebersicht", id] = (location.hash || "#/uebersicht").split("/");
-  const navTeil = { schreiben: "postfach", entwurf: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "objekte", ablage: "objekte", stammdaten: "mieter", kontakte: "mieter", kontakt: "mieter", handwerker: "mieter" }[teil] || teil;
+  const navTeil = { schreiben: "postfach", entwurf: "postfach", thema: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "objekte", ablage: "objekte", stammdaten: "mieter", kontakte: "mieter", kontakt: "mieter", handwerker: "mieter" }[teil] || teil;
   for (const a of $$("[data-nav]")) {
     if (a.dataset.nav === navTeil) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -166,6 +167,7 @@ async function route() {
     else if (teil === "objekte") await objekte.zeigeObjekte();
     else if (teil === "kontakte") await kontakte.zeigeKontakte();
     else if (teil === "kontakt" && id) await kontakte.zeigeKontakt(id);
+    else if (teil === "thema" && id) await themen.zeigeThema(id);
     else if (teil === "handwerker") await kontakte.zeigeHandwerker();
     else if (teil === "ablage" && id) await objekte.zeigeOrdner(id);
     else if (teil === "wissen") await ablage.zeigeWissen();
@@ -236,7 +238,7 @@ async function zeigeMieterliste() {
 // Mieter-Akte
 // ---------------------------------------------------------------------------
 async function zeigeAkte(id) {
-  const [mieter, forderungen, vorgaenge, nachrichten, antworten, aufgaben, dokumente, verlauf] = await Promise.all([
+  const [mieter, forderungen, vorgaenge, nachrichten, antworten, aufgaben, dokumente, verlauf, schrift] = await Promise.all([
     db.ladeMieter(id),
     db.ladeForderungen({ mieterId: id }),
     db.ladeVorgaenge({ mieterId: id }),
@@ -245,6 +247,7 @@ async function zeigeAkte(id) {
     db.ladeAufgaben({ mieterId: id }).catch(() => []),
     db.ladeDokumente({ mieterId: id }).catch(() => []),
     db.ladeVerlauf({ mieterId: id }).catch(() => []),
+    themen.ladeListe({ mieterId: id }),
   ]);
   const entwuerfe = antworten.filter((a) => a.status === "entwurf");
   sortiereForderungen(forderungen);
@@ -371,12 +374,14 @@ async function zeigeAkte(id) {
           <div class="flaeche__inhalt">${mietbuch(forderungen, letzteMonate(6))}</div>
         </section>
         <section class="flaeche">
-          <div class="flaeche__kopf"><h2>Nachrichten</h2><a class="leise" href="#/schreiben/${esc(mieter.id)}">Neues Schreiben</a></div>
+          <div class="flaeche__kopf"><h2>Schriftverkehr</h2><a class="leise" href="#/schreiben/${esc(mieter.id)}">Neues Schreiben</a></div>
           ${entwuerfe.length ? `<div class="zeilen">${entwuerfe.map((a) => `<a class="entwurfzeile" href="${a.nachricht_id ? `#/postfach/${esc(a.nachricht_id)}` : `#/entwurf/${esc(a.id)}`}">
               <span><span class="marker marker--messing">Entwurf</span> ${esc(a.betreff || "(ohne Betreff)")}</span><span class="leise">${datumDE(a.aktualisiert_am)}</span></a>`).join("")}</div>` : ""}
-          ${nachrichten.length
-            ? `<div class="posts">${nachrichten.map((n) => postfach.nachrichtZeile(n, { [mieter.id]: mieterName(mieter) })).join("")}</div>`
-            : entwuerfe.length ? "" : `<div class="leer">Keine Nachrichten von dieser Mietpartei.</div>`}
+          ${schrift.themen.length || !nachrichten.length
+            ? themen.vorgaengeListeHtml(schrift.themen, schrift.zahlen, { leer: entwuerfe.length ? "" : "Noch kein Schriftverkehr mit dieser Mietpartei." })
+            : ""}
+          ${nachrichten.length ? `<details class="mehr"><summary>Einzelne Nachrichten (${nachrichten.length})</summary>
+            <div class="posts">${nachrichten.map((n) => postfach.nachrichtZeile(n, { [mieter.id]: mieterName(mieter) })).join("")}</div></details>` : ""}
         </section>
         <section class="flaeche" id="verlauf">
           <div class="flaeche__kopf"><h2>Verlauf (Gespräche)</h2>

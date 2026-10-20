@@ -9,9 +9,13 @@
 //   { aktion: "wissen_ordnen", text, objekt_id? }                             → eingesprochenes Wissen ordnen
 //   { aktion: "notiz_pruefen", aufgabe_id }                                   → Notiz prüfen (z. B. Mieterhöhung)
 //   { aktion: "chat", verlauf: [{ rolle: "robert"|"ki", text }] }            → Fragen an die App
-//   { aktion: "notiz_lesen", text, kontakt_id?, mieter_id? }                  → eingesprochene Notiz: wer, was, Termine
+//   { aktion: "notiz_lesen", text, kontakt_id?, mieter_id? }                  → eingesprochene Notiz: wer, was, Termine, Schreiben
+//   { aktion: "thema_zusammenfassen", thema_id }                              → Zusammenfassung für das Abschluss-PDF
+//   { aktion: "datei_erschliessen", bild | datei_text, dateiname?, ordner? } → kurze Inhaltsangabe einer abgelegten Datei
 import { CORS, Fehler, MODELL, env, fehlerAntwort, json, kiEingerichtet, pruefeMitglied } from "../_shared/gemeinsam.ts";
-import { ablageVorschlag, auftrag, entwirf, liesDokument, ordneEin, ordneWissen, pruefeNotiz } from "../_shared/fach.ts";
+import {
+  ablageVorschlag, auftrag, entwirf, erschliesseDatei, fasseThemaZusammen, liesDokument, ordneEin, ordneWissen, pruefeNotiz,
+} from "../_shared/fach.ts";
 import { chat } from "../_shared/chat.ts";
 import { liesNotiz } from "../_shared/notiz.ts";
 
@@ -64,6 +68,15 @@ export async function handler(req: Request): Promise<Response> {
         return json(await chat(e.verlauf, zugriff));
       case "notiz_lesen":
         return json(await liesNotiz(String(e.text ?? ""), zugriff, { kontaktId: e.kontakt_id ?? null, mieterId: e.mieter_id ?? null }));
+      case "thema_zusammenfassen":
+        if (!e.thema_id) throw new Fehler(400, "thema_id fehlt", "eingabe");
+        return json(await fasseThemaZusammen(e.thema_id, zugriff));
+      case "datei_erschliessen":
+        if (typeof e.datei_text?.text === "string") {
+          return json(await erschliesseDatei({ text: e.datei_text.text, art: e.datei_text.art }, zugriff, e.dateiname ?? null, e.ordner ?? null));
+        }
+        if (!e.bild?.daten || !e.bild?.typ) throw new Fehler(400, "Datei fehlt", "eingabe");
+        return json(await erschliesseDatei(e.bild, zugriff, e.dateiname ?? null, e.ordner ?? null));
       default:
         throw new Fehler(400, "Unbekannte Aktion", "eingabe");
     }

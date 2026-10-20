@@ -3,6 +3,8 @@
 import * as db from "./daten.js";
 import * as ablage from "./ablage.js";
 import { $, $$, esc, zustand, objektVon } from "./helfer.js";
+import { ICON_KI, geheZu } from "./ui.js";
+import { erschliessen } from "./zipimport.js";
 
 const inhalt = () => $("#inhalt");
 const ICON_ORDNER = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>`;
@@ -45,6 +47,12 @@ export async function zeigeObjekte() {
 
   ablage.verbindeAblegeflaeche($("[data-ablegeflaeche]", inhalt()), {
     nurAblage: true, ablageZiel: (id) => `#/ablage/${id || "allgemein"}`,
+    // Nach dem ZIP-Import: ging alles in ein Haus, dorthin; sonst Übersicht neu
+    nachZip: (neu) => {
+      const haeuser = [...new Set((neu || []).map((d) => d.objekt_id || "allgemein"))];
+      if (haeuser.length === 1) geheZu(`#/ablage/${haeuser[0]}`);
+      else zeigeObjekte();
+    },
   });
 }
 
@@ -124,6 +132,8 @@ export async function zeigeOrdner(id) {
   }
   const baum = ordnerBaum(ordnerNamen, dokumente);
   const neuLaden = () => zeigeOrdner(id);
+  // Dateien ohne Inhaltsangabe (z. B. aus einem ZIP-Import): kann die KI nachträglich lesen
+  const unerschlossen = dokumente.filter((d) => !d.zusammenfassung && /^(image\/|application\/pdf|application\/vnd\.openxmlformats)/.test(d.typ || ""));
 
   inhalt().innerHTML = `
     <a class="zurueck" href="#/objekte">Alle Objekte</a>
@@ -143,12 +153,14 @@ export async function zeigeOrdner(id) {
       <div class="flaeche__fuss knopfreihe">
         <button type="button" class="knopf knopf--klein" id="ordner-bearbeiten">Ordner bearbeiten</button>
         ${dokumente.length ? `<button type="button" class="knopf knopf--klein" id="zip">Als ZIP herunterladen</button>` : ""}
+        ${unerschlossen.length && zustand.ki?.ki ? `<button type="button" class="knopf knopf--klein knopf--ki" id="erschliessen" title="Die KI liest die Dateien einmal und merkt sich, was drinsteht">${ICON_KI} Für die KI erschließen (${unerschlossen.length})</button>` : ""}
       </div>
     </section>`;
 
   ablage.verbindeAblegeflaeche($("[data-ablegeflaeche]", inhalt()), {
-    objektId, nurAblage: true, ablageZiel: (neuId) => `#/ablage/${neuId || "allgemein"}`,
+    objektId, nurAblage: true, ablageZiel: (neuId) => `#/ablage/${neuId || "allgemein"}`, nachZip: () => neuLaden(),
   });
+  $("#erschliessen")?.addEventListener("click", () => erschliessen(unerschlossen, { nachher: neuLaden }));
   ablage.verbindeListen(inhalt(), { dokumente, objektId, nachher: neuLaden });
   if (neuDok) {
     const el = $(`[data-dok="${CSS.escape(neuDok.id)}"]`, inhalt());

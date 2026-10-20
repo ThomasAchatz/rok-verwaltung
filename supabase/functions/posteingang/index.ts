@@ -11,9 +11,26 @@ import {
   CORS, Fehler, dateiArt, enc, env, fehlerAntwort, gleich, htmlZuText, json, kiEingerichtet, kuerze, pruefeSvix,
   rest, speichereDatei, zerlegeAdresse,
 } from "../_shared/gemeinsam.ts";
-import { ordneEin } from "../_shared/fach.ts";
+import { bezugsIds, ordneEin, themaFuerEingang } from "../_shared/fach.ts";
 
 const ADMIN = { admin: true } as const;
+
+// Kopfzeile aus Resend/Postmark: als Objekt { "In-Reply-To": … } oder als Liste [{ name, value }]
+function kopfWert(kopf: unknown, name: string): string | null {
+  if (!kopf) return null;
+  if (Array.isArray(kopf)) {
+    // deno-lint-ignore no-explicit-any
+    const e = kopf.find((x: any) => String(x?.name ?? x?.Name ?? x?.key ?? "").toLowerCase() === name);
+    // deno-lint-ignore no-explicit-any
+    return e ? String((e as any).value ?? (e as any).Value ?? "") : null;
+  }
+  if (typeof kopf === "object") {
+    for (const [k, v] of Object.entries(kopf as Record<string, unknown>)) {
+      if (k.toLowerCase() === name) return Array.isArray(v) ? v.join(" ") : String(v ?? "");
+    }
+  }
+  return null;
+}
 
 // deno-lint-ignore no-explicit-any
 async function ladeResendMail(id: string): Promise<any> {
@@ -88,6 +105,7 @@ export async function handler(req: Request): Promise<Response> {
 
     // 2. In ein einheitliches Format bringen
     let absender, betreff, text, externId, messageId;
+    let bezug: string[] = []; // In-Reply-To / References: gehört die Mail zu einem Vorgang?
     let anhaenge: unknown[] = [];
     if (e.type === "email.received" && e.data?.email_id) {
       const voll = await ladeResendMail(e.data.email_id);
@@ -96,6 +114,7 @@ export async function handler(req: Request): Promise<Response> {
       text = voll ? (voll.text || htmlZuText(voll.html)) : "(Inhalt nicht geladen: In Supabase fehlt das Secret RESEND_API_KEY.)";
       externId = `resend:${e.data.email_id}`;
       messageId = voll?.message_id ?? e.data.message_id ?? null;
+      bezug = bezugsIds(kopfWert(voll?.headers, "in-reply-to"), kopfWert(voll?.headers, "references"), voll?.in_reply_to, voll?.references);
       anhaenge = (voll?.attachments ?? e.data.attachments ?? []).map((a: Record<string, unknown>) => ({
         name: a.filename, typ: a.content_type, groesse: a.size ?? null, quelle: "resend", id: a.id,
       }));
@@ -107,6 +126,7 @@ export async function handler(req: Request): Promise<Response> {
       betreff = e.subject ?? e.Subject ?? "";
       text = e.text ?? e.TextBody ?? e["body-plain"] ?? htmlZuText(e.html ?? e.HtmlBody);
       messageId = e.message_id ?? e.MessageID ?? null;
+      bezug = bezugsIds(e.in_reply_to, e.InReplyTo, e.references, e.References, kopfWert(e.headers ?? e.Headers, "in-reply-to"), kopfWert(e.headers ?? e.Headers, "references"));
       externId = e.id ? `extern:${e.id}` : messageId ? `mid:${messageId}` : null;
       anhaenge = (e.attachments ?? e.Attachments ?? []).map((a: Record<string, unknown>) => ({
         name: a.filename ?? a.Name, typ: a.content_type ?? a.ContentType ?? null,
@@ -121,7 +141,15 @@ export async function handler(req: Request): Promise<Response> {
       if (treffer.length === 1) mieterId = treffer[0].id;
     }
 
-    // 4. Ablegen (doppelte Zustellungen werden ignoriert)
+    // 4. Doppelte Zustellung? Dann nichts tun (auch keinen Vorgang anlegen)
+    if (externId) {
+      const [schon] = await rest(`nachrichten?extern_id=eq.${enc(externId)}&select=id`, ADMIN);
+      if (schon) return json({ ok: true, doppelt: true });
+    }
+    // Vorgang: Antwort auf eine frühere Mail oder gleicher Betreff derselben Person, sonst neu
+    const themaId = await themaFuerEingang({ betreff, email: absender.email, mieterId, bezug }, ADMIN).catch(() => null);
+
+    // 5. Ablegen (doppelte Zustellungen werden ignoriert)
     const zeilen = await rest(
       externId ? "nachrichten?on_conflict=extern_id" : "nachrichten",
       ADMIN,
@@ -139,6 +167,7 @@ export async function handler(req: Request): Promise<Response> {
           extern_id: externId,
           extern_message_id: messageId,
           anhaenge,
+          thema_id: themaId,
           erstellt_von: null,
         },
       },
@@ -146,7 +175,7 @@ export async function handler(req: Request): Promise<Response> {
     const neu = Array.isArray(zeilen) ? zeilen[0] : null;
     if (!neu) return json({ ok: true, doppelt: true });
 
-    // 5. Im Hintergrund: Anhänge übernehmen, dann einordnen (Fehler verhindern den Eingang nicht)
+    // 6. Im Hintergrund: Anhänge übernehmen, dann einordnen (Fehler verhindern den Eingang nicht)
     const resendId = e.type === "email.received" ? e.data.email_id : null;
     if (resendId || kiEingerichtet()) {
       const arbeit = (async () => {

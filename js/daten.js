@@ -238,7 +238,7 @@ export async function zaehleNeue() {
 
 // --- Notizen und Wiedervorlagen (Tabelle aufgaben) -------------------------
 export async function ladeAufgaben({ status = "offen", mieterId = null, objektId = null, kontaktId = null } = {}) {
-  let q = sb.from("aufgaben").select("*").order("faellig_am", { ascending: true, nullsFirst: false }).order("erstellt_am", { ascending: false }).limit(300);
+  let q = sb.from("aufgaben").select("*, dienstleister:dienstleister(name)").order("faellig_am", { ascending: true, nullsFirst: false }).order("erstellt_am", { ascending: false }).limit(300);
   if (status) q = q.eq("status", status);
   if (mieterId) q = q.eq("mieter_id", mieterId);
   if (objektId) q = q.eq("objekt_id", objektId);
@@ -380,7 +380,7 @@ export async function ladeEingangDatei(pfad) {
 }
 /** Dokumente, die schon aus einer Nachricht, Antwort, Notiz oder einem Schreiben abgelegt wurden */
 export async function ladeAbgelegte(feld, ids) {
-  if (!["nachricht_id", "antwort_id", "aufgabe_id", "vorgang_id", "verlauf_id"].includes(feld)) throw new Error("Unbekanntes Feld");
+  if (!["id", "nachricht_id", "antwort_id", "aufgabe_id", "vorgang_id", "verlauf_id"].includes(feld)) throw new Error("Unbekanntes Feld");
   const liste = (ids || []).filter(Boolean);
   if (!liste.length) return [];
   return pruefe(await sb.from("dokumente").select("*").in(feld, liste).order("erstellt_am"));
@@ -407,4 +407,47 @@ export async function verschiebeDokumente(alt, neu, { flach = false, ausser = []
     if (ausser.some((n) => n.length > alt.length && (d.ordner === n || d.ordner.startsWith(n + "/")))) continue;
     pruefe(await sb.from("dokumente").update({ ordner: flach ? neu : neu + d.ordner.slice(alt.length) }).eq("id", d.id));
   }
+}
+
+// --- Vorgänge („Themen“): E-Mail-Pingpong zu einer Sache -------------------------
+export async function ladeThemen({ mieterId = null, kontaktId = null, ids = null, anzahl = 100 } = {}) {
+  let q = sb.from("themen").select("*").order("aktualisiert_am", { ascending: false }).limit(anzahl);
+  if (mieterId) q = q.eq("mieter_id", mieterId);
+  if (kontaktId) q = q.eq("kontakt_id", kontaktId);
+  if (ids) q = q.in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
+  return pruefe(await q);
+}
+export async function ladeThema(id) {
+  return pruefe(await sb.from("themen").select("*").eq("id", id).single());
+}
+export async function speichereThema(id, felder) {
+  if (!id) return pruefe(await sb.from("themen").insert(felder).select().single());
+  return pruefe(await sb.from("themen").update(felder).eq("id", id).select().single());
+}
+/** Alles, was zu einem Vorgang gehört: eingegangene Nachrichten und eigene Schreiben (inkl. Entwürfe) */
+export async function ladeThemaPosten(id) {
+  const [n, a] = await Promise.all([
+    sb.from("nachrichten").select("*").eq("thema_id", id).order("eingang_am"),
+    sb.from("antworten").select("*").eq("thema_id", id).order("erstellt_am"),
+  ]);
+  return { nachrichten: pruefe(n), antworten: pruefe(a) };
+}
+/** Anzahl Einträge je Vorgang (für Listen) */
+export async function zaehleThemaPosten(ids) {
+  if (!ids.length) return {};
+  const [n, a] = await Promise.all([
+    sb.from("nachrichten").select("thema_id").in("thema_id", ids),
+    sb.from("antworten").select("thema_id,status").in("thema_id", ids),
+  ]);
+  const zahl = {};
+  for (const z of pruefe(n)) (zahl[z.thema_id] ||= { ein: 0, aus: 0 }).ein++;
+  for (const z of pruefe(a)) if (z.status !== "entwurf") (zahl[z.thema_id] ||= { ein: 0, aus: 0 }).aus++;
+  return zahl;
+}
+/** Dateien einer Ablage ohne Inhaltsangabe (für „Für die KI erschließen“) */
+export async function ladeUnerschlossene({ objektId = undefined } = {}) {
+  let q = sb.from("dokumente").select("id,titel,ordner,objekt_id,pfad,typ,groesse").is("zusammenfassung", null).limit(500);
+  if (objektId === null) q = q.is("objekt_id", null);
+  else if (objektId) q = q.eq("objekt_id", objektId);
+  return pruefe(await q);
 }

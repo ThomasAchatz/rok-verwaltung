@@ -1017,3 +1017,49 @@ a.reiter__knopf { text-decoration: none; display: inline-block; }
 .suchauswahl__eintrag .leise { font-size: 0.8rem; }
 .suchauswahl__eintrag:hover, .suchauswahl__eintrag[aria-selected="true"] { background: var(--tinte-zart); }
 .suchauswahl__leer { padding: 0.7rem; color: var(--text-leise); font-size: 0.85rem; }
+/* In Dialogen: Liste im Fluss statt darüber (kein Abschneiden, sauberes Scrollen am Handy) */
+.suchauswahl--inline .suchauswahl__liste { position: static; margin: -0.3rem 0 0.8rem; max-height: min(45vh, 300px); overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.suchauswahl__eintrag--gewaehlt span:first-child { font-weight: 600; }
+.suchauswahl__eintrag--gewaehlt span:first-child::after { content: " ✓"; color: var(--bezahlt); }
+
+/* Vorgänge (Schriftverkehr je Thema) */
+.vorgangzeile {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.65rem 1.1rem; border-bottom: 1px solid #edf0f4; color: var(--text); text-decoration: none;
+}
+.vorgangzeile:hover { background: #f6f8fb; }
+.vorgangzeile__titel { font-weight: 600; overflow-wrap: anywhere; min-width: 0; flex: 1 1 12rem; }
+.vorgangzeile__info { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; font-size: 0.85rem; }
+.faden { display: flex; flex-direction: column; gap: 0.75rem; padding: 1rem 1.1rem; }
+.faden__posten {
+  max-width: min(46rem, 92%); padding: 0.7rem 0.9rem; border: 1px solid var(--linie); border-radius: 12px 12px 12px 3px;
+  background: var(--flaeche); align-self: flex-start; min-width: 0;
+}
+.faden__posten--aus { align-self: flex-end; background: var(--tinte-zart); border-color: #cfdaea; border-radius: 12px 12px 3px 12px; }
+.faden__posten--entwurf { align-self: flex-end; background: var(--messing-zart); border-style: dashed; border-radius: 12px 12px 3px 12px; }
+.faden__kopf { display: flex; justify-content: space-between; gap: 0.4rem 0.8rem; flex-wrap: wrap; font-size: 0.85rem; margin-bottom: 0.25rem; }
+.faden__wer { font-weight: 600; overflow-wrap: anywhere; }
+.faden__betreff { font-weight: 600; font-size: 0.92rem; margin-bottom: 0.3rem; overflow-wrap: anywhere; }
+.faden__text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.92rem; }
+.faden__mehr > summary { cursor: pointer; color: var(--tinte-hell); font-size: 0.85rem; margin-top: 0.3rem; }
+.faden__fuss { display: flex; justify-content: flex-end; gap: 0.8rem; margin-top: 0.4rem; font-size: 0.82rem; }
+.vorgang-abschluss .ki-antwort { margin-top: 0.6rem; }
+@media (max-width: 520px) { .faden { padding: 0.75rem; } .faden__posten { max-width: 100%; } }
+.faden__posten:has(> .faden__mehr[open]) > .faden__text { display: none; }
+
+/* Einsprechen: vorbereitete Schreiben */
+.schreibzeile { border: 1px solid var(--linie); border-radius: var(--radius); padding: 0.6rem 0.7rem; margin-bottom: 0.6rem; background: var(--flaeche); min-width: 0; }
+.schreibzeile__an { margin-bottom: 0.4rem; font-weight: 600; }
+.schreibzeile__felder { display: grid; grid-template-columns: minmax(0, 1fr) 8rem; gap: 0 0.6rem; align-items: start; }
+.schreibzeile__text { grid-column: 1 / -1; }
+.schreibzeile .feld { margin-bottom: 0.5rem; }
+@media (max-width: 520px) { .schreibzeile__felder { grid-template-columns: minmax(0, 1fr); } }
+
+/* ZIP-Import */
+.zip__vorschau { max-height: 40vh; overflow-y: auto; border: 1px solid var(--linie); border-radius: var(--radius); margin-bottom: 0.8rem; }
+.zip__haus > summary { display: flex; justify-content: space-between; gap: 0.6rem; padding: 0.55rem 0.8rem; cursor: pointer; flex-wrap: wrap; }
+.zip__haus + .zip__haus { border-top: 1px solid var(--linie); }
+.zip__ordner { list-style: none; margin: 0; padding: 0 0.8rem 0.5rem; font-size: 0.88rem; }
+.zip__ordner li { display: flex; justify-content: space-between; gap: 0.6rem; padding: 0.2rem 0; border-top: 1px dashed #edf0f4; overflow-wrap: anywhere; }
+.fortschritt progress { width: min(320px, 100%); height: 0.6rem; accent-color: var(--tinte); }
+.fortschritt [data-stand] { max-width: 320px; overflow-wrap: anywhere; min-height: 2.6em; }

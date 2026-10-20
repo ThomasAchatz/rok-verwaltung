@@ -8,11 +8,12 @@ import {
 } from "./ui.js";
 import { textPdf } from "./pdf.js";
 import { officeText } from "./officetext.js";
+import { istZip, zipImport } from "./zipimport.js";
 
 export const DOKUMENT_ORDNER = [
   "Rechnungen", "Verträge", "Versorger", "Versicherungen", "Behörden & Steuern", "Handwerker & Angebote", "Mietverhältnisse", "Sonstiges",
 ];
-export const DOKUMENT_ARTEN = ["Rechnung", "Vertrag", "Mietvertrag", "Kündigung", "Bescheid", "Abrechnung", "Angebot", "Mahnung", "Brief", "E-Mail", "Auftrag", "Protokoll", "Notiz", "Sonstiges"];
+export const DOKUMENT_ARTEN = ["Rechnung", "Vertrag", "Mietvertrag", "Kündigung", "Bescheid", "Abrechnung", "Angebot", "Mahnung", "Brief", "E-Mail", "Auftrag", "Protokoll", "Notiz", "Schriftverkehr", "Sonstiges"];
 export const DOCX_TYP = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 export const XLSX_TYP = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const ENDUNG = { "application/pdf": "pdf", "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg", [DOCX_TYP]: "docx", [XLSX_TYP]: "xlsx" };
@@ -171,7 +172,7 @@ async function istPdfDatei(datei) {
 // Ist eine Fläche auf der Seite, nimmt die ganze Seite Dateien an; sonst öffnet der Browser
 // fallengelassene Dateien nicht versehentlich.
 // ---------------------------------------------------------------------------
-const DATEI_TYPEN = "image/*,application/pdf,.docx,.xlsx," + DOCX_TYP + "," + XLSX_TYP;
+const DATEI_TYPEN = "image/*,application/pdf,.docx,.xlsx," + DOCX_TYP + "," + XLSX_TYP + ",.zip,application/zip";
 const ICON_PLUS_GROSS = `<svg viewBox="0 0 24 24" width="30" height="30"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM11 18h2v-4h3l-4-4-4 4h3v4z"/></svg>`;
 const flaechenOptionen = new WeakMap();
 export function ablegeflaecheHtml({ text = "Dateien hierher ziehen", klein = false } = {}) {
@@ -181,7 +182,8 @@ export function ablegeflaecheHtml({ text = "Dateien hierher ziehen", klein = fal
       <span class="ablegeflaeche__symbol" aria-hidden="true">${ICON_PLUS_GROSS}</span>
       <span class="ablegeflaeche__text"><strong class="nur-maus">${esc(text)}</strong> <span class="nur-breit nur-maus">oder</span>
         <span class="knopf knopf--klein ablegeflaeche__knopf">Dateien auswählen</span></span>
-      <span class="ablegeflaeche__hinweis leise">Fotos, PDF, Word, Excel · auch mehrere · Die KI benennt sie nach dem Ablage-Schema und schlägt den Ordner vor.</span>
+      <span class="ablegeflaeche__hinweis leise">Fotos, PDF, Word, Excel · auch mehrere · Die KI benennt sie nach dem Ablage-Schema und schlägt den Ordner vor.
+        Eine ZIP mit fertiger Ordnerstruktur wird 1:1 übernommen.</span>
     </label>`;
 }
 /** optionen wie bei erfasseAlle: { objektId, nurAblage } */
@@ -189,7 +191,14 @@ export function verbindeAblegeflaeche(el, optionen = {}) {
   if (!el) return;
   flaechenOptionen.set(el, optionen);
   const input = $("input[type=file]", el);
-  input.addEventListener("change", () => { const d = [...input.files]; input.value = ""; erfasseAlle(d, optionen); });
+  input.addEventListener("change", () => { const d = [...input.files]; input.value = ""; verteile(d, optionen); });
+}
+// ZIP-Dateien gehen in den ZIP-Import (Ordner 1:1), alles andere einzeln zur KI
+async function verteile(dateien, optionen = {}) {
+  const zips = dateien.filter(istZip);
+  const rest = dateien.filter((d) => !istZip(d));
+  for (const z of zips) await zipImport(z, { objektId: optionen.objektId, nachher: (neu) => optionen.nachZip?.(neu) });
+  if (rest.length) await erfasseAlle(rest, optionen);
 }
 const hatDateien = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
 const aktiveFlaeche = () => $("[data-ablegeflaeche]");
@@ -210,7 +219,7 @@ document.addEventListener("drop", (e) => {
   if ($("dialog[open]")) return;
   if (!el) return melde("Zum Ablegen bitte unter „Objekte“ ein Haus öffnen und die Dateien dort hineinziehen.", "info");
   const dateien = [...e.dataTransfer.files];
-  if (dateien.length) erfasseAlle(dateien, flaechenOptionen.get(el) || {});
+  if (dateien.length) verteile(dateien, flaechenOptionen.get(el) || {});
 });
 
 // ---------------------------------------------------------------------------
@@ -1198,8 +1207,8 @@ export async function nameVorschlag(e) {
  * vorgabe: { aus, titel, vorschlag } aus dem Bestätigungsdialog (Name dort sichtbar und änderbar).
  * Abschaltbar in den Einstellungen. Liefert das Dokument oder null; Fehler stören den Versand nicht.
  */
-export async function automatischAblegen(e, { meldung = true, nachher = () => {}, vorgabe = null } = {}) {
-  if (zustand.profil?.auto_ablage === false || vorgabe?.aus) return null;
+export async function automatischAblegen(e, { meldung = true, nachher = () => {}, vorgabe = null, immer = false } = {}) {
+  if ((!immer && zustand.profil?.auto_ablage === false) || vorgabe?.aus) return null;
   try {
     const r = await (vorgabe?.vorschlag || nameVorschlag(e));
     const doc = await legeEintragAb(e, {
@@ -1219,8 +1228,8 @@ export async function automatischAblegen(e, { meldung = true, nachher = () => {}
 // ---------------------------------------------------------------------------
 // Dateiname im Bestätigungsdialog: sichtbar und änderbar, die KI füllt ihn vor
 // ---------------------------------------------------------------------------
-export function ablageBlockHtml({ titel = "Wird abgelegt als" } = {}) {
-  if (zustand.profil?.auto_ablage === false) return "";
+export function ablageBlockHtml({ titel = "Wird abgelegt als", immer = false } = {}) {
+  if (!immer && zustand.profil?.auto_ablage === false) return "";
   return `
     <div class="ablageblock" data-ablage>
       <label class="feld"><span>${esc(titel)}</span>

@@ -156,6 +156,7 @@ export function wartehinweis(text) {
   dlg.showModal();
   // Wartet auf das close-Ereignis, damit es nicht beim nächsten Dialog ankommt
   return {
+    text: (neu) => { const p = dlg.querySelector(".warten p"); if (p) p.textContent = neu; },
     ende: () => new Promise((fertig) => {
       if (!dlg.open) return fertig();
       dlg.addEventListener("close", () => fertig(), { once: true });
@@ -227,28 +228,35 @@ export async function drucke(html) {
 // eintraege: [{ wert, name, zusatz?, gruppe }]; Gruppen erscheinen in der Reihenfolge des ersten Auftretens.
 // ---------------------------------------------------------------------------
 let suchNr = 0;
-export function suchauswahlHtml({ label, placeholder = "Name eingeben …", wert = "" }) {
+export function suchauswahlHtml({ label, placeholder = "Name eingeben …", wert = "", name = null, versteckt = "", inline = false }) {
   const id = `such-${++suchNr}`;
-  return `<div class="suchauswahl" data-such="${id}">
+  return `<div class="suchauswahl${inline ? " suchauswahl--inline" : ""}" data-such="${id}">
     <label class="feld"><span>${esc(label)}</span>
       <input type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${id}-liste"
         autocomplete="off" spellcheck="false" placeholder="${esc(placeholder)}" value="${esc(wert)}"></label>
+    ${name ? `<input type="hidden" name="${esc(name)}" value="${esc(versteckt)}">` : ""}
     <div class="suchauswahl__liste" id="${id}-liste" role="listbox" hidden></div>
   </div>`;
 }
 
-export function verbindeSuchauswahl(box, eintraege, waehle, { max = 60 } = {}) {
-  const feld = box.querySelector("input");
+/**
+ * Macht aus .suchauswahl eine Suche mit Auswahlliste. waehle(eintrag) bei jeder Wahl.
+ * Gibt es ein verstecktes Feld (name), bekommt es eintrag.wert und ein change-Ereignis (für Formulare in Dialogen).
+ * Rückgabe: { setze(wert) } zum Vorbelegen von außen.
+ */
+export function verbindeSuchauswahl(box, eintraege, waehle = () => {}, { max = 80 } = {}) {
+  const feld = box.querySelector("input[type=search]");
+  const verdeckt = box.querySelector("input[type=hidden]");
   const liste = box.querySelector("[role=listbox]");
-  const startWert = feld.value;
+  let aktuell = feld.value;
   let treffer = [];
   let aktiv = -1;
   const idVon = (i) => `${liste.id}-${i}`;
 
   function filtere() {
-    const woerter = norm(feld.value === startWert ? "" : feld.value).split(/\s+/).filter(Boolean);
+    const woerter = norm(feld.value === aktuell ? "" : feld.value).split(/\s+/).filter(Boolean);
     treffer = eintraege.filter((e) => {
-      const t = norm(`${e.name} ${e.zusatz || ""} ${e.gruppe}`);
+      const t = norm(`${e.name} ${e.zusatz || ""} ${e.gruppe || ""}`);
       return woerter.every((w) => t.includes(w));
     }).slice(0, max);
   }
@@ -256,19 +264,22 @@ export function verbindeSuchauswahl(box, eintraege, waehle, { max = 60 } = {}) {
     let gruppe = null;
     liste.innerHTML = treffer.length
       ? treffer.map((e, i) => {
-        const kopf = e.gruppe !== gruppe ? `<div class="suchauswahl__gruppe" role="presentation">${esc((gruppe = e.gruppe))}</div>` : "";
-        return `${kopf}<div class="suchauswahl__eintrag" role="option" id="${idVon(i)}" data-i="${i}" aria-selected="${i === aktiv}">
+        const kopf = e.gruppe && e.gruppe !== gruppe ? `<div class="suchauswahl__gruppe" role="presentation">${esc(e.gruppe)}</div>` : "";
+        gruppe = e.gruppe;
+        return `${kopf}<div class="suchauswahl__eintrag${e.wert === verdeckt?.value ? " suchauswahl__eintrag--gewaehlt" : ""}" role="option" id="${idVon(i)}" data-i="${i}" aria-selected="${i === aktiv}">
           <span>${esc(e.name)}</span>${e.zusatz ? `<span class="leise">${esc(e.zusatz)}</span>` : ""}</div>`;
       }).join("")
       : `<div class="suchauswahl__leer">Nichts gefunden.</div>`;
     if (aktiv >= 0) feld.setAttribute("aria-activedescendant", idVon(aktiv));
     else feld.removeAttribute("aria-activedescendant");
-    liste.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+    const sel = liste.querySelector('[aria-selected="true"]');
+    if (sel) liste.scrollTop = Math.max(0, sel.offsetTop - liste.clientHeight + sel.offsetHeight);
   }
   function oeffne() {
     filtere();
-    aktiv = treffer.length && feld.value !== startWert && feld.value.trim() ? 0 : -1;
+    aktiv = treffer.length && feld.value !== aktuell && feld.value.trim() ? 0 : -1;
     liste.hidden = false;
+    liste.scrollTop = 0;
     feld.setAttribute("aria-expanded", "true");
     zeichne();
   }
@@ -278,14 +289,23 @@ export function verbindeSuchauswahl(box, eintraege, waehle, { max = 60 } = {}) {
     feld.removeAttribute("aria-activedescendant");
     aktiv = -1;
   }
+  function uebernimm(e) {
+    aktuell = e ? e.name : "";
+    feld.value = aktuell;
+    if (verdeckt && verdeckt.value !== (e?.wert ?? "")) {
+      verdeckt.value = e?.wert ?? "";
+      verdeckt.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
   function nimm(i) {
     const e = treffer[i];
     if (!e) return;
-    feld.value = e.name;
+    uebernimm(e);
     schliesse();
     waehle(e);
   }
   feld.addEventListener("focus", () => { feld.select(); oeffne(); });
+  feld.addEventListener("click", () => { if (liste.hidden) oeffne(); });
   feld.addEventListener("input", oeffne);
   feld.addEventListener("keydown", (ev) => {
     if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
@@ -295,9 +315,9 @@ export function verbindeSuchauswahl(box, eintraege, waehle, { max = 60 } = {}) {
       aktiv = ev.key === "ArrowDown" ? (aktiv + 1) % treffer.length : (aktiv <= 0 ? treffer.length - 1 : aktiv - 1);
       zeichne();
     } else if (ev.key === "Enter") {
-      if (!liste.hidden && aktiv >= 0) { ev.preventDefault(); nimm(aktiv); }
+      if (!liste.hidden) { ev.preventDefault(); if (aktiv >= 0) nimm(aktiv); else if (treffer.length === 1) nimm(0); }
     } else if (ev.key === "Escape") {
-      if (!liste.hidden) { ev.preventDefault(); feld.value = startWert; schliesse(); }
+      if (!liste.hidden) { ev.preventDefault(); ev.stopPropagation(); feld.value = aktuell; schliesse(); }
     }
   });
   // mousedown statt click: sonst verliert das Feld vorher den Fokus und die Liste ist schon zu
@@ -308,7 +328,13 @@ export function verbindeSuchauswahl(box, eintraege, waehle, { max = 60 } = {}) {
   });
   feld.addEventListener("blur", () => setTimeout(() => {
     if (document.activeElement === feld) return;
-    if (!feld.value.trim() || liste.hidden === false) feld.value = startWert;
+    feld.value = aktuell;
     schliesse();
-  }, 120));
+  }, 150));
+  return {
+    setze(wert) {
+      const e = eintraege.find((x) => x.wert === wert) || null;
+      uebernimm(e);
+    },
+  };
 }

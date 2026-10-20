@@ -5,6 +5,7 @@ import { euro, datumDE, mieterName } from "./dokumente.js";
 import { $, $$, esc, melde, dialogFormular, frage, heuteISO, zustand, objektVon, wohnungVon } from "./helfer.js";
 import {
   ICON_KI, ICON_KAMERA, ICON_MIKRO, kurz, norm, geheZu, mieterListe, mieterOptionen, mikroKnopf, verbindeDiktat, wartehinweis,
+  ortVon, suchauswahlHtml, verbindeSuchauswahl,
 } from "./ui.js";
 import { letzteMonate, mieterZeile, LEGENDE, naechsterSchritt, schreibenKachel, oeffneSchreiben } from "./bausteine.js";
 import * as ablage from "./ablage.js";
@@ -72,7 +73,7 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
   }
 
   for (const a of aufgaben) {
-    const bezug = a.mieter_id ? namen[a.mieter_id] : a.kontakt_id ? kontakte.kontaktName(kontakte.kontaktVon(a.kontakt_id)) : a.objekt_id ? objektVon(a.objekt_id)?.bezeichnung : "";
+    const bezug = a.mieter_id ? namen[a.mieter_id] : a.kontakt_id ? kontakte.kontaktName(kontakte.kontaktVon(a.kontakt_id)) : a.dienstleister?.name ? a.dienstleister.name : a.objekt_id ? objektVon(a.objekt_id)?.bezeichnung : "";
     const eintrag = {
       art: a.faellig_am ? "Wiedervorlage" : "Notiz", aufgabe: a, titel: a.titel,
       unter: [bezug, a.antwort ? "KI-Antwort liegt vor" : ""].filter(Boolean).join(" · "),
@@ -414,10 +415,26 @@ export async function zeigeObjekt(id) {
 // Notiz / Wiedervorlage anlegen oder bearbeiten
 // a: vorhandene Aufgabe (mit id) oder Vorbelegung { titel, notiz, mieter_id, objekt_id, nachricht_id, faellig_am }
 // ---------------------------------------------------------------------------
+/** „m:<id>“ | „d:<id>“ | „k:<id>“ → Spalten der Aufgabe */
+function bezugFelder(wert) {
+  const w = String(wert || "");
+  const id = w.slice(2) || null;
+  return { mieter_id: w.startsWith("m:") ? id : null, dienstleister_id: w.startsWith("d:") ? id : null, kontakt_id: w.startsWith("k:") ? id : null };
+}
+
 export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = null } = {}) {
   a = a || {};
-  const [mieterL, kontaktListe] = await Promise.all([mieterListe(), kontakte.kontakteListe()]);
+  const [mieterL, kontaktListe, dienstL] = await Promise.all([mieterListe(), kontakte.kontakteListe(), db.ladeDienstleister().catch(() => [])]);
   const vorhanden = !!a.id;
+  // Ein Feld „Betrifft“ mit Suche: Mietparteien, Handwerker, Sonstige
+  const bezugListe = [
+    { wert: "", name: "Niemand bestimmtes", gruppe: "" },
+    ...mieterL.map((m) => ({ wert: `m:${m.id}`, name: mieterName(m), zusatz: ortVon(m), gruppe: "Mietparteien", nachname: m.nachname })),
+    ...dienstL.filter((d) => d.aktiv !== false || d.id === a.dienstleister_id).map((d) => ({ wert: `d:${d.id}`, name: d.name, zusatz: d.gewerk || "", gruppe: "Handwerker" })),
+    ...kontaktListe.map((k) => ({ wert: `k:${k.id}`, name: kontakte.kontaktName(k), zusatz: [k.vorname || k.nachname ? k.firma : "", k.rolle].filter(Boolean).join(" · "), gruppe: "Sonstige" })),
+  ];
+  const bezugStart = a.mieter_id ? `m:${a.mieter_id}` : a.dienstleister_id ? `d:${a.dienstleister_id}` : a.kontakt_id ? `k:${a.kontakt_id}` : "";
+  const bezugName = bezugListe.find((x) => x.wert === bezugStart && x.wert)?.name || "";
   const kiDa = !!zustand.ki?.ki;
   const faellig = vorschlag?.wiedervorlage || a.faellig_am || "";
   const abgelegt = vorhanden ? await db.ladeAbgelegte("aufgabe_id", [a.id]).catch(() => []) : [];
@@ -428,11 +445,8 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
       <span class="diktat"><input name="titel" required maxlength="200" value="${esc(a.titel || "")}" placeholder="z. B. Check Möglichkeit Mieterhöhung Huber" autocomplete="off">${mikroKnopf()}</span></label>
     <label class="feld"><span>Notiz (optional)</span>
       <span class="diktat"><textarea name="notiz" rows="3">${esc(a.notiz || "")}</textarea>${mikroKnopf()}</span></label>
+    ${suchauswahlHtml({ label: "Betrifft (Mieter, Handwerker, Sonstige)", placeholder: "Name suchen …", wert: bezugName, name: "bezug", versteckt: bezugStart, inline: true })}
     <div class="formraster formraster--zwei">
-      <label class="feld"><span>Mietpartei</span><select name="mieter_id">${mieterOptionen(mieterL, a.mieter_id || null)}</select></label>
-      ${kontaktListe.length || a.kontakt_id ? `<label class="feld"><span>Kontakt</span><select name="kontakt_id"><option value="">–</option>
-        ${kontaktListe.map((k) => `<option value="${esc(k.id)}" ${k.id === a.kontakt_id ? "selected" : ""}>${esc(kontakte.kontaktName(k))}${k.firma && (k.vorname || k.nachname) ? ` (${esc(k.firma)})` : ""}</option>`).join("")}
-      </select></label>` : ""}
       <label class="feld"><span>Haus</span><select name="objekt_id">
         <option value="">–</option>
         ${zustand.stamm.objekte.map((o) => `<option value="${esc(o.id)}" ${o.id === a.objekt_id ? "selected" : ""}>${esc(o.bezeichnung)}</option>`).join("")}
@@ -464,14 +478,22 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
           setTimeout(() => ablage.oeffneDokument(d, { nachher }), 0);
         });
       }
-      // Mietpartei anhand des Nachnamens im Titel vorschlagen, solange keine gewählt ist
-      let vonHand = !!a.mieter_id;
-      form.mieter_id.addEventListener("change", () => { vonHand = true; });
+      // Mietpartei anhand des Nachnamens im Titel vorschlagen, solange niemand von Hand gewählt ist
+      let vonHand = !!bezugStart;
+      let automatisch = false;
+      const bezug = verbindeSuchauswahl($(".suchauswahl", form), bezugListe, () => { vonHand = true; });
+      // Haus passend zur Mietpartei vorbelegen, solange keins gewählt ist
+      form.bezug.addEventListener("change", () => {
+        const m = form.bezug.value.startsWith("m:") && mieterL.find((x) => x.id === form.bezug.value.slice(2));
+        const haus = m && wohnungVon(m.wohnung_id)?.objekt_id;
+        if (haus && !form.objekt_id.value) form.objekt_id.value = haus;
+      });
       form.titel.addEventListener("input", () => {
         if (vonHand) return;
         const t = ` ${norm(form.titel.value).replace(/[^a-z0-9]+/g, " ")} `;
-        const treffer = mieterL.filter((m) => m.nachname && t.includes(` ${norm(m.nachname).replace(/[^a-z0-9]+/g, " ").trim()} `));
-        form.mieter_id.value = treffer.length === 1 ? treffer[0].id : "";
+        const treffer = bezugListe.filter((x) => x.nachname && t.includes(` ${norm(x.nachname).replace(/[^a-z0-9]+/g, " ").trim()} `));
+        if (treffer.length === 1) { bezug.setze(treffer[0].wert); automatisch = true; }
+        else if (automatisch) { bezug.setze(""); automatisch = false; }
       });
     },
   });
@@ -490,9 +512,8 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
     const felder = {
       titel,
       notiz: String(daten.get("notiz") || "").trim() || null,
-      mieter_id: daten.get("mieter_id") || null,
+      ...bezugFelder(daten.get("bezug")),
       objekt_id: daten.get("objekt_id") || null,
-      kontakt_id: daten.get("kontakt_id") || null,
       faellig_am: daten.get("faellig_am") || null,
       vorlauf_tage: vorlauf,
     };

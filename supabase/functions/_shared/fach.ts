@@ -20,7 +20,7 @@ export const DOKUMENT_ORDNER = [
 ];
 export const DOKUMENT_ARTEN = [
   "Rechnung", "Vertrag", "Mietvertrag", "Kündigung", "Bescheid", "Abrechnung", "Angebot", "Mahnung", "Brief", "E-Mail", "Auftrag",
-  "Protokoll", "Notiz", "Sonstiges",
+  "Protokoll", "Notiz", "Schriftverkehr", "Sonstiges",
 ];
 
 /** Ordner der Dokumentenablage: bearbeitbare Liste aus der Datenbank, sonst die Standardliste */
@@ -173,6 +173,10 @@ export async function ordneEin(nachrichtId: string, zugriff: Zugriff): Promise<a
     aenderung.zuordnung = "ki";
   }
   const [neu] = await rest(`nachrichten?id=eq.${enc(nachrichtId)}`, zugriff, { method: "PATCH", body: aenderung, prefer: "return=representation" });
+  // Der Vorgang bekommt die Mietpartei mit, wenn er noch keine hat
+  if (aenderung.mieter_id && nachricht.thema_id) {
+    await rest(`themen?id=eq.${enc(nachricht.thema_id)}&mieter_id=is.null`, zugriff, { method: "PATCH", body: { mieter_id: aenderung.mieter_id } }).catch(() => null);
+  }
   return neu;
 }
 
@@ -721,4 +725,161 @@ export async function pruefeNotiz(aufgabeId: string, zugriff: Zugriff): Promise<
     fehlend: Array.isArray(daten.fehlend) ? daten.fehlend.map(String).slice(0, 6) : [],
     mieterhoehung,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Vorgänge („Themen“): E-Mail-Pingpong zu einer Sache
+// ---------------------------------------------------------------------------
+/** Betreff ohne AW:/Re:/WG:/Fwd:, klein, Leerzeichen zusammengefasst (gleich wie privat.betreff_norm und die App) */
+export function betreffNorm(t: unknown): string | null {
+  const s = String(t ?? "").toLowerCase()
+    .replace(/^(\s*(aw|re|wg|fw|fwd|antw|antwort|tr)\s*(\[\d+\])?\s*:\s*)+/, "")
+    .replace(/\s+/g, " ").trim();
+  return s || null;
+}
+/** Betreff für die Anzeige: ohne AW:/Re: davor */
+export const betreffTitel = (t: unknown) =>
+  String(t ?? "").replace(/^(\s*(aw|re|wg|fw|fwd|antw|antwort|tr)\s*(\[\d+\])?\s*:\s*)+/i, "").trim().slice(0, 200) || "(ohne Betreff)";
+
+/** Message-IDs aus In-Reply-To / References: nur saubere <…@…>-Kennungen */
+export function bezugsIds(...werte: unknown[]): string[] {
+  const alle = werte.map((w) => String(w ?? "")).join(" ").match(/<[^<>\s"]{1,200}@[^<>\s"]{1,200}>/g) ?? [];
+  return [...new Set(alle)].slice(-10);
+}
+
+/**
+ * Vorgang für eine eingegangene Nachricht finden oder anlegen:
+ * 1. Antwort auf eine bekannte Mail (In-Reply-To/References) → deren Vorgang (wieder offen)
+ * 2. Gleicher Betreff von derselben Mietpartei bzw. Adresse, offen, letzte 120 Tage
+ * 3. sonst ein neuer Vorgang
+ */
+export async function themaFuerEingang(
+  o: { betreff?: string | null; email?: string | null; mieterId?: string | null; bezug?: string[] },
+  zugriff: Zugriff,
+): Promise<string | null> {
+  const ids = o.bezug ?? [];
+  if (ids.length) {
+    const liste = ids.map((x) => `"${x.replace(/"/g, "")}"`).join(",");
+    const [treffer] = await rest(`nachrichten?extern_message_id=in.(${enc(liste)})&thema_id=not.is.null&select=thema_id&order=eingang_am.desc&limit=1`, zugriff).catch(() => []);
+    if (treffer?.thema_id) {
+      await rest(`themen?id=eq.${enc(treffer.thema_id)}`, zugriff, { method: "PATCH", body: { status: "offen", erledigt_am: null } }).catch(() => null);
+      return treffer.thema_id;
+    }
+  }
+  const bn = betreffNorm(o.betreff);
+  const email = o.email ? String(o.email).toLowerCase() : null;
+  const wer = [o.mieterId ? `mieter_id.eq.${enc(o.mieterId)}` : "", email ? `partner_email.eq.${enc(email)}` : ""].filter(Boolean);
+  if (bn && bn.length >= 3 && wer.length) {
+    const seit = new Date(Date.now() - 120 * 86400e3).toISOString();
+    const [t] = await rest(
+      `themen?betreff_norm=eq.${enc(bn)}&status=eq.offen&aktualisiert_am=gte.${enc(seit)}&or=(${wer.join(",")})&select=id&order=aktualisiert_am.desc&limit=1`,
+      zugriff,
+    ).catch(() => []);
+    if (t?.id) {
+      await rest(`themen?id=eq.${enc(t.id)}`, zugriff, { method: "PATCH", body: { status: "offen" } }).catch(() => null);
+      return t.id;
+    }
+  }
+  const [neu] = await rest("themen", zugriff, {
+    method: "POST", prefer: "return=representation",
+    body: { titel: betreffTitel(o.betreff), betreff_norm: bn, mieter_id: o.mieterId ?? null, partner_email: email, erstellt_von: null },
+  }).catch((err) => { console.error("Vorgang nicht angelegt:", err); return []; });
+  return neu?.id ?? null;
+}
+
+// Zusammenfassung eines Vorgangs für das Abschluss-PDF
+const WERKZEUG_THEMA: Werkzeug = {
+  name: "abschluss",
+  description: "Fasst einen abgeschlossenen Schriftverkehr kurz zusammen.",
+  input_schema: {
+    type: "object",
+    properties: {
+      zusammenfassung: { type: "string", description: "Worum ging es? 2–4 kurze Sätze, nur Fakten aus dem Verlauf." },
+      ergebnis: { type: "string", description: "Wie wurde es gelöst bzw. was wurde vereinbart? 1–3 Sätze. Unklar: das sagen." },
+      offen: { type: ["string", "null"], description: "Was ist noch offen? null, wenn nichts." },
+    },
+    required: ["zusammenfassung", "ergebnis", "offen"],
+  },
+};
+
+// deno-lint-ignore no-explicit-any
+export async function fasseThemaZusammen(themaId: string, zugriff: Zugriff): Promise<any> {
+  const [thema] = await rest(`themen?id=eq.${enc(themaId)}&select=id,titel`, zugriff);
+  if (!thema) throw new Fehler(404, "Vorgang nicht gefunden.", "nicht_gefunden");
+  const [ein, aus] = await Promise.all([
+    rest(`nachrichten?thema_id=eq.${enc(themaId)}&select=eingang_am,absender_name,betreff,text&order=eingang_am&limit=40`, zugriff),
+    rest(`antworten?thema_id=eq.${enc(themaId)}&status=neq.entwurf&select=gesendet_am,aktualisiert_am,empfaenger_name,art,betreff,text&limit=40`, zugriff),
+  ]);
+  const posten = [
+    // deno-lint-ignore no-explicit-any
+    ...ein.map((n: any) => ({ zeit: n.eingang_am, kopf: `Eingang von ${n.absender_name ?? "unbekannt"}`, betreff: n.betreff, text: n.text })),
+    // deno-lint-ignore no-explicit-any
+    ...aus.map((a: any) => ({ zeit: a.gesendet_am ?? a.aktualisiert_am, kopf: `${a.art === "auftrag" ? "Auftrag" : "Antwort"} der Verwaltung an ${a.empfaenger_name ?? "-"}`, betreff: a.betreff, text: a.text })),
+  ].sort((a, b) => String(a.zeit).localeCompare(String(b.zeit)));
+  if (!posten.length) throw new Fehler(400, "Der Vorgang ist leer.", "eingabe");
+  let gesamt = 0;
+  const bloecke: string[] = [];
+  for (const p of posten) {
+    const b = `--- ${datumDE(p.zeit)} · ${p.kopf}\nBetreff: ${p.betreff ?? ""}\n${kuerze(ohneIban(p.text), 3000)}`;
+    if (gesamt + b.length > 30000) break;
+    gesamt += b.length;
+    bloecke.push(b);
+  }
+  const { daten } = await claude({
+    system: `Du fasst Schriftverkehr einer Hausverwaltung für die Akte zusammen. ${KI_REGEL_FREMD} Antworte ausschließlich über das Werkzeug 'abschluss', auf Deutsch.`,
+    inhalt: [{ type: "text", text: `<vorgang titel="${thema.titel.replace(/"/g, "'")}">\n${bloecke.join("\n\n")}\n</vorgang>` }],
+    werkzeug: WERKZEUG_THEMA,
+    maxTokens: 1200,
+  });
+  return {
+    zusammenfassung: String(daten.zusammenfassung ?? "").slice(0, 1500),
+    ergebnis: String(daten.ergebnis ?? "").slice(0, 1000),
+    offen: ohneLeer(daten.offen)?.slice(0, 600) ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Datei aus der Ablage für die KI erschließen (nur Zusammenfassung, Name und Ordner bleiben)
+// ---------------------------------------------------------------------------
+const WERKZEUG_INHALT: Werkzeug = {
+  name: "inhalt",
+  description: "Beschreibt kurz, was in einer abgelegten Datei steht.",
+  input_schema: {
+    type: "object",
+    properties: {
+      zusammenfassung: { type: "string", description: "1–3 Sätze: Art des Dokuments, von wem, worum es geht; Beträge, Daten, Fristen, Wohnung, falls genannt." },
+      lesbar: { type: "boolean" },
+    },
+    required: ["zusammenfassung", "lesbar"],
+  },
+};
+export async function erschliesseDatei(
+  datei: { daten?: string; typ?: string; text?: string; art?: string },
+  zugriff: Zugriff,
+  dateiname: unknown = null,
+  ordner: unknown = null,
+): Promise<{ zusammenfassung: string; lesbar: boolean }> {
+  void zugriff;
+  const alsText = typeof datei.text === "string";
+  const istPdf = datei.typ === "application/pdf";
+  if (alsText) {
+    if (!datei.text!.trim()) return { zusammenfassung: "", lesbar: false };
+  } else {
+    if (typeof datei.daten !== "string" || !datei.typ) throw new Fehler(400, "Datei fehlt", "eingabe");
+    if (!istPdf && !/^image\/(jpeg|png|webp|gif)$/.test(datei.typ)) throw new Fehler(400, "Nur Fotos, PDF, Word oder Excel.", "eingabe");
+    if (datei.daten.length > (istPdf ? 11_000_000 : 7_000_000)) throw new Fehler(413, "Die Datei ist zu groß.", "eingabe");
+  }
+  const block = alsText
+    ? { type: "text", text: `<datei art="${datei.art === "excel" ? "Excel-Tabelle" : "Word-Dokument"}">\n${kuerze(ohneIban(datei.text), 15000)}\n</datei>` }
+    : istPdf
+    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: datei.daten } }
+    : { type: "image", source: { type: "base64", media_type: datei.typ, data: datei.daten } };
+  const hinweis = [dateiname ? `Dateiname: ${ohneIban(dateiname).slice(0, 150)}` : "", ordner ? `Ordner: ${String(ordner).slice(0, 150)}` : ""].filter(Boolean).join("\n");
+  const { daten } = await claude({
+    system: `Du beschreibst abgelegte Dokumente einer Hausverwaltung in 1–3 Sätzen, damit man sie später findet. Keine Bankverbindungen. ${KI_REGEL_FREMD} Antworte ausschließlich über das Werkzeug 'inhalt', auf Deutsch.`,
+    inhalt: [block, { type: "text", text: `${hinweis}\n\nWas steht in dieser Datei?` }],
+    werkzeug: WERKZEUG_INHALT,
+    maxTokens: 600,
+  });
+  return { zusammenfassung: ohneIban(String(daten.zusammenfassung ?? "")).slice(0, 600), lesbar: daten.lesbar !== false };
 }

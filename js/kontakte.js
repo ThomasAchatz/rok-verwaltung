@@ -4,9 +4,10 @@
 import * as db from "./daten.js";
 import { datumDE, mieterName } from "./dokumente.js";
 import { $, $$, esc, melde, dialogFormular, frage, heuteISO, zustand, objektVon, wohnungVon } from "./helfer.js";
-import { ICON_MIKRO, geheZu, kurz, mieterListe, mikroKnopf, norm, verbindeDiktat, wartehinweis } from "./ui.js";
+import { ICON_MIKRO, geheZu, kurz, mieterListe, mikroKnopf, norm, verbindeDiktat, wartehinweis, suchauswahlHtml, verbindeSuchauswahl } from "./ui.js";
 import * as ablage from "./ablage.js";
 import * as start from "./start.js";
+import * as vorgaenge from "./vorgaenge.js";
 
 const inhalt = () => $("#inhalt");
 export const ROLLEN = ["Makler", "Bank", "Behörde", "Steuerberater", "Notar", "Versicherung", "Hausverwaltung", "Gutachter", "Sonstiges"];
@@ -72,10 +73,10 @@ export async function kontakteListe(neu = false) {
 }
 export const kontaktVon = (id) => (id ? (zustand.kontakte || []).find((k) => k.id === id) || null : null);
 
-// --- Reiter über den Listen: Mieter | Kontakte | Handwerker -------------------------
+// --- Reiter über den Listen: Mieter | Handwerker | Sonstige -------------------------
 export function reiterHtml(aktiv) {
   const r = (ziel, text, key) => `<a class="reiter__knopf" href="${ziel}" ${aktiv === key ? `aria-current="page"` : ""}>${text}</a>`;
-  return `<nav class="reiter reiter--seiten" aria-label="Bereiche">${r("#/mieter", "Mieter", "mieter")}${r("#/kontakte", "Kontakte", "kontakte")}${r("#/handwerker", "Handwerker", "handwerker")}</nav>`;
+  return `<nav class="reiter reiter--seiten" aria-label="Bereiche">${r("#/mieter", "Mieter", "mieter")}${r("#/handwerker", "Handwerker", "handwerker")}${r("#/kontakte", "Sonstige", "kontakte")}</nav>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +92,7 @@ export async function zeigeKontakte() {
   inhalt().innerHTML = `
     ${reiterHtml("kontakte")}
     <div class="kopf">
-      <div><h1>Kontakte</h1><p>${kontakte.length} Kontakte: Makler, Banken, Behörden und alle, die keine Mieter sind</p>
+      <div><h1>Sonstige Kontakte</h1><p>${kontakte.length === 1 ? "1 Kontakt" : `${kontakte.length} Kontakte`}: Makler, Banken, Behörden und alle, die weder Mieter noch Handwerker sind</p>
         <p class="knopfreihe">
           <button type="button" class="knopf knopf--primaer" id="einsprechen">${ICON_MIKRO} Notiz einsprechen</button>
           <button type="button" class="knopf" id="kontakt-neu">${ICON_PLUS} Neuer Kontakt</button></p></div>
@@ -143,11 +144,12 @@ export async function zeigeKontakte() {
 // Seite eines Kontakts: Kontaktdaten, Verlauf, To-dos
 // ---------------------------------------------------------------------------
 export async function zeigeKontakt(id) {
-  const [k, verlauf, aufgaben] = await Promise.all([
+  const [k, verlauf, aufgaben, , schrift] = await Promise.all([
     db.ladeKontakt(id).catch(() => null),
     db.ladeVerlauf({ kontaktId: id }).catch(() => []),
     db.ladeAufgaben({ kontaktId: id }).catch(() => []),
     kontakteListe(),
+    vorgaenge.ladeListe({ kontaktId: id }),
   ]);
   if (!k) throw new Error("Diesen Kontakt gibt es nicht (mehr).");
   const g = naechsterGeburtstag(k);
@@ -155,7 +157,7 @@ export async function zeigeKontakt(id) {
   const tel = String(k.telefon || "").replace(/[^\d+]/g, "");
 
   inhalt().innerHTML = `
-    <a class="zurueck" href="#/kontakte">Alle Kontakte</a>
+    <a class="zurueck" href="#/kontakte">Sonstige Kontakte</a>
     <div class="kopf">
       <div class="kontaktkopf">
         <span class="kontaktzeile__bild kontaktzeile__bild--gross" aria-hidden="true">${esc(initialen(k))}</span>
@@ -175,6 +177,10 @@ export async function zeigeKontakt(id) {
           <div class="flaeche__kopf"><h2>Verlauf</h2><span class="leise">${verlauf.length === 1 ? "1 Eintrag" : verlauf.length ? `${verlauf.length} Einträge` : ""}</span></div>
           ${verlaufHtml(verlauf, { leer: "Noch keine Einträge. Nach dem nächsten Gespräch einfach „Notiz einsprechen“." })}
         </section>
+        ${schrift.themen.length ? `<section class="flaeche">
+          <div class="flaeche__kopf"><h2>Schriftverkehr</h2></div>
+          ${vorgaenge.vorgaengeListeHtml(schrift.themen, schrift.zahlen)}
+        </section>` : ""}
       </div>
       <div class="stapel">
         <section class="flaeche">
@@ -376,11 +382,11 @@ export async function kontaktDialog(k = null, { nachher = () => {}, nachLoeschen
 export async function notizEinsprechen({ kontaktId = null, mieterId = null } = {}) {
   const kiDa = !!zustand.ki?.ki;
   const eingabe = await dialogFormular(`
-    <h2>Notiz einsprechen</h2>
-    <p class="leise">Einfach erzählen, mit wem was besprochen wurde. ${kiDa ? "Die KI ordnet es dem Kontakt oder der Mietpartei zu, schlägt To-dos vor und merkt sich Geburtstage. Gespeichert wird erst nach dem Prüfen." : "Danach Kontakt und Details auswählen."}</p>
-    <label class="feld"><span>Was ist passiert?</span>
+    <h2>Einsprechen</h2>
+    <p class="leise">Einfach erzählen, was war und was passieren soll. ${kiDa ? "Die KI hält das Gespräch fest, schlägt To-dos vor und bereitet E-Mails, Briefe oder Aufträge an Handwerker vor. Sie prüfen alles, gesendet wird erst per Klick." : "Danach Kontakt und Details auswählen."}</p>
+    <label class="feld"><span>Was ist passiert, was soll geschehen?</span>
       <span class="diktat"><textarea name="text" rows="7" required maxlength="6000"
-        placeholder="z. B. Mit Mieterin Huber vereinbart, dass die Kaution in 3 Raten bezahlt wird. Telefonat von heute. Bitte in der Mietakte ablegen."></textarea>${mikroKnopf()}</span></label>
+        placeholder="z. B. Frau Huber war gerade da, im Bad tropft der Wasserhahn. Bitte Haustechnik Muster beauftragen und ihr per E-Mail bestätigen, dass sich die Firma meldet."></textarea>${mikroKnopf()}</span></label>
     <div class="knopfreihe">
       <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
       <button class="knopf knopf--primaer" value="ok">${kiDa ? "Weiter mit KI" : "Weiter"}</button>
@@ -391,7 +397,7 @@ export async function notizEinsprechen({ kontaktId = null, mieterId = null } = {
 
   let v = null;
   if (kiDa) {
-    const warte = wartehinweis("Die KI ordnet die Notiz zu …");
+    const warte = wartehinweis("Die KI ordnet zu und bereitet vor …");
     try {
       v = await db.funktion("ki", { aktion: "notiz_lesen", text, kontakt_id: kontaktId, mieter_id: mieterId });
       v.vonKi = true;
@@ -403,13 +409,13 @@ export async function notizEinsprechen({ kontaktId = null, mieterId = null } = {
   }
   v = v || {
     ziel: kontaktId ? "kontakt" : mieterId ? "mieter" : "keiner", kontakt_id: kontaktId, mieter_id: mieterId, neuer_kontakt: null,
-    art: "telefonat", datum: heuteISO(), notiz: text, kontakt_info: null, geburtstag: null, aufgaben: [], ablegen: false, vonKi: false,
+    art: "telefonat", datum: heuteISO(), notiz: text, kontakt_info: null, geburtstag: null, aufgaben: [], ablegen: false, schreiben: [], vonKi: false,
   };
   return notizPruefen(v, text);
 }
 
 async function notizPruefen(v, original) {
-  const [mieterL, kontakteL] = await Promise.all([mieterListe(), kontakteListe()]);
+  const [mieterL, kontakteL, dienstL] = await Promise.all([mieterListe(), kontakteListe(), db.ladeDienstleister().catch(() => [])]);
   const startWert = v.ziel === "mieter" && v.mieter_id ? `m:${v.mieter_id}` : v.ziel === "kontakt" && v.kontakt_id ? `k:${v.kontakt_id}` : v.ziel === "neuer_kontakt" ? "neu" : "";
   const nk = v.neuer_kontakt || {};
   const aufgabeZeile = (a = {}) => `
@@ -419,22 +425,43 @@ async function notizPruefen(v, original) {
       <input type="date" name="a_datum" value="${esc(a.faellig_am || "")}" min="2020-01-01" max="2099-12-31" aria-label="Fällig am">
     </div>`;
   const sortName = (a, b) => norm(a.nachname || a.firma).localeCompare(norm(b.nachname || b.firma), "de");
+  // Suche statt langer Auswahlliste: neuer Kontakt, Mietparteien, Sonstige
+  const zielListe = [
+    { wert: "neu", name: "+ Neuer Kontakt", gruppe: "" },
+    { wert: "ohne", name: "Keine Gesprächsnotiz (nur Schreiben / To-dos)", gruppe: "" },
+    ...mieterL.map((m) => ({ wert: `m:${m.id}`, name: mieterName(m), zusatz: [wohnungVon(m.wohnung_id)?.bezeichnung, objektVon(wohnungVon(m.wohnung_id)?.objekt_id)?.bezeichnung].filter(Boolean).join(", "), gruppe: "Mietparteien" })),
+    ...[...kontakteL].sort(sortName).map((k) => ({ wert: `k:${k.id}`, name: kontaktName(k), zusatz: [k.vorname || k.nachname ? k.firma : "", k.rolle].filter(Boolean).join(" · "), gruppe: "Sonstige" })),
+  ];
+  // Empfänger für vorbereitete Schreiben (gleiche Kennungen wie „Neues Schreiben“)
+  const empfListe = [
+    { wert: "neu-k", name: "Der neue Kontakt aus dieser Notiz", gruppe: "" },
+    ...mieterL.map((m) => ({ wert: m.id, name: mieterName(m), zusatz: [wohnungVon(m.wohnung_id)?.bezeichnung, objektVon(wohnungVon(m.wohnung_id)?.objekt_id)?.bezeichnung].filter(Boolean).join(", "), gruppe: "Mietparteien" })),
+    ...dienstL.filter((d) => d.aktiv !== false).map((d) => ({ wert: `d-${d.id}`, name: d.name, zusatz: d.gewerk || "", gruppe: "Handwerker" })),
+    ...[...kontakteL].sort(sortName).map((k) => ({ wert: `k-${k.id}`, name: kontaktName(k), zusatz: [k.vorname || k.nachname ? k.firma : "", k.rolle].filter(Boolean).join(" · "), gruppe: "Sonstige" })),
+    ...zustand.stamm.kostentraeger.map((x) => ({ wert: `t-${x.id}`, name: x.name, zusatz: "Kostenträger", gruppe: "Kostenträger" })),
+  ];
+  const empfWert = (x) => x.an === "mieter" ? x.id : x.an === "handwerker" ? `d-${x.id}` : x.an === "kontakt" ? `k-${x.id}`
+    : x.an === "kostentraeger" ? `t-${x.id}` : x.an === "neuer_kontakt" ? "neu-k" : "";
+  const schreibZeile = (x = {}) => {
+    const wert = empfWert(x);
+    return `
+    <div class="schreibzeile" data-schreibzeile data-mieter="${esc(x.mieter_id || "")}">
+      <label class="checkfeld schreibzeile__an"><input type="checkbox" name="s_an" ${wert ? "checked" : ""}> Vorbereiten</label>
+      <div class="schreibzeile__felder">
+        ${suchauswahlHtml({ label: "An", placeholder: "Empfänger suchen …", wert: empfListe.find((e) => e.wert === wert)?.name || "", name: "s_ziel", versteckt: wert, inline: true })}
+        <label class="feld"><span>Als</span><select name="s_kanal"><option value="email">E-Mail</option><option value="brief" ${x.kanal === "brief" ? "selected" : ""}>Brief</option></select></label>
+        <label class="feld schreibzeile__text"><span>Was soll drinstehen?</span><textarea name="s_anweisung" rows="2" maxlength="2000">${esc(x.anweisung || "")}</textarea></label>
+      </div>
+    </div>`;
+  };
+  let schreiben = []; // angehakte Schreiben, beim Absenden gelesen
   let vorschlag = null; // Name in der Ablage (nur bei Mietparteien)
   let aufgaben = [];     // angehakte To-dos, beim Absenden aus dem Dialog gelesen
 
   const daten = await dialogFormular(`
-    <h2>Notiz speichern</h2>
+    <h2>${v.schreiben?.length ? "Prüfen und vorbereiten" : "Notiz speichern"}</h2>
     <p class="leise">${v.vonKi ? "Vorschlag der KI. Bitte kurz prüfen, dann speichern." : "Bitte Kontakt oder Mietpartei wählen und prüfen."}</p>
-    <label class="feld"><span>Gehört zu</span>
-      <select name="ziel" required>
-        <option value="" ${startWert ? "" : "selected"} disabled>Bitte wählen …</option>
-        <option value="neu" ${startWert === "neu" ? "selected" : ""}>+ Neuer Kontakt</option>
-        <optgroup label="Kontakte">${[...kontakteL].sort(sortName).map((k) => `<option value="k:${esc(k.id)}" ${startWert === `k:${k.id}` ? "selected" : ""}>${esc(kontaktName(k))}${k.firma && (k.vorname || k.nachname) ? ` (${esc(k.firma)})` : ""}</option>`).join("")}</optgroup>
-        <optgroup label="Mietparteien">${mieterL.map((m) => {
-          const w = wohnungVon(m.wohnung_id);
-          return `<option value="m:${esc(m.id)}" ${startWert === `m:${m.id}` ? "selected" : ""}>${esc(mieterName(m))}${w ? ` (${esc(w.bezeichnung)})` : ""}</option>`;
-        }).join("")}</optgroup>
-      </select></label>
+    ${suchauswahlHtml({ label: "Gehört zu", placeholder: "Name suchen …", wert: zielListe.find((x) => x.wert === startWert)?.name || "", name: "ziel", versteckt: startWert, inline: true })}
     <fieldset class="gruppe" data-teil="neu">
       <legend>Neuer Kontakt</legend>
       <div class="formraster formraster--zwei">
@@ -453,6 +480,12 @@ async function notizPruefen(v, original) {
     </div>
     <label class="feld"><span>Notiz für den Verlauf</span>
       <span class="diktat"><textarea name="text" rows="4" required maxlength="8000">${esc(v.notiz || original)}</textarea>${mikroKnopf()}</span></label>
+    <fieldset class="gruppe gruppe--schreiben">
+      <legend>${v.schreiben?.length ? `Vorbereitet von der KI (${v.schreiben.length})` : "E-Mail, Brief oder Auftrag vorbereiten"}</legend>
+      <div data-schreiben>${(v.schreiben || []).map(schreibZeile).join("")}</div>
+      <button type="button" class="knopf knopf--klein" data-schreiben-mehr>${ICON_PLUS} ${v.schreiben?.length ? "Weiteres Schreiben" : "Schreiben vorbereiten"}</button>
+      <p class="feldhinweis feldhinweis--leise">Die KI entwirft jedes angehakte Schreiben. Danach öffnet sich der Entwurf zum Prüfen; gesendet wird erst per Klick.</p>
+    </fieldset>
     <fieldset class="gruppe" data-teil="kontakt">
       <legend>Für die Kontaktkarte</legend>
       ${geburtstagFelder({ geburtstag_tag: v.geburtstag?.tag, geburtstag_monat: v.geburtstag?.monat, geburtsjahr: v.geburtstag?.jahr })}
@@ -500,8 +533,24 @@ async function notizPruefen(v, original) {
         }
         if (teil === "mieter" && !nameVonHand) nameFuer(wahl.slice(2));
       };
+      verbindeSuchauswahl($(".suchauswahl", form), zielListe);
       form.ziel.addEventListener("change", zeige);
       zeige();
+      const verbindeZeile = (z) => {
+        verbindeSuchauswahl($(".suchauswahl", z), empfListe, () => { z.querySelector("[name=s_an]").checked = true; });
+        z.querySelector("[name=s_anweisung]").addEventListener("input", (e) => { if (e.target.value.trim()) z.querySelector("[name=s_an]").checked = true; });
+      };
+      $$("[data-schreibzeile]", form).forEach(verbindeZeile);
+      $("[data-schreiben-mehr]", form).addEventListener("click", () => {
+        // Neue Zeile: Empfänger ist erst einmal die Person der Notiz
+        const z0 = form.ziel.value;
+        const vor = z0.startsWith("m:") ? { an: "mieter", id: z0.slice(2) } : z0.startsWith("k:") ? { an: "kontakt", id: z0.slice(2) } : z0 === "neu" ? { an: "neuer_kontakt" } : {};
+        $("[data-schreiben]", form).insertAdjacentHTML("beforeend", schreibZeile(vor));
+        const z = $$("[data-schreibzeile]", form).at(-1);
+        verbindeZeile(z);
+        z.querySelector("[name=s_an]").checked = false;
+        z.querySelector("[name=s_anweisung]").focus();
+      });
       $("[data-aufgabe-mehr]", form).addEventListener("click", () => {
         $("[data-aufgaben]", form).insertAdjacentHTML("beforeend", aufgabeZeile());
         $$("[name=a_titel]", form).at(-1).focus();
@@ -514,34 +563,45 @@ async function notizPruefen(v, original) {
         if (e.submitter?.value !== "ok") return;
         const f = new FormData(form);
         let fehler = "";
+        const zeilen = $$("[data-schreibzeile]", form).map((z) => ({
+          an: z.querySelector("[name=s_an]").checked, ziel: z.querySelector("[name=s_ziel]").value,
+          kanal: z.querySelector("[name=s_kanal]").value, anweisung: z.querySelector("[name=s_anweisung]").value.trim(), mieter_id: z.dataset.mieter || null,
+        })).filter((x) => x.an);
         if (!f.get("ziel")) fehler = "Bitte wählen, zu wem die Notiz gehört.";
+        else if (zeilen.some((x) => !x.ziel)) fehler = "Bitte bei jedem angehakten Schreiben den Empfänger wählen.";
+        else if (zeilen.some((x) => !x.anweisung)) fehler = "Bitte bei jedem angehakten Schreiben kurz sagen, was drinstehen soll.";
+        else if (zeilen.some((x) => x.ziel === "neu-k") && f.get("ziel") !== "neu") fehler = "„Der neue Kontakt“ geht nur, wenn die Notiz zu einem neuen Kontakt gehört.";
         else if (f.get("ziel") === "neu" && !String(f.get("nachname") || "").trim() && !String(f.get("firma") || "").trim()) fehler = "Für den neuen Kontakt bitte Nachname oder Firma eintragen.";
-        else if (!String(f.get("text") || "").trim()) fehler = "Die Notiz ist leer.";
-        else if (f.get("ziel") !== "" && !String(f.get("ziel")).startsWith("m:")) fehler = geburtstagAus(f).fehler || "";
+        else if (f.get("ziel") !== "ohne" && !String(f.get("text") || "").trim()) fehler = "Die Notiz ist leer.";
+        else if (f.get("ziel") === "ohne" && !zeilen.length && !$$(".aufgabenzeile [name=a_an]:checked", form).length) fehler = "Ohne Gesprächsnotiz bitte ein Schreiben oder To-do anhaken.";
+        else if (f.get("ziel") === "neu" || String(f.get("ziel")).startsWith("k:")) fehler = geburtstagAus(f).fehler || "";
         $("[data-fehler]", form).textContent = fehler;
         $("[data-fehler]", form).hidden = !fehler;
         if (fehler) return e.preventDefault();
         aufgaben = $$(".aufgabenzeile", form)
           .map((z) => ({ an: z.querySelector("[name=a_an]").checked, titel: z.querySelector("[name=a_titel]").value.trim(), faellig_am: z.querySelector("[name=a_datum]").value || null }))
           .filter((a) => a.an && a.titel).map(({ titel, faellig_am }) => ({ titel, faellig_am }));
+        schreiben = zeilen;
       });
     },
   });
   if (!daten) return;
-  return speichereNotiz(daten, { mieterL, vorschlag, aufgaben });
+  return speichereNotiz(daten, { mieterL, vorschlag, aufgaben, schreiben, dienstL, kontakteL });
 }
 
-async function speichereNotiz(daten, { mieterL, vorschlag, aufgaben }) {
+async function speichereNotiz(daten, { mieterL, vorschlag, aufgaben, schreiben = [], dienstL = [], kontakteL = [] }) {
   const ziel = String(daten.get("ziel"));
   const t = (n) => String(daten.get(n) || "").trim() || null;
   const text = t("text");
   const art = daten.get("art") || "notiz";
   const datum = daten.get("datum") || heuteISO();
   const warte = wartehinweis("Wird gespeichert …");
-  let ziel_href = null, wer = "", erledigt = [];
+  let ziel_href = null, wer = "", erledigt = [], entwuerfe = [];
   try {
     let kontaktId = null, mieterId = null;
-    if (ziel === "neu" || ziel.startsWith("k:")) {
+    if (ziel === "ohne") {
+      wer = "";
+    } else if (ziel === "neu" || ziel.startsWith("k:")) {
       const g = geburtstagAus(daten);
       const info = t("kontakt_info");
       if (ziel === "neu") {
@@ -571,7 +631,8 @@ async function speichereNotiz(daten, { mieterL, vorschlag, aufgaben }) {
       wer = m ? mieterName(m) : "Mietpartei";
       ziel_href = `#/mieter/${mieterId}`;
     }
-    const eintrag = await db.speichereVerlauf(null, { kontakt_id: kontaktId, mieter_id: mieterId, art, datum, text });
+    const eintrag = ziel === "ohne" ? null : await db.speichereVerlauf(null, { kontakt_id: kontaktId, mieter_id: mieterId, art, datum, text });
+    if (eintrag) erledigt.unshift("Notiz im Verlauf");
     const m = mieterId ? mieterL.find((x) => x.id === mieterId) : null;
     const objektId = m ? wohnungVon(m.wohnung_id)?.objekt_id || null : null;
     for (const a of aufgaben) {
@@ -580,19 +641,75 @@ async function speichereNotiz(daten, { mieterL, vorschlag, aufgaben }) {
     if (aufgaben.length) erledigt.push(aufgaben.length === 1 ? "1 To-do" : `${aufgaben.length} To-dos`);
     await kontakteListe(true);
     // Mietpartei: auf Wunsch zusätzlich als PDF in die Ablage (Name wie im Dialog gezeigt)
-    if (m && daten.get("ablage_an")) {
+    if (m && eintrag && daten.get("ablage_an")) {
       const doc = await ablage.automatischAblegen(eintragVerlauf(eintrag, m), {
         meldung: false, vorgabe: ablage.ablageVorgabe(daten, vorschlag),
       });
       if (doc) erledigt.push(`abgelegt in „${ablage.ordnerAnzeige(doc.ordner)}“`);
+    }
+    // Vorbereitete Schreiben: die KI entwirft, Robert prüft im Entwurf und sendet selbst
+    if (schreiben.length) {
+      warte.text?.("Die KI entwirft die Schreiben …");
+      entwuerfe = await bereiteSchreibenVor(schreiben, { kontaktNeu: kontaktId, mieterNotiz: m, mieterL, dienstL, kontakteL });
+      if (entwuerfe.length) erledigt.push(entwuerfe.length === 1 ? "1 Entwurf vorbereitet" : `${entwuerfe.length} Entwürfe vorbereitet`);
     }
   } catch (err) {
     await warte.ende();
     return melde(err.message, "fehler");
   }
   await warte.ende();
-  melde(`Gespeichert bei ${wer}${erledigt.length ? ": " + erledigt.join(", ") : ""}.`, "ok", { dauer: 8000 });
-  geheZu(ziel_href);
+  melde(`Gespeichert${wer ? ` bei ${wer}` : ""}${erledigt.length ? ": " + erledigt.join(", ") : ""}.${entwuerfe.length > 1 ? " Die weiteren Entwürfe liegen im Postfach unter „Entwürfe“." : ""}`, "ok", { dauer: 9000 });
+  geheZu(entwuerfe.length ? `#/entwurf/${entwuerfe[0].id}` : ziel_href || "#/uebersicht");
+}
+
+/**
+ * Schreiben aus „Einsprechen“ vorbereiten: je Zeile ein KI-Entwurf (gespeichert als Entwurf in einem eigenen Vorgang).
+ * ziel wie bei „Neues Schreiben“: Mieter-ID | d-<id> | k-<id> | t-<id> | neu-k (der gerade angelegte Kontakt)
+ */
+async function bereiteSchreibenVor(zeilen, { kontaktNeu, mieterNotiz, mieterL, dienstL, kontakteL }) {
+  const ergebnis = [];
+  const kontakte = await kontakteListe(true).catch(() => kontakteL);
+  for (const z of zeilen) {
+    const ziel = z.ziel === "neu-k" ? (kontaktNeu ? `k-${kontaktNeu}` : null) : z.ziel;
+    if (!ziel) continue;
+    const id = ziel.slice(2);
+    const dienst = ziel.startsWith("d-") ? dienstL.find((d) => d.id === id) : null;
+    const kontakt = ziel.startsWith("k-") ? kontakte.find((k) => k.id === id) : null;
+    const amt = ziel.startsWith("t-") ? zustand.stamm.kostentraeger.find((k) => k.id === id) : null;
+    const mieter = !dienst && !kontakt && !amt ? mieterL.find((x) => x.id === ziel) : null;
+    // Betroffene Mietpartei (für Haus und, beim Amt, für Aktenzeichen)
+    const bezug = mieter || mieterL.find((x) => x.id === z.mieter_id) || mieterNotiz || null;
+    const objektId = bezug ? wohnungVon(bezug.wohnung_id)?.objekt_id || null : null;
+    const felder = {
+      mieter_id: mieter?.id || (amt ? bezug?.id || null : null),
+      dienstleister_id: dienst?.id || null, kontakt_id: kontakt?.id || null, kostentraeger_id: amt?.id || null,
+    };
+    const name = dienst ? dienst.name : kontakt ? kontaktName(kontakt) : amt ? amt.name : mieter ? mieterName(mieter) : "";
+    const email = dienst?.email || kontakt?.email || amt?.email || mieter?.email || null;
+    let r = { betreff: "", text: "", modell: null };
+    if (zustand.ki?.ki) {
+      try {
+        r = await db.funktion("ki", {
+          aktion: "entwurf", anweisung: z.anweisung, mieter_id: felder.mieter_id, dienstleister_id: felder.dienstleister_id,
+          kontakt_id: felder.kontakt_id, kostentraeger_id: felder.kostentraeger_id, objekt_id: dienst || kontakt ? objektId : null,
+        });
+      } catch (err) {
+        melde(`Entwurf an ${name}: ${err.message}`, "fehler");
+      }
+    }
+    const thema = await vorgaenge.neuesThema({
+      betreff: r.betreff || z.anweisung.slice(0, 80), an: email, mieterId: felder.mieter_id || (dienst ? bezug?.id : null), kontaktId: felder.kontakt_id,
+      dienstleisterId: felder.dienstleister_id, kostentraegerId: felder.kostentraeger_id, objektId,
+    }).catch(() => null);
+    const a = await db.speichereAntwort(null, {
+      thema_id: thema, ...felder, empfaenger_email: email, empfaenger_name: name,
+      betreff: r.betreff || "", text: r.text || "", anweisung: z.anweisung, ki_modell: r.modell || null,
+    });
+    if (z.kanal === "brief") (zustand.briefWunsch ||= new Set()).add(a.id);
+    if (r.hinweise?.length) (zustand.entwurfHinweise ||= new Map()).set(a.id, r.hinweise);
+    ergebnis.push(a);
+  }
+  return ergebnis;
 }
 
 /** Verlaufseintrag einer Mietpartei als PDF für die Ablage */

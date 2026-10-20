@@ -42,6 +42,9 @@ js/start.js           Übersicht (To-do-Liste), Seite je Haus, Notizen/Wiedervor
 js/postfach.js        Postfach, Nachricht (Frist, Anhänge, Handwerker-Auftrag), Entwurf mit KI + Diktat, Einstellungen
 js/ablage.js          Foto/PDF erfassen, Dokumente, Wissen (auch eingesprochen), Handwerker
 js/chat.js            Chat „Fragen an die App“
+js/vorgaenge.js       Vorgänge: E-Mail-Verlauf zu einer Sache, „Erledigt“ mit Abschluss-PDF
+js/zipimport.js       ZIP mit fertiger Ordnerstruktur importieren, Dateien für die KI erschließen
+js/kontakte.js        Kontakte (Mieter | Handwerker | Sonstige), Verlauf, Notiz einsprechen mit Assistent
 js/bausteine.js       Mietbuch-Leiste, Zeilen, Schreiben-Kacheln
 js/ui.js              Diktat, Wartehinweise, Auswahllisten, Bilder verkleinern, Drucken
 js/helfer.js          gemeinsame Hilfen und Zustand
@@ -80,7 +83,8 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
 
 - **Edge Functions** (`supabase/functions/`, deployt mit `verify_jwt = false`, die Prüfung passiert im Code):
   - `ki`: nur für freigeschaltete Mitglieder. Aktionen `status`, `einordnen` (inkl. Frist mit wörtlicher Textstelle),
-    `entwurf`, `auftrag`, `brief_lesen` (Foto/PDF → Postfach oder Ablage), `wissen_ordnen`, `notiz_pruefen`, `chat`.
+    `entwurf`, `auftrag`, `brief_lesen` (Foto/PDF → Postfach oder Ablage), `wissen_ordnen`, `notiz_pruefen`, `chat`,
+    `notiz_lesen`, `ablage_vorschlag`, `thema_zusammenfassen`, `datei_erschliessen`.
   - `posteingang`: Webhook für eingehende E-Mails, geschützt durch den Schlüssel `?token=…` aus der
     Tabelle `postfach` (in der App unter Einstellungen → Einrichtung) und optional die Resend-Signatur.
   - `versand`: nur für Mitglieder, nur per Klick. Ohne Resend-Schlüssel öffnet die App stattdessen das E-Mail-Programm.
@@ -127,8 +131,8 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   Thema, Betrag und Wohnung schlägt die KI vor; die Mietpartei (Name) kommt bei Schriftverkehr dazu, nicht bei Rechnungen.
   Orts-Kürzel je Haus (`objekte.kuerzel`, Hausseite → Einstellungen zum Haus). Details schlägt die KI vor
   (Firma_Betrag, Vertragspartner …); bei einer Mietpartei setzt die App „Wohnung_Nachname“.
-- **Kontakte (Mini-CRM):** Menüpunkt „Kontakte“ mit den Reitern Mieter, Kontakte (Makler, Bank, Behörden …) und
-  Handwerker (eigene Listen). Je Kontakt und je Mietpartei ein **Verlauf** mit datierten Gesprächsnotizen.
+- **Kontakte (Mini-CRM):** Menüpunkt „Kontakte“ mit den Reitern Mieter | Handwerker | Sonstige
+  (Makler, Bank, Behörden …). Je Kontakt und je Mietpartei ein **Verlauf** mit datierten Gesprächsnotizen.
   **„Notiz einsprechen“** (Übersicht, Kontaktliste, Kontaktseite, Mietakte): diktieren, die KI (`notiz_lesen`) erkennt
   Kontakt oder Mietpartei (oder schlägt einen neuen Kontakt vor), Notiz, Datum, Geburtstag, feste Infos und To-dos;
   Robert prüft im Dialog und speichert. Bei Mietparteien optional zusätzlich als PDF in die Ablage (Name sichtbar).
@@ -159,6 +163,22 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   **Ändern** (vorbelegter Dialog), **Ablehnen** („Doch anzeigen“ holt sie zurück). Schreiben öffnen „Neues Schreiben“
   mit der Anweisung (auch an Kontakte). **PDF aus dem Chat** (Liste/Übersicht): Dateiname sichtbar und änderbar,
   Ansehen, Herunterladen oder In Ablage (Ablage-Dialog mit Namen nach Schema). Andere Dateiformate folgen später.
+- **Vorgänge (E-Mail-Verlauf):** Alles Hin und Her zu einer Sache landet in einem Vorgang (Tabelle `themen`).
+  Eingehende Mails werden über die Antwort-Kennung (In-Reply-To/References) zugeordnet, sonst über gleichen Betreff
+  derselben Person (offen, letzte 120 Tage). Die Vorgangsseite (`#/thema/<id>`) zeigt den Verlauf als Gesprächsfaden,
+  mit „Antworten“ und **„Erledigt“**: Dann entsteht ein PDF des ganzen Verlaufs (optional mit KI-Zusammenfassung,
+  Dateiname sichtbar und änderbar), das in die Ablage geht. Kommt danach noch eine Antwort, öffnet sich der Vorgang wieder.
+  Akte und Kontaktseite zeigen den Abschnitt „Schriftverkehr“.
+- **ZIP-Import:** Eine ZIP mit fertiger Ordnerstruktur in die Ablagefläche ziehen. Erkannt wird entweder je Haus ein
+  Ordner in der obersten Ebene oder eine Struktur für ein gewähltes Haus. Ordner werden den vorhandenen zugeordnet,
+  fehlende angelegt, Dateinamen 1:1 übernommen, Doppelte übersprungen (Vorschau vor dem Import, Abbrechen möglich).
+  Danach optional **„Für die KI erschließen“**: Die KI liest jede Datei einmal und speichert nur eine kurze
+  Zusammenfassung; Name und Ordner bleiben unverändert. Der Knopf steht auch später auf der Ablage-Seite.
+- **Suchfelder statt langer Listen:** Empfänger, „Betrifft“ bei Notizen (Mietpartei, Handwerker, Kontakt),
+  Handwerker-Auftrag („Wer soll kommen?“, passende zuerst) und Mietpartei einer Nachricht: tippen, Treffer erscheinen oben.
+- **Assistent beim Einsprechen:** „Mieter kommt, will etwas“ – einsprechen, die KI erkennt neben Notiz und To-dos auch,
+  welche Schreiben nötig sind (E-Mail oder Brief, an wen, was hinein soll). Robert prüft die Zeilen, ändert sie bei Bedarf,
+  dann bereitet die KI die Entwürfe vor und öffnet den ersten. Senden bleibt ein eigener Klick.
 
 ## Sicherheit
 
