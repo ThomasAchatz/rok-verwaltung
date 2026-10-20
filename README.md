@@ -86,8 +86,12 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   - `versand`: nur für Mitglieder, nur per Klick. Ohne Resend-Schlüssel öffnet die App stattdessen das E-Mail-Programm.
     Aufträge an Handwerker gehen mit den gewählten Fotos aus dem Speicher raus.
     Jede E-Mail trägt unter der Signatur den Briefkopf (Firma, Anschrift, Kontakt aus den Einstellungen).
-  - „Neues Schreiben“ geht an eine Mietpartei **oder** an einen Handwerker/Dienstleister (optional mit Haus).
-    Bei Handwerkern bekommt die KI keine Mieterdaten.
+  - „Neues Schreiben“: ein Suchfeld **„An wen?“** über Mietparteien, Kontakte, Handwerker und Kostenträger
+    (tippen, Pfeiltasten + Enter oder Klick). Route `#/schreiben/<ziel>`: Mieter-ID, `d-<id>` Handwerker,
+    `k-<id>` Kontakt, `t-<id>[.<mieter-id>]` Kostenträger (optional zu einer Mietpartei, dann mit Aktenzeichen).
+    Bei Handwerkern und Kontakten bekommt die KI keine Mieterdaten; bei Kontakten die letzten Gespräche aus dem Verlauf.
+    Gespeichert in `antworten.dienstleister_id / kontakt_id / kostentraeger_id`. Was an einen Kontakt rausgeht,
+    steht danach in seinem Verlauf.
 - **Secrets** (Supabase → Edge Functions → Secrets, nie ins Repo):
   `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `VERSAND_ABSENDER` (z. B. `ROK Immobilien <verwaltung@rok-immobilien.com>`),
   optional `RESEND_WEBHOOK_SECRET` (`whsec_…`) und `KI_MODELL` (Standard `claude-sonnet-5-5`).
@@ -151,7 +155,10 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   rechnet der Code nach festen Regeln, die KI erklärt nur. Immer mit Hinweis „keine Rechtsberatung“.
 - **Fristen** zeigt die App mit der Originalstelle aus der Nachricht; Robert bestätigt oder ändert sie.
 - **Chat:** liest mit Roberts Login, sieht keine Bankdaten, Summen kommen aus der Datenbank. Er kann nichts
-  ändern, senden oder löschen; Vorschläge (Notiz, Entwurf, Wissen, Öffnen) laufen erst nach Klick und Prüfung.
+  ändern, senden oder löschen. Vorschläge erscheinen als kleine Karten: **Annehmen** (To-do/Wissen direkt speichern),
+  **Ändern** (vorbelegter Dialog), **Ablehnen** („Doch anzeigen“ holt sie zurück). Schreiben öffnen „Neues Schreiben“
+  mit der Anweisung (auch an Kontakte). **PDF aus dem Chat** (Liste/Übersicht): Dateiname sichtbar und änderbar,
+  Ansehen, Herunterladen oder In Ablage (Ablage-Dialog mit Namen nach Schema). Andere Dateiformate folgen später.
 
 ## Sicherheit
 
@@ -216,6 +223,9 @@ Danach die Zeile für die Antwortvorlage aus `supabase/migrations/20261015020000
 - [x] Upload: KI liest auch Word/Excel, mehrere Dateien auf einmal
 - [x] Menüpunkt „Objekte“ mit Ordnerbaum je Haus und Ablagefläche zum Hineinziehen
 - [x] Kontakte mit Verlauf, „Notiz einsprechen“ (KI), jährliche Geburtstags-Erinnerungen
+- [x] „An wen?“ als ein Suchfeld (Mietparteien, Kontakte, Handwerker, Kostenträger)
+- [x] Chat-Vorschläge mit Annehmen / Ändern / Ablehnen, PDF aus dem Chat
+- [x] Upload: Haus folgt der gewählten Mietpartei (Warnung bei Widerspruch)
 - [x] Eingabemaske Stammdaten (`#/stammdaten`): Häuser, Wohnungen (auch „WHG 01–12“ auf einmal), Kostenträger,
       neue Mietparteien; Details der Mietpartei weiter in der Akte
 - [ ] Später: Antwort als PDF-Anhang mailen, Import offener Posten aus immocloud (CSV)

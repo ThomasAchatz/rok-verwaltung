@@ -737,8 +737,22 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
 .chat__antwort ul { margin: 0 0 0.5rem; padding-left: 1.2rem; }
 .chat__denkt { display: flex; gap: 0.5rem; align-items: center; color: var(--text-leise); }
 .chat__fehler { background: var(--offen-zart); color: var(--offen); padding: 0.55rem 0.8rem; border-radius: var(--radius); font-size: 0.9rem; }
-.chat__aktionen { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px dashed var(--linie); }
+.chat__aktionen { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px dashed var(--linie); }
 .chat__aktionen .knopf { white-space: normal; text-align: left; }
+/* Vorschlag aus dem Chat: kleine Karte mit Annehmen / Ändern / Ablehnen */
+.chatvorschlag { border: 1px solid var(--linie); border-left: 3px solid var(--messing); border-radius: var(--radius); padding: 0.5rem 0.6rem; background: var(--messing-zart); min-width: 0; }
+.chatvorschlag[data-status="gespeichert"] { border-left-color: var(--bezahlt); background: var(--bezahlt-zart); }
+.chatvorschlag[data-status="abgelehnt"] { opacity: 0.65; background: var(--flaeche); border-left-color: var(--linie); }
+.chatvorschlag__text { display: flex; flex-direction: column; gap: 2px; font-size: 0.88rem; }
+.chatvorschlag__art { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6e5630; }
+.chatvorschlag__knoepfe { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-top: 0.45rem; }
+.chatvorschlag__status { font-size: 0.85rem; color: var(--text-leise); }
+.chatvorschlag__status--ok { color: var(--bezahlt); font-weight: 600; }
+.chatvorschlag__status--ok::before { content: "✓ "; }
+.chatvorschlag__name { margin: 0.45rem 0 0; }
+.namefeld { display: flex; align-items: stretch; min-width: 0; }
+.namefeld input { flex: 1; min-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; font-size: 0.85rem; }
+.namefeld__endung { display: flex; align-items: center; padding: 0 0.5rem; border: 1px solid #c4ccd7; border-left: 0; border-radius: 0 4px 4px 0; background: var(--grund); font-size: 0.85rem; color: var(--text-leise); }
 .chat__leer p { color: var(--text-leise); }
 .chat__chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .chat__eingabe { display: flex; gap: 0.5rem; align-items: flex-end; padding: 0.75rem calc(1rem + env(safe-area-inset-right, 0px)) 0.4rem 1rem; border-top: 1px solid var(--linie); }
@@ -982,3 +996,24 @@ a.reiter__knopf { text-decoration: none; display: inline-block; }
   .geburtstagsfeld { grid-template-columns: 4rem minmax(0, 1fr) 5.5rem; gap: 0.4rem; }
 }
 .geburtstagsfeld__titel { display: block; font-size: 0.85rem; font-weight: 600; margin: 0.25rem 0 0.2rem; }
+
+/* Suchfeld mit Auswahlliste („An wen?“) */
+.suchauswahl { position: relative; }
+.suchauswahl .feld { margin-bottom: 0.6rem; }
+.suchauswahl input[type="search"] { -webkit-appearance: none; appearance: none; }
+.suchauswahl__liste {
+  position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% - 0.5rem);
+  max-height: min(60vh, 340px); overflow-y: auto; background: var(--flaeche);
+  border: 1px solid #c4ccd7; border-radius: var(--radius); box-shadow: 0 6px 20px rgba(29, 36, 48, 0.14);
+}
+.suchauswahl__gruppe {
+  position: sticky; top: 0; background: var(--grund); color: var(--text-leise);
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 0.35rem 0.7rem;
+}
+.suchauswahl__eintrag {
+  display: flex; flex-direction: column; gap: 1px; padding: 0.5rem 0.7rem; cursor: pointer; min-height: 44px; justify-content: center;
+  border-top: 1px solid var(--linie); overflow-wrap: anywhere;
+}
+.suchauswahl__eintrag .leise { font-size: 0.8rem; }
+.suchauswahl__eintrag:hover, .suchauswahl__eintrag[aria-selected="true"] { background: var(--tinte-zart); }
+.suchauswahl__leer { padding: 0.7rem; color: var(--text-leise); font-size: 0.85rem; }

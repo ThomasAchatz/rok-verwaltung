@@ -165,6 +165,7 @@ export async function zeigeKontakt(id) {
       <div class="knopfreihe">
         <button type="button" class="knopf knopf--primaer" id="einsprechen">${ICON_MIKRO} Notiz einsprechen</button>
         <button type="button" class="knopf" id="eintrag-neu">${ICON_PLUS} Eintrag</button>
+        <a class="knopf" href="#/schreiben/k-${esc(k.id)}">Schreiben</a>
         <button type="button" class="knopf" id="bearbeiten">Bearbeiten</button>
       </div>
     </div>

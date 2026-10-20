@@ -201,13 +201,15 @@ type EntwurfAuftrag = {
   bisher?: { betreff?: string; text?: string } | null;
   aenderung?: string | null;
   dienstleisterId?: string | null; // Schreiben an einen Handwerker/Dienstleister (dann keine Mieterdaten)
-  objektId?: string | null;        // betroffenes Haus (nur bei Schreiben an Handwerker)
+  objektId?: string | null;        // betroffenes Haus (nur bei Schreiben an Handwerker oder Kontakte)
+  kontaktId?: string | null;       // Schreiben an einen Kontakt (Makler, Bank, Behörde …): keine Mieterdaten
+  kostentraegerId?: string | null; // Schreiben an einen Kostenträger (z. B. Jobcenter), optional zu einer Mietpartei
 };
 
 // deno-lint-ignore no-explicit-any
-async function mieterBlock(mieterId: string, zugriff: Zugriff, ohneNachricht: string | null): Promise<{ text: string; objektId: string | null; m: any }> {
+async function mieterBlock(mieterId: string, zugriff: Zugriff, ohneNachricht: string | null, mitAktenzeichen = false): Promise<{ text: string; objektId: string | null; m: any }> {
   const [m] = await rest(
-    `mieter?id=eq.${enc(mieterId)}&select=id,anrede,vorname,nachname,telefon,email,mietbeginn,kaltmiete,nebenkosten_vz,strom_pauschale,internet_pauschale,direktzahlung,` +
+    `mieter?id=eq.${enc(mieterId)}&select=id,anrede,vorname,nachname,telefon,email,mietbeginn,kaltmiete,nebenkosten_vz,strom_pauschale,internet_pauschale,direktzahlung,aktenzeichen,` +
       "mietart,vergleichsmiete_qm,letzte_erhoehung_am,kaltmiete_vorher," +
       "wohnung:wohnungen(bezeichnung,flaeche_qm,objekt:objekte(id,bezeichnung,strasse,plz,ort,kappungsgrenze)),kostentraeger:kostentraeger(name)",
     zugriff,
@@ -230,6 +232,7 @@ async function mieterBlock(mieterId: string, zugriff: Zugriff, ohneNachricht: st
     `${Number(m.strom_pauschale) ? `, Strompauschale ${euro(m.strom_pauschale)}` : ""}` +
     `${Number(m.internet_pauschale) ? `, Internetpauschale ${euro(m.internet_pauschale)}` : ""}\n` +
     `Kostenträger: ${m.kostentraeger?.name ?? "keiner (Selbstzahler)"}${m.kostentraeger ? `, Direktzahlung an Vermieter: ${m.direktzahlung ? "ja" : "nein"}` : ""}\n` +
+    (mitAktenzeichen && m.aktenzeichen ? `Aktenzeichen beim Kostenträger: ${m.aktenzeichen}\n` : "") +
     `Offene Posten: ${offen.length ? `${euro(summe)} (${monate.join(", ")})` : "keine"}\n` +
     `Bisherige Schreiben: ${vorgaenge.length ? vorgaenge.map((v: { titel: string; erstellt_am: string }) => `${datumDE(v.erstellt_am)} ${v.titel}`).join("; ") : "keine"}\n` +
     `Frühere Nachrichten: ${fruehere.length ? fruehere.map((n: { eingang_am: string; betreff: string; ki_zusammenfassung: string }) => `${datumDE(n.eingang_am)} „${n.betreff ?? ""}“${n.ki_zusammenfassung ? ": " + n.ki_zusammenfassung : ""}`).join("; ") : "keine"}\n` +
@@ -284,6 +287,24 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
   const teile: string[] = [`Heute ist ${heuteDE()}.`];
   let objektId: string | null = null;
   let dienstleister = null;
+  let kontakt = null;
+  let kostentraeger = null;
+  if (o.kontaktId && !nachricht) {
+    [kontakt] = await rest(`kontakte?id=eq.${enc(o.kontaktId)}&select=id,vorname,nachname,firma,rolle`, zugriff);
+    if (!kontakt) throw new Fehler(404, "Kontakt nicht gefunden.", "nicht_gefunden");
+    const name = [kontakt.vorname, kontakt.nachname].filter(Boolean).join(" ");
+    teile.push(`<empfaenger>Kontakt: ${name || kontakt.firma}${name && kontakt.firma ? `, ${kontakt.firma}` : ""}${kontakt.rolle ? ` (${kontakt.rolle})` : ""}</empfaenger>`);
+    // Letzte Gespräche als Hintergrund (keine privaten Notizen der Kontaktkarte)
+    const verlauf = await rest(`verlauf?kontakt_id=eq.${enc(kontakt.id)}&select=datum,art,text&order=datum.desc&limit=5`, zugriff).catch(() => []);
+    if (verlauf.length) {
+      teile.push(`<bisherige_gespraeche>\n${verlauf.map((v: { datum: string; art: string; text: string }) => `${datumDE(v.datum)} (${v.art}): ${kuerze(v.text, 600)}`).join("\n")}\n</bisherige_gespraeche>`);
+    }
+  }
+  if (o.kostentraegerId && !nachricht) {
+    [kostentraeger] = await rest(`kostentraeger?id=eq.${enc(o.kostentraegerId)}&select=id,name,abteilung`, zugriff);
+    if (!kostentraeger) throw new Fehler(404, "Kostenträger nicht gefunden.", "nicht_gefunden");
+    teile.push(`<empfaenger>Kostenträger: ${kostentraeger.name}${kostentraeger.abteilung ? `, ${kostentraeger.abteilung}` : ""}</empfaenger>`);
+  }
   if (o.dienstleisterId && !nachricht) {
     [dienstleister] = await rest(`dienstleister?id=eq.${enc(o.dienstleisterId)}&select=name,gewerk`, zugriff);
     if (!dienstleister) throw new Fehler(404, "Handwerker nicht gefunden.", "nicht_gefunden");
@@ -296,10 +317,17 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
       }
     }
   }
-  // An Handwerker gehen keine Mieterdaten (Miete, Rückstände, Kostenträger)
-  const mieterId = dienstleister ? null : o.mieterId ?? nachricht?.mieter_id ?? null;
+  if (kontakt && o.objektId) {
+    const [haus] = await rest(`objekte?id=eq.${enc(o.objektId)}&select=id,bezeichnung,strasse,plz,ort`, zugriff);
+    if (haus) {
+      objektId = haus.id;
+      teile.push(`<haus>${haus.bezeichnung}: ${haus.strasse}, ${haus.plz} ${haus.ort}</haus>`);
+    }
+  }
+  // An Handwerker und Kontakte gehen keine Mieterdaten (Miete, Rückstände, Kostenträger)
+  const mieterId = dienstleister || kontakt ? null : o.mieterId ?? nachricht?.mieter_id ?? null;
   if (mieterId) {
-    const b = await mieterBlock(mieterId, zugriff, o.nachrichtId ?? null);
+    const b = await mieterBlock(mieterId, zugriff, o.nachrichtId ?? null, !!kostentraeger);
     if (b.text) teile.push(b.text);
     objektId = b.objektId;
   }
@@ -333,6 +361,10 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
     ? "Entwirf eine Antwort auf die eingegangene Nachricht." + (o.anweisung ? " Setze dabei die Anweisung von Robert um." : "")
     : dienstleister
     ? "Entwirf ein Schreiben an den Handwerker/Dienstleister nach der Anweisung von Robert."
+    : kontakt
+    ? "Entwirf ein Schreiben an den Kontakt nach der Anweisung von Robert."
+    : kostentraeger
+    ? "Entwirf ein Schreiben an den Kostenträger nach der Anweisung von Robert."
     : "Entwirf ein Schreiben nach der Anweisung von Robert.";
   const system =
     `Du schreibst im Namen von ${profil?.inhaber ?? "der Verwaltung"} (${profil?.firma ?? "Hausverwaltung"}) an Mieter, Ämter, Interessenten und Handwerker.\n` +
@@ -340,6 +372,12 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
     (dienstleister
       ? "\n- Dieses Schreiben geht an einen Handwerker/Dienstleister: sachlich und geschäftlich, Anrede „Sehr geehrte Damen und Herren,“. " +
         "Nenne nur, was Robert angibt (Ort, Auftrag, Termin, Kontakt). Keine Angaben zu Mieten, Rückständen, Kostenträgern oder Bankdaten."
+      : kontakt
+      ? "\n- Dieses Schreiben geht an einen Geschäftskontakt (z. B. Makler, Bank, Behörde): sachlich und höflich, Anrede mit Namen, falls bekannt, sonst „Sehr geehrte Damen und Herren,“. " +
+        "Keine Daten von Mietern (Mieten, Rückstände, Kostenträger) und keine Bankdaten. <bisherige_gespraeche> nur als Hintergrund nutzen."
+      : kostentraeger
+      ? "\n- Dieses Schreiben geht an einen Kostenträger (Amt, z. B. Jobcenter): sachlich, Anrede „Sehr geehrte Damen und Herren,“. " +
+        "Geht es um eine Mietpartei, im ersten Satz Name der Mietpartei, Wohnung und Aktenzeichen nennen. Nur Beträge aus <mieter> verwenden, keine Bankdaten."
       : "");
   // deno-lint-ignore no-explicit-any
   return { system, text: `${teile.join("\n\n")}\n\nAufgabe: ${aufgabe}`, mieterId, bilder: bilder as any[], hinweise };

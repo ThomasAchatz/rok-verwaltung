@@ -11,10 +11,12 @@ import {
 import {
   ICON_MIKRO, ICON_KI, ICON_KAMERA, istEmail, kurz, norm, anschriftAnrede, zeitDE, datumZeit, geheZu,
   mieterListe, ortVon, mieterOptionen, mikroKnopf, verbindeDiktat, stoppeDiktat, wachsen, wartehinweis, beschaeftigt,
+  suchauswahlHtml, verbindeSuchauswahl,
 } from "./ui.js";
 import * as ablage from "./ablage.js";
 import { drucke } from "./ui.js";
 import { aufgabeDialog, fristVon } from "./start.js";
+import { kontakteListe, kontaktName } from "./kontakte.js";
 
 const inhalt = () => $("#inhalt");
 
@@ -99,7 +101,7 @@ function eintragNachricht(n, mieter, o) {
 function eintragAntwort(a, { nachricht = null, mieter = null, objektId = null, kanal = "email", an = null, bytes = null, vorgangId = null }) {
   const art = a.art === "auftrag" ? "Auftrag" : kanal === "brief" || a.status === "als_brief" ? "Brief" : "E-Mail";
   const empfaenger = a.empfaenger_name || an || a.empfaenger_email || "";
-  const anMieter = mieter && a.art !== "auftrag" && !a.dienstleister_id && (!an || norm(an) === norm(mieter.email));
+  const anMieter = mieter && a.art !== "auftrag" && !a.dienstleister_id && !a.kontakt_id && !a.kostentraeger_id && (!an || norm(an) === norm(mieter.email));
   const voll = `${String(a.text || "").trim()}\n\nMit freundlichen Grüßen\n${signaturText()}`;
   const p = zustand.profil || {};
   const datei = bytes
@@ -630,12 +632,16 @@ async function auftragStarten(n, mieter, bilder, objekt) {
 function baueEntwurf(el, k) {
   let antwort = k.antwort;
   const kiDa = !!zustand.ki?.ki;
-  const standardAn = k.nachricht?.absender_email || k.dienstleister?.email || k.mieter?.email || "";
+  const standardAn = k.nachricht?.absender_email || k.dienstleister?.email || k.kontakt?.email || k.kostentraeger?.email || k.mieter?.email || "";
   const signatur = signaturText();
   const platzhalter = k.nachricht
     ? "z. B. „Handwerker ist beauftragt, meldet sich bis Freitag.“ Leer lassen: Die KI antwortet anhand des Wissens."
     : k.dienstleister
     ? "z. B. „Angebot für den Anstrich im Treppenhaus anfragen, Besichtigung nächste Woche möglich.“"
+    : k.kontakt
+    ? "z. B. „Danke für das Gespräch, bitte das Exposé bis Freitag schicken.“"
+    : k.kostentraeger
+    ? (k.mieter ? "z. B. „Mietbescheinigung für die Mietpartei schicken, Nebenkosten ab Januar höher.“" : "z. B. „Nach dem Stand der Kostenübernahme fragen.“")
     : "z. B. „Frau Huber an die Mülltrennung erinnern, freundlich.“ oder „Termin zur Wohnungsbesichtigung am 3.11. um 10 Uhr ankündigen.“";
 
   el.innerHTML = `
@@ -711,8 +717,12 @@ function baueEntwurf(el, k) {
       nachricht_id: k.nachricht?.id || null,
       mieter_id: k.mieter?.id || null,
       empfaenger_email: v.an || null,
-      empfaenger_name: k.auftrag ? antwort.empfaenger_name : k.dienstleister ? k.dienstleister.name : k.nachricht?.absender_name || (k.mieter ? mieterName(k.mieter) : null),
+      empfaenger_name: k.auftrag ? antwort.empfaenger_name : k.dienstleister ? k.dienstleister.name
+        : k.kontakt ? kontaktName(k.kontakt) : k.kostentraeger ? k.kostentraeger.name
+        : k.nachricht?.absender_name || (k.mieter ? mieterName(k.mieter) : null),
       ...(k.dienstleister ? { dienstleister_id: k.dienstleister.id } : {}),
+      ...(k.kontakt ? { kontakt_id: k.kontakt.id } : {}),
+      ...(k.kostentraeger ? { kostentraeger_id: k.kostentraeger.id } : {}),
       betreff: v.betreff,
       text: v.text,
       anweisung: v.anweisung || null,
@@ -746,6 +756,7 @@ function baueEntwurf(el, k) {
   async function alsGesendetMarkieren(an, kanal) {
     await db.speichereAntwort(antwort.id, { status: kanal === "druck" ? "als_brief" : "gesendet", gesendet_am: new Date().toISOString(), empfaenger_email: an || antwort.empfaenger_email || null });
     if (k.nachricht && !k.auftrag) await db.aendereNachricht(k.nachricht.id, { status: "beantwortet" });
+    if (k.kontakt) await vermerkeBeimKontakt(kanal === "druck" ? "Brief" : "E-Mail");
     if (k.mieter) {
       await db.protokolliereVorgang({
         mieter_id: k.mieter.id, typ: k.auftrag ? "auftrag" : "antwort",
@@ -753,6 +764,14 @@ function baueEntwurf(el, k) {
         details: { antwort_id: antwort.id, an, kanal },
       });
     }
+  }
+
+  // Beim Kontakt im Verlauf vermerken, was rausging (Mini-CRM)
+  async function vermerkeBeimKontakt(weg) {
+    await db.speichereVerlauf(null, {
+      kontakt_id: k.kontakt.id, art: weg === "E-Mail" ? "email" : "notiz", datum: heuteISO(),
+      text: `${weg} gesendet: ${werte().betreff || "(ohne Betreff)"}`,
+    }).catch(() => null);
   }
 
   const aktionen = {
@@ -770,6 +789,7 @@ function baueEntwurf(el, k) {
             : await db.funktion("ki", {
               aktion: "entwurf", nachricht_id: k.nachricht?.id || null, mieter_id: k.mieter?.id || null, anweisung: v.anweisung || null,
               dienstleister_id: k.dienstleister?.id || null, objekt_id: k.objektId?.() || null,
+              kontakt_id: k.kontakt?.id || null, kostentraeger_id: k.kostentraeger?.id || null,
             });
           zeigeEditor(r);
           zeigeHinweise(r.hinweise);
@@ -820,6 +840,7 @@ function baueEntwurf(el, k) {
           const r = await db.funktion("ki", {
             aktion: "entwurf", nachricht_id: k.nachricht?.id || null, mieter_id: k.mieter?.id || null,
             dienstleister_id: k.dienstleister?.id || null, objekt_id: k.objektId?.() || null,
+            kontakt_id: k.kontakt?.id || null, kostentraeger_id: k.kostentraeger?.id || null,
             anweisung: v.anweisung || null, bisher: { betreff: v.betreff, text: v.text }, aenderung,
           });
           zeigeEditor(r);
@@ -832,7 +853,9 @@ function baueEntwurf(el, k) {
       });
     },
     selbst() {
-      const anrede = k.dienstleister ? "Sehr geehrte Damen und Herren," : k.mieter ? briefanrede(k.mieter) + "," : "Guten Tag,";
+      const anrede = k.dienstleister || k.kostentraeger ? "Sehr geehrte Damen und Herren,"
+        : k.kontakt ? (k.kontakt.nachname ? `Guten Tag ${kontaktName(k.kontakt)},` : "Sehr geehrte Damen und Herren,")
+        : k.mieter ? briefanrede(k.mieter) + "," : "Guten Tag,";
       zeigeEditor({
         betreff: k.nachricht ? (/^(aw|re):/i.test(k.nachricht.betreff || "") ? k.nachricht.betreff : `AW: ${k.nachricht.betreff || ""}`.trim()) : "",
         text: `${anrede}\n\n`,
@@ -883,6 +906,7 @@ function baueEntwurf(el, k) {
         });
         if (erfolg) {
           melde(`E-Mail an ${v.an} gesendet.`, "ok");
+          if (k.kontakt) await vermerkeBeimKontakt("E-Mail");
           ablegenNachVersand("email", v.an, { vorgabe: ok.vorgabe });
           return k.nachEnde();
         }
@@ -930,7 +954,7 @@ function baueEntwurf(el, k) {
           } catch (err) {
             throw new Error("Die Vorlage enthält einen Fehler: " + vorlagenFehler(err));
           }
-          dateiname = `${heuteISO()}_Schreiben_${dateiTeil(k.mieter?.nachname || empf.name || "Empfaenger")}.docx`;
+          dateiname = `${heuteISO()}_Schreiben_${dateiTeil((k.kostentraeger || k.kontakt ? null : k.mieter?.nachname) || empf.name || "Empfaenger")}.docx`;
           return true;
         } catch (err) {
           melde(err.message, "fehler");
@@ -963,6 +987,7 @@ function baueEntwurf(el, k) {
             });
           }
           await db.speichereAntwort(antwort.id, { status: "als_brief" });
+          if (k.kontakt) await vermerkeBeimKontakt("Brief");
           if (k.nachricht) await db.aendereNachricht(k.nachricht.id, { status: "beantwortet" });
           const h = $("#dialog [data-v=hinweis]");
           if (h) h.textContent = k.mieter ? "In der Akte gespeichert." : "Vermerkt.";
@@ -1004,6 +1029,27 @@ async function empfaengerDialog(k) {
   const vorschlaege = [];
   const m = k.mieter;
   let standard = null;
+  const ktAnschrift = (kt) => ({
+    wert: "kt", label: `Kostenträger: ${kt.name}`, name: kt.name, zusatz: kt.abteilung || "",
+    strasse: kt.strasse || "", plz_ort: [kt.plz, kt.ort].filter(Boolean).join(" "),
+  });
+  if (k.kontakt) {
+    // Adresse ist ein freies Feld: „Straße 1, 12345 Ort“ oder mehrzeilig
+    const teile = String(k.kontakt.adresse || "").split(/\n|,/).map((x) => x.trim()).filter(Boolean);
+    const plzIdx = teile.findIndex((x) => /^\d{5}\b/.test(x));
+    const name = [k.kontakt.vorname, k.kontakt.nachname].filter(Boolean).join(" ");
+    vorschlaege.push({
+      wert: "kontakt", label: `Kontakt: ${kontaktName(k.kontakt)}`,
+      name: name || k.kontakt.firma || "", zusatz: name ? k.kontakt.firma || "" : "",
+      strasse: plzIdx > 0 ? teile[plzIdx - 1] : plzIdx < 0 ? teile[0] || "" : "",
+      plz_ort: plzIdx >= 0 ? teile[plzIdx] : teile[1] || "",
+    });
+    standard = "kontakt";
+  }
+  if (k.kostentraeger && !m) {
+    vorschlaege.push(ktAnschrift(k.kostentraeger));
+    standard = "kt";
+  }
   if (k.dienstleister) {
     vorschlaege.push({ wert: "dienst", label: `Handwerker: ${k.dienstleister.name}`, name: k.dienstleister.name, zusatz: "", strasse: "", plz_ort: "" });
     standard = "dienst";
@@ -1016,12 +1062,10 @@ async function empfaengerDialog(k) {
       name: anschriftAnrede(m) + mieterName(m), zusatz: w ? `Wohnung ${w.bezeichnung}` : "",
       strasse: o?.strasse || "", plz_ort: [o?.plz, o?.ort].filter(Boolean).join(" "),
     });
-    const kt = kostentraegerVon(m.kostentraeger_id);
+    const kt = k.kostentraeger || kostentraegerVon(m.kostentraeger_id);
     if (kt) {
-      vorschlaege.push({
-        wert: "kt", label: `Kostenträger: ${kt.name}`, name: kt.name, zusatz: kt.abteilung || "",
-        strasse: kt.strasse || "", plz_ort: [kt.plz, kt.ort].filter(Boolean).join(" "),
-      });
+      vorschlaege.push(ktAnschrift(kt));
+      if (k.kostentraeger) standard = "kt";
       const von = norm(k.nachricht?.absender_email);
       if (k.nachricht && ((kt.email && von === norm(kt.email)) || /jobcenter|sozialamt|landratsamt|agentur/.test(norm(k.nachricht.absender_name)))) {
         standard = "kt";
@@ -1063,58 +1107,108 @@ async function empfaengerDialog(k) {
 // Neues Schreiben (ohne eingegangene Nachricht), auch aus der Mieterakte
 // ---------------------------------------------------------------------------
 export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
-  // ziel: Mieter-ID oder „d-<ID>“ für einen Handwerker/Dienstleister
-  let mieterId = ziel && !ziel.startsWith("d-") ? ziel : null;
-  let dienstId = ziel?.startsWith("d-") ? ziel.slice(2) : null;
+  // ziel: Mieter-ID, „d-<ID>“ Handwerker, „k-<ID>“ Kontakt, „t-<ID>[.<Mieter-ID>]“ Kostenträger (optional zu einer Mietpartei)
+  const z = String(ziel || "");
+  let dienstId = z.startsWith("d-") ? z.slice(2) : null;
+  let kontaktId = z.startsWith("k-") ? z.slice(2) : null;
+  let ktId = z.startsWith("t-") ? z.slice(2).split(".")[0] : null;
+  let mieterId = z.startsWith("t-") ? z.slice(2).split(".")[1] || null : z && !/^[dk]-/.test(z) ? z : null;
   let antwort = null;
   if (antwortId) {
     antwort = await db.ladeAntwort(antwortId);
     if (antwort.nachricht_id) return geheZu(`#/postfach/${antwort.nachricht_id}`);
     mieterId = antwort.mieter_id;
     dienstId = antwort.dienstleister_id || null;
+    kontaktId = antwort.kontakt_id || null;
+    ktId = antwort.kostentraeger_id || null;
   }
-  const [mieterL, alleDienst] = await Promise.all([mieterListe(), db.ladeDienstleister().catch(() => []), ladeKiStatus()]);
+  const [mieterL, alleDienst, kontaktL] = await Promise.all([
+    mieterListe(), db.ladeDienstleister().catch(() => []), kontakteListe(true), ladeKiStatus(),
+  ]);
   const dienstL = alleDienst.filter((d) => d.aktiv || d.id === dienstId);
   const dienstleister = dienstId ? dienstL.find((d) => d.id === dienstId) || null : null;
-  const mieter = !dienstleister && mieterId ? await db.ladeMieter(mieterId).catch(() => null) : null;
-  const entwuerfe = (await db.ladeAntworten({ mieterId: mieter?.id || null, anzahl: 30 }).catch(() => []))
-    .filter((a) => a.status === "entwurf" && !a.nachricht_id && a.art !== "auftrag" && a.id !== antwort?.id && (mieter || !a.mieter_id));
+  const kontakt = !dienstleister && kontaktId ? kontaktL.find((x) => x.id === kontaktId) || null : null;
+  const kostentraeger = !dienstleister && !kontakt && ktId ? kostentraegerVon(ktId) : null;
+  const mieter = !dienstleister && !kontakt && mieterId ? await db.ladeMieter(mieterId).catch(() => null) : null;
+  const passt = (a) => a.status === "entwurf" && !a.nachricht_id && a.art !== "auftrag" && a.id !== antwort?.id &&
+    (kontakt ? a.kontakt_id === kontakt.id : kostentraeger ? a.kostentraeger_id === kostentraeger.id
+      : dienstleister ? a.dienstleister_id === dienstleister.id : mieter ? !a.kostentraeger_id : !a.mieter_id && !a.kontakt_id && !a.kostentraeger_id && !a.dienstleister_id);
+  const entwuerfe = (await db.ladeAntworten({ mieterId: mieter?.id || null, anzahl: 40 }).catch(() => [])).filter(passt);
   const w = mieter && wohnungVon(mieter.wohnung_id);
   const o = w && objektVon(w.objekt_id);
   const kt = mieter && kostentraegerVon(mieter.kostentraeger_id);
-  const zurueck = mieter ? `#/mieter/${mieter.id}` : dienstleister?.objekt_id ? `#/objekt/${dienstleister.objekt_id}` : "#/postfach";
-  const dienstOptionen = `<option value="">Keiner</option>` + dienstL.map((d) =>
-    `<option value="${esc(d.id)}" ${d.id === dienstleister?.id ? "selected" : ""}>${esc(d.name)}${d.gewerk ? " – " + esc(d.gewerk) : ""}</option>`).join("");
+  const zurueck = kontakt ? `#/kontakt/${kontakt.id}` : mieter ? `#/mieter/${mieter.id}` : dienstleister?.objekt_id ? `#/objekt/${dienstleister.objekt_id}` : "#/postfach";
+  const zurueckText = kontakt ? "Zum Kontakt" : mieter ? "Zur Akte" : dienstleister?.objekt_id ? "Zum Haus" : "Zum Postfach";
+
+  // Eine Suche über alle, an die man schreiben kann (Roberts Wunsch: ein Feld statt mehrerer Listen)
+  const eintraege = [
+    ...mieterL.map((m) => ({ wert: m.id, name: mieterName(m), zusatz: ortVon(m), gruppe: "Mietparteien" })),
+    ...kontaktL.map((x) => ({ wert: `k-${x.id}`, name: kontaktName(x), zusatz: [x.vorname || x.nachname ? x.firma : "", x.rolle].filter(Boolean).join(" · "), gruppe: "Kontakte" })),
+    ...dienstL.map((d) => ({ wert: `d-${d.id}`, name: d.name, zusatz: d.gewerk || "", gruppe: "Handwerker" })),
+    ...zustand.stamm.kostentraeger.map((x) => ({ wert: `t-${x.id}`, name: x.name, zusatz: x.abteilung || "", gruppe: "Kostenträger" })),
+  ];
+  const gewaehlt = kontakt ? kontaktName(kontakt) : dienstleister ? dienstleister.name : kostentraeger ? kostentraeger.name : mieter ? mieterName(mieter) : "";
+  const gruppe = kontakt ? "Kontakt" : dienstleister ? "Handwerker" : kostentraeger ? "Kostenträger" : mieter ? "Mietpartei" : "";
+  const hausWahl = (vorwahl) => `<label class="feld feld--eng feld--oben"><span>Betrifft Haus (optional)</span><select id="empf-haus" ${antwort ? "disabled" : ""}>
+      <option value="">–</option>
+      ${zustand.stamm.objekte.map((x) => `<option value="${esc(x.id)}" ${x.id === vorwahl ? "selected" : ""}>${esc(x.bezeichnung)}</option>`).join("")}
+    </select></label>`;
+  const mail = (adresse) => `<dt>E-Mail</dt><dd>${adresse ? esc(adresse) : `<span class="betrag--offen">keine hinterlegt</span>`}</dd>`;
+  const telefon = (t) => (t ? `<dt>Telefon</dt><dd><a href="tel:${esc(String(t).replace(/[^\d+]/g, ""))}">${esc(t)}</a></dd>` : "");
+  // Für ein Amt: zu welcher Mietpartei? (zuerst die, die dort geführt werden)
+  const ktMieter = kostentraeger
+    ? [...mieterL].sort((a, b) => (b.kostentraeger_id === kostentraeger.id) - (a.kostentraeger_id === kostentraeger.id))
+    : [];
+
+  let details;
+  if (mieter && !kostentraeger) {
+    details = `<dl class="datenliste datenliste--abstand">
+        <dt>Wohnung</dt><dd>${esc([o?.bezeichnung, w?.bezeichnung].filter(Boolean).join(", ") || "–")}</dd>
+        <dt>E-Mail</dt><dd>${esc(mieter.email || "–")}</dd>
+        ${kt ? `<dt>Kostenträger</dt><dd>${esc(kt.name)}${antwort ? "" : ` · <a href="#/schreiben/t-${esc(kt.id)}.${esc(mieter.id)}">an das Amt schreiben</a>`}</dd>` : ""}
+      </dl>`;
+  } else if (dienstleister) {
+    details = `<dl class="datenliste datenliste--abstand">
+        ${dienstleister.gewerk ? `<dt>Gewerk</dt><dd>${esc(dienstleister.gewerk)}</dd>` : ""}
+        ${mail(dienstleister.email)}${telefon(dienstleister.telefon)}
+      </dl>${hausWahl(dienstleister.objekt_id)}
+      <p class="leise">Die KI bekommt keine Daten von Mietern, nur Haus und Wissen.</p>`;
+  } else if (kontakt) {
+    details = `<dl class="datenliste datenliste--abstand">
+        ${kontakt.firma && (kontakt.vorname || kontakt.nachname) ? `<dt>Firma</dt><dd>${esc(kontakt.firma)}</dd>` : ""}
+        ${kontakt.rolle ? `<dt>Rolle</dt><dd>${esc(kontakt.rolle)}</dd>` : ""}
+        ${mail(kontakt.email)}${telefon(kontakt.telefon)}
+      </dl>${hausWahl(null)}
+      <p class="leise">Die KI kennt die letzten Gespräche aus dem Verlauf, aber keine Daten von Mietern.</p>`;
+  } else if (kostentraeger) {
+    details = `<dl class="datenliste datenliste--abstand">
+        ${kostentraeger.abteilung ? `<dt>Abteilung</dt><dd>${esc(kostentraeger.abteilung)}</dd>` : ""}
+        ${mail(kostentraeger.email)}
+        ${kostentraeger.strasse || kostentraeger.ort ? `<dt>Anschrift</dt><dd>${esc([kostentraeger.strasse, [kostentraeger.plz, kostentraeger.ort].filter(Boolean).join(" ")].filter(Boolean).join(", "))}</dd>` : ""}
+      </dl>
+      <label class="feld feld--eng feld--oben"><span>Wegen welcher Mietpartei? (optional)</span><select id="empf-kt-mieter" ${antwort ? "disabled" : ""}>
+        ${mieterOptionen(ktMieter, mieter?.id || null, "Keine bestimmte")}</select></label>
+      <p class="leise">${mieter ? "Die KI bekommt Wohnung, Miete und das Aktenzeichen dieser Mietpartei." : "Ohne Mietpartei nutzt die KI nur das allgemeine Wissen."}</p>`;
+  } else {
+    details = `<p class="leise">Mietpartei, Kontakt, Handwerker oder Amt suchen. Ohne Auswahl nutzt die KI nur das allgemeine Wissen.</p>`;
+  }
 
   inhalt().innerHTML = `
-    <a class="zurueck" href="${esc(zurueck)}">${mieter ? "Zur Akte" : dienstleister?.objekt_id ? "Zum Haus" : "Zum Postfach"}</a>
+    <a class="zurueck" href="${esc(zurueck)}">${zurueckText}</a>
     <div class="kopf"><div><h1>${antwort ? "Entwurf" : "Neues Schreiben"}</h1>
-      <p>Sagen oder tippen Sie, was drinstehen soll. Die KI entwirft das Schreiben ${dienstleister ? "an den Handwerker mit dem Wissen zum Haus" : "mit den Daten der Mietpartei und dem Wissen"}.</p></div></div>
+      <p>Sagen oder tippen Sie, was drinstehen soll. Die KI entwirft das Schreiben ${dienstleister ? "an den Handwerker mit dem Wissen zum Haus"
+        : kontakt ? "mit dem Verlauf der bisherigen Gespräche" : kostentraeger ? "an das Amt" : "mit den Daten der Mietpartei und dem Wissen"}.</p></div></div>
     ${kiBanner()}
     <div class="akte">
       <div class="stapel"><div id="entwurf"></div></div>
       <div class="stapel">
-        <section class="flaeche">
-          <div class="flaeche__kopf"><h2>An wen?</h2></div>
+        <section class="flaeche" id="empfaenger">
+          <div class="flaeche__kopf"><h2>An wen?</h2>${gruppe ? `<span class="marker">${esc(gruppe)}</span>` : ""}</div>
           <div class="flaeche__inhalt">
-            <label class="feld"><span>Mietpartei</span><select id="empf-mieter" ${antwort ? "disabled" : ""}>${mieterOptionen(mieterL, mieter?.id || null, "Keine (z. B. Interessent)")}</select></label>
-            <label class="feld feld--eng"><span>Handwerker / Dienstleister</span><select id="empf-dienst" ${antwort ? "disabled" : ""}>${dienstOptionen}</select></label>
-            ${mieter ? `<dl class="datenliste datenliste--abstand">
-                <dt>Wohnung</dt><dd>${esc([o?.bezeichnung, w?.bezeichnung].filter(Boolean).join(", ") || "–")}</dd>
-                <dt>E-Mail</dt><dd>${esc(mieter.email || "–")}</dd>
-                ${kt ? `<dt>Kostenträger</dt><dd>${esc(kt.name)}</dd>` : ""}
-              </dl>`
-            : dienstleister ? `<dl class="datenliste datenliste--abstand">
-                ${dienstleister.gewerk ? `<dt>Gewerk</dt><dd>${esc(dienstleister.gewerk)}</dd>` : ""}
-                <dt>E-Mail</dt><dd>${dienstleister.email ? esc(dienstleister.email) : `<span class="betrag--offen">keine hinterlegt</span>`}</dd>
-                ${dienstleister.telefon ? `<dt>Telefon</dt><dd><a href="tel:${esc(String(dienstleister.telefon).replace(/[^\d+]/g, ""))}">${esc(dienstleister.telefon)}</a></dd>` : ""}
-              </dl>
-              <label class="feld feld--eng feld--oben"><span>Betrifft Haus (optional)</span><select id="empf-haus">
-                <option value="">–</option>
-                ${zustand.stamm.objekte.map((x) => `<option value="${esc(x.id)}" ${x.id === dienstleister.objekt_id ? "selected" : ""}>${esc(x.bezeichnung)}</option>`).join("")}
-              </select></label>
-              <p class="leise">Die KI bekommt keine Daten von Mietern, nur Haus und Wissen.</p>`
-            : `<p class="leise">Ohne Auswahl nutzt die KI nur das allgemeine Wissen.</p>`}
+            ${antwort
+              ? `<p><strong>${esc(gewaehlt || antwort.empfaenger_name || "Ohne Empfänger")}</strong></p>`
+              : suchauswahlHtml({ label: "Empfänger suchen", placeholder: "Name, Firma oder Amt …", wert: gewaehlt })}
+            ${details}
           </div>
         </section>
         ${entwuerfe.length ? `
@@ -1129,13 +1223,18 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
   const vorbelegt = zustand.vorbelegung && !zustand.vorbelegung.nachricht_id ? zustand.vorbelegung.anweisung : null;
   zustand.vorbelegung = null;
   baueEntwurf($("#entwurf"), {
-    nachricht: null, mieter, dienstleister, antwort, anweisung: vorbelegt,
+    nachricht: null, mieter, dienstleister, kontakt, kostentraeger, antwort, anweisung: vorbelegt,
     objektId: () => $("#empf-haus")?.value || null,
     nachEnde: () => geheZu(zurueck),
   });
-  if (dienstleister && !dienstleister.email && !antwort) melde("Für diesen Handwerker ist keine E-Mail hinterlegt. Bitte im Feld „An“ eintragen oder als Brief drucken.", "info");
-  $("#empf-mieter").addEventListener("change", (e) => geheZu(e.target.value ? `#/schreiben/${e.target.value}` : "#/schreiben"));
-  $("#empf-dienst").addEventListener("change", (e) => geheZu(e.target.value ? `#/schreiben/d-${e.target.value}` : "#/schreiben"));
+  const ohneMail = !antwort && (dienstleister || kontakt || kostentraeger);
+  if (ohneMail && !(dienstleister || kontakt || kostentraeger).email) {
+    melde(`Für ${gewaehlt} ist keine E-Mail hinterlegt. Bitte im Feld „An“ eintragen oder als Brief schicken.`, "info");
+  }
+  const such = $("#empfaenger .suchauswahl");
+  if (such) verbindeSuchauswahl(such, eintraege, (e) => geheZu(`#/schreiben/${e.wert}`));
+  $("#empf-kt-mieter")?.addEventListener("change", (e) =>
+    geheZu(`#/schreiben/t-${kostentraeger.id}${e.target.value ? "." + e.target.value : ""}`));
 }
 
 // ---------------------------------------------------------------------------

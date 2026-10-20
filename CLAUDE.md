@@ -90,5 +90,13 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   `verlauf` (kontakt_id ODER mieter_id), `aufgaben.kontakt_id`, `dokumente.verlauf_id`. KI-Aktion `notiz_lesen`
   (`_shared/notiz.ts`) liefert nur Vorschläge, IDs werden gegen die Listen geprüft. Geburtstage: `geburtstagTodos()`
   in sammle() (start.js). Testdaten: `supabase/seed_kontakte.sql` (erfunden, mehrfach ausführbar).
+- Empfänger-Suche: `suchauswahlHtml()` + `verbindeSuchauswahl(box, eintraege, waehle)` in `js/ui.js` (Combobox, Gruppen).
+  `zeigeNeuesSchreiben(ziel)`: Mieter-ID | `d-` Handwerker | `k-` Kontakt | `t-<kt>[.<mieter>]` Kostenträger; `baueEntwurf` kennt
+  `k.kontakt` / `k.kostentraeger` (Spalten `antworten.kontakt_id/kostentraeger_id`, KI `entwurf` mit `kontakt_id/kostentraeger_id`).
+- Chat-Vorschläge (`js/chat.js`): Karte je Aktion mit Status (`a.status` gespeichert/abgelehnt), Knöpfe `data-vorschlag="i:j:op"`
+  (annehmen/aendern/ablehnen/oeffnen/ansehen/laden/ablage). PDF-Aktion `pdf` { titel, einleitung, abschnitte, objekt_id, mieter_id }
+  → `ablage.pdfEintrag` (Name im Feld `data-pdfname`, Ablage über `inAblageDialog` mit `e.thema` = Titel).
+- Upload/Ablage: Haus folgt der gewählten Mietpartei, Warnung in `[data-mieter-hinweis]` bei Widerspruch;
+  `detailsVorschlag`/`zielOrdner` nehmen eine KI-Wohnung nur, wenn sie zum Haus passt.
 - Stammdaten-Maske: `js/stammdaten.js` (Route `#/stammdaten`, Links in Einstellungen und Mieterliste). Löschen nur,
   wenn leer (Haus ohne Wohnungen, Wohnung ohne Mietpartei); Haus löschen kaskadiert auf Wissen/Handwerker des Hauses.

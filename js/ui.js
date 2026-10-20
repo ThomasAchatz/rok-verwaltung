@@ -221,3 +221,94 @@ export async function drucke(html) {
   setTimeout(aufraeumen, 120000);
   window.print();
 }
+
+// ---------------------------------------------------------------------------
+// Suchfeld mit Auswahlliste (Combobox): tippen filtert, Pfeiltasten + Enter oder Klick wählt.
+// eintraege: [{ wert, name, zusatz?, gruppe }]; Gruppen erscheinen in der Reihenfolge des ersten Auftretens.
+// ---------------------------------------------------------------------------
+let suchNr = 0;
+export function suchauswahlHtml({ label, placeholder = "Name eingeben …", wert = "" }) {
+  const id = `such-${++suchNr}`;
+  return `<div class="suchauswahl" data-such="${id}">
+    <label class="feld"><span>${esc(label)}</span>
+      <input type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${id}-liste"
+        autocomplete="off" spellcheck="false" placeholder="${esc(placeholder)}" value="${esc(wert)}"></label>
+    <div class="suchauswahl__liste" id="${id}-liste" role="listbox" hidden></div>
+  </div>`;
+}
+
+export function verbindeSuchauswahl(box, eintraege, waehle, { max = 60 } = {}) {
+  const feld = box.querySelector("input");
+  const liste = box.querySelector("[role=listbox]");
+  const startWert = feld.value;
+  let treffer = [];
+  let aktiv = -1;
+  const idVon = (i) => `${liste.id}-${i}`;
+
+  function filtere() {
+    const woerter = norm(feld.value === startWert ? "" : feld.value).split(/\s+/).filter(Boolean);
+    treffer = eintraege.filter((e) => {
+      const t = norm(`${e.name} ${e.zusatz || ""} ${e.gruppe}`);
+      return woerter.every((w) => t.includes(w));
+    }).slice(0, max);
+  }
+  function zeichne() {
+    let gruppe = null;
+    liste.innerHTML = treffer.length
+      ? treffer.map((e, i) => {
+        const kopf = e.gruppe !== gruppe ? `<div class="suchauswahl__gruppe" role="presentation">${esc((gruppe = e.gruppe))}</div>` : "";
+        return `${kopf}<div class="suchauswahl__eintrag" role="option" id="${idVon(i)}" data-i="${i}" aria-selected="${i === aktiv}">
+          <span>${esc(e.name)}</span>${e.zusatz ? `<span class="leise">${esc(e.zusatz)}</span>` : ""}</div>`;
+      }).join("")
+      : `<div class="suchauswahl__leer">Nichts gefunden.</div>`;
+    if (aktiv >= 0) feld.setAttribute("aria-activedescendant", idVon(aktiv));
+    else feld.removeAttribute("aria-activedescendant");
+    liste.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  }
+  function oeffne() {
+    filtere();
+    aktiv = treffer.length && feld.value !== startWert && feld.value.trim() ? 0 : -1;
+    liste.hidden = false;
+    feld.setAttribute("aria-expanded", "true");
+    zeichne();
+  }
+  function schliesse() {
+    liste.hidden = true;
+    feld.setAttribute("aria-expanded", "false");
+    feld.removeAttribute("aria-activedescendant");
+    aktiv = -1;
+  }
+  function nimm(i) {
+    const e = treffer[i];
+    if (!e) return;
+    feld.value = e.name;
+    schliesse();
+    waehle(e);
+  }
+  feld.addEventListener("focus", () => { feld.select(); oeffne(); });
+  feld.addEventListener("input", oeffne);
+  feld.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (liste.hidden) return oeffne();
+      if (!treffer.length) return;
+      aktiv = ev.key === "ArrowDown" ? (aktiv + 1) % treffer.length : (aktiv <= 0 ? treffer.length - 1 : aktiv - 1);
+      zeichne();
+    } else if (ev.key === "Enter") {
+      if (!liste.hidden && aktiv >= 0) { ev.preventDefault(); nimm(aktiv); }
+    } else if (ev.key === "Escape") {
+      if (!liste.hidden) { ev.preventDefault(); feld.value = startWert; schliesse(); }
+    }
+  });
+  // mousedown statt click: sonst verliert das Feld vorher den Fokus und die Liste ist schon zu
+  liste.addEventListener("mousedown", (ev) => ev.preventDefault());
+  liste.addEventListener("click", (ev) => {
+    const z = ev.target.closest("[data-i]");
+    if (z) nimm(Number(z.dataset.i));
+  });
+  feld.addEventListener("blur", () => setTimeout(() => {
+    if (document.activeElement === feld) return;
+    if (!feld.value.trim() || liste.hidden === false) feld.value = startWert;
+    schliesse();
+  }, 120));
+}
