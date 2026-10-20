@@ -1,11 +1,16 @@
 // Chat: Fragen an die App („Wer ist im Rückstand?“, „Wer macht die Heizung in der Lindenstraße?“)
 // Die KI liest mit Roberts Login. Sie ändert nichts selbst: Aktionen kommen als Vorschlag und laufen erst per Klick.
 import * as db from "./daten.js";
-import { datumDE } from "./dokumente.js";
-import { $, esc, melde, zustand, heuteISO, herunterladen, objektVon } from "./helfer.js";
-import { ICON_KI, mikroKnopf, verbindeDiktat, stoppeDiktat, geheZu } from "./ui.js";
+import { datumDE, mieterName } from "./dokumente.js";
+import { $, esc, melde, zustand, heuteISO, herunterladen, objektVon, dialogFormular, frage } from "./helfer.js";
+import {
+  ICON_KI, mikroKnopf, verbindeDiktat, stoppeDiktat, geheZu, istEmail, mieterListe, ortVon, alsBase64,
+  suchauswahlHtml, verbindeSuchauswahl,
+} from "./ui.js";
 import { aufgabeDialog } from "./start.js";
 import * as ablage from "./ablage.js";
+import { kontakteListe, kontaktName } from "./kontakte.js";
+import * as vorgaenge from "./vorgaenge.js";
 
 const VORSCHLAEGE = [
   "Was ist heute wichtig?",
@@ -167,7 +172,8 @@ function vorschlagHtml(a, i, j) {
   } else if (a.art === "entwurf") {
     knoepfe = k("oeffnen", "Schreiben öffnen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "pdf") {
-    knoepfe = k("ansehen", "Ansehen") + k("laden", "Herunterladen") + k("ablage", "In Ablage", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
+    knoepfe = k("ansehen", "Ansehen") + k("laden", "Herunterladen") + k("mail", "Per E-Mail", "knopf--primaer") + k("ablage", "In Ablage") +
+      k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "oeffnen") {
     knoepfe = k("oeffnen", esc(a.beschriftung));
   } else {
@@ -282,6 +288,7 @@ async function behandle(a, op, knopf) {
         herunterladen(await blob.arrayBuffer(), `${sauber(pdfName(a))}.pdf`, "application/pdf");
         return;
       }
+      case "mail": return await pdfPerMail(a, knopf);
       case "ablage": {
         // Der Ablage-Dialog zeigt den Namen nach eurem Schema (änderbar), Ordner schlägt die KI vor
         const e = pdfAblageEintrag(a);
@@ -293,6 +300,116 @@ async function behandle(a, op, knopf) {
     if (knopf) knopf.disabled = false;
     melde(err.message, "fehler");
   }
+}
+
+// ---------------------------------------------------------------------------
+// PDF aus dem Chat per E-Mail: Empfänger suchen (Adresse wird übernommen), Text prüfen, Senden per Klick
+// ---------------------------------------------------------------------------
+async function empfaengerListe() {
+  const [mieterL, dienstL, kontaktL] = await Promise.all([
+    mieterListe().catch(() => []), db.ladeDienstleister().catch(() => []), kontakteListe(true).catch(() => []),
+  ]);
+  const p = zustand.profil || {};
+  const eigene = [...new Set([p.email, p.antwort_email].filter(istEmail))];
+  return [
+    ...eigene.map((m) => ({ wert: `ich:${m}`, name: "An mich selbst", zusatz: m, gruppe: "Eigene Adresse", email: m, ziel: {} })),
+    ...mieterL.map((m) => ({ wert: m.id, name: mieterName(m), zusatz: ortVon(m), gruppe: "Mietparteien", email: m.email, ziel: { mieter_id: m.id } })),
+    ...dienstL.filter((d) => d.aktiv !== false).map((d) => ({ wert: `d-${d.id}`, name: d.name, zusatz: d.gewerk || "", gruppe: "Handwerker", email: d.email, ziel: { dienstleister_id: d.id } })),
+    ...kontaktL.map((x) => ({
+      wert: `k-${x.id}`, name: kontaktName(x), zusatz: [x.vorname || x.nachname ? x.firma : "", x.rolle].filter(Boolean).join(" · "),
+      gruppe: "Sonstige", email: x.email, ziel: { kontakt_id: x.id },
+    })),
+    ...(zustand.stamm?.kostentraeger || []).map((x) => ({ wert: `t-${x.id}`, name: x.name, zusatz: x.abteilung || "", gruppe: "Kostenträger", email: x.email, ziel: { kostentraeger_id: x.id } })),
+  ];
+}
+
+async function pdfPerMail(a, knopf) {
+  const d = a.daten || {};
+  if (knopf) knopf.disabled = true;
+  let eintraege;
+  try { eintraege = await empfaengerListe(); } finally { if (knopf) knopf.disabled = false; }
+  let gewaehlt = null;
+  const titel = d.titel || "Übersicht";
+  const auto = zustand.profil?.auto_ablage !== false;
+  const daten = await dialogFormular(`
+    <h2>PDF per E-Mail senden</h2>
+    ${suchauswahlHtml({ label: "An wen?", placeholder: "Name, Firma oder Amt suchen …", inline: true })}
+    <label class="feld"><span>E-Mail-Adresse</span><input name="an" type="email" required maxlength="200" autocomplete="off" spellcheck="false" placeholder="wird bei der Auswahl übernommen"></label>
+    <p class="feldhinweis" data-mail-hinweis hidden></p>
+    <label class="feld"><span>Betreff</span><input name="betreff" required maxlength="200" value="${esc(titel)}"></label>
+    <label class="feld"><span>Text</span><textarea name="text" rows="5" maxlength="4000">Guten Tag,
+
+anbei erhalten Sie „${esc(titel)}“ als PDF.</textarea></label>
+    <label class="feld"><span>Anhang (Dateiname)</span>
+      <span class="namefeld"><input name="dateiname" required maxlength="160" spellcheck="false" autocomplete="off" value="${esc(pdfName(a))}"><span class="namefeld__endung">.pdf</span></span></label>
+    <label class="checkfeld checkfeld--klein"><input type="checkbox" name="ablegen" ${auto ? "checked" : ""}> Zusätzlich in der Ablage speichern (unter diesem Namen)</label>
+    <p class="leise">Gruß, Signatur und Briefkopf werden angefügt. Bitte prüfen, ob der Empfänger alle Angaben in der PDF sehen darf
+      (z. B. Daten anderer Mietparteien).</p>
+    <div class="knopfreihe">
+      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      <button class="knopf knopf--primaer" value="senden">${zustand.ki?.versand ? "Jetzt senden" : "Weiter"}</button>
+    </div>`, {
+    breit: true,
+    vorbereiten: (form) => {
+      const hinweis = $("[data-mail-hinweis]", form);
+      verbindeSuchauswahl($(".suchauswahl", form), eintraege, (e) => {
+        gewaehlt = e;
+        form.an.value = istEmail(e.email) ? e.email : "";
+        hinweis.hidden = istEmail(e.email);
+        hinweis.textContent = istEmail(e.email) ? "" : `Für ${e.name} ist keine E-Mail-Adresse hinterlegt. Bitte eintragen.`;
+        (istEmail(e.email) ? form.betreff : form.an).focus();
+      });
+      // Eine von Hand geänderte Adresse gehört nicht mehr sicher zur Auswahl
+      form.an.addEventListener("input", () => { if (gewaehlt && form.an.value.trim().toLowerCase() !== String(gewaehlt.email || "").toLowerCase()) gewaehlt = { ...gewaehlt, ziel: {}, name: null }; });
+    },
+  });
+  if (!daten) return;
+  const an = String(daten.get("an") || "").trim();
+  if (!istEmail(an)) return melde("Bitte eine gültige E-Mail-Adresse eintragen.", "fehler");
+  const betreff = String(daten.get("betreff") || titel).trim();
+  const text = String(daten.get("text") || "").trim();
+  a.dateiname = String(daten.get("dateiname") || "").trim() || pdfName(a);
+  const dateiname = `${sauber(a.dateiname)}.pdf`;
+  const ablegen = daten.get("ablegen") === "on";
+  const ziel = gewaehlt?.ziel || {};
+  const name = gewaehlt?.name && gewaehlt.gruppe !== "Eigene Adresse" ? gewaehlt.name : null;
+
+  const { blob } = await pdfDatei(a)();
+  if (!zustand.ki?.versand) {
+    // Ohne Versand aus der App: PDF speichern, E-Mail-Programm öffnen, Anhang dort selbst anfügen
+    const ok = await frage("Im E-Mail-Programm öffnen", `<p>Der direkte Versand aus der App ist noch nicht eingerichtet.
+      Die PDF wird heruntergeladen und Ihr E-Mail-Programm öffnet sich. <strong>Bitte die PDF dort selbst anhängen.</strong></p>`, "Weiter");
+    if (!ok) return;
+    herunterladen(await blob.arrayBuffer(), dateiname, "application/pdf");
+    const voll = `${text}\n\nMit freundlichen Grüßen\n${zustand.profil?.email_signatur || [zustand.profil?.inhaber, zustand.profil?.firma].filter(Boolean).join("\n")}`;
+    window.location.href = `mailto:${encodeURIComponent(an)}?subject=${encodeURIComponent(betreff)}&body=${encodeURIComponent(voll)}`;
+    if (ablegen) await ablage.automatischAblegen({ ...pdfAblageEintrag(a), gegenueber: name || "" }, { vorgabe: { titel: a.dateiname }, immer: true });
+    return setze(a, "gespeichert", `Im E-Mail-Programm an ${an} geöffnet`);
+  }
+  if (blob.size > 6_000_000) return melde("Die PDF ist zu groß für den Versand (max. 6 MB).", "fehler");
+  melde("Wird gesendet …", "info");
+  // Als Antwort speichern, damit es im Verlauf (Akte, Kontakt, Vorgang) steht
+  const themaId = await vorgaenge.neuesThema({
+    betreff, an, mieterId: ziel.mieter_id, kontaktId: ziel.kontakt_id, dienstleisterId: ziel.dienstleister_id,
+    kostentraegerId: ziel.kostentraeger_id, objektId: d.objekt_id || null,
+  }).catch(() => null);
+  const antwort = await db.speichereAntwort(null, {
+    thema_id: themaId, mieter_id: ziel.mieter_id || null, dienstleister_id: ziel.dienstleister_id || null,
+    kontakt_id: ziel.kontakt_id || null, kostentraeger_id: ziel.kostentraeger_id || null,
+    empfaenger_email: an, empfaenger_name: name, betreff, text, anweisung: "PDF aus dem Chat",
+  });
+  try {
+    await db.funktion("versand", { antwort_id: antwort.id, an, anhang: { dateiname, daten: await alsBase64(blob) } });
+  } catch (err) {
+    melde(`${err.message} Der Text liegt als Entwurf unter „Neues Schreiben“.`, "fehler");
+    return;
+  }
+  if (ziel.kontakt_id) {
+    await db.speichereVerlauf(null, { kontakt_id: ziel.kontakt_id, art: "email", datum: heuteISO(), text: `E-Mail mit PDF gesendet: ${betreff}` }).catch(() => null);
+  }
+  melde(`E-Mail mit „${dateiname}“ an ${an} gesendet.`, "ok");
+  setze(a, "gespeichert", `Per E-Mail an ${name || an} gesendet`);
+  if (ablegen) await ablage.automatischAblegen({ ...pdfAblageEintrag(a), gegenueber: name || "" }, { vorgabe: { titel: a.dateiname }, immer: true });
 }
 
 export function oeffneChat() {
