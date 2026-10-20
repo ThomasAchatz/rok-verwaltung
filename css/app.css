@@ -820,3 +820,80 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
 .vorschau__name { margin: 0 0 0.6rem; }
 .vorschau__namezeile { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
 .vorschau__namezeile input { flex: 1 1 auto; min-width: 0; font-size: 0.88rem; }
+
+/* --- Ablagefläche (Dateien hineinziehen) ------------------------------- */
+.ablegeflaeche {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.2rem 0.9rem;
+  padding: 1.1rem 1.25rem; margin-bottom: 1.25rem; cursor: pointer;
+  border: 2px dashed #b9c3d1; border-radius: var(--radius); background: var(--flaeche);
+  transition: background 0.15s, border-color 0.15s;
+}
+.ablegeflaeche:hover { border-color: var(--tinte-hell); background: #f8fafd; }
+.ablegeflaeche:focus-within { outline: 2px solid var(--fokus); outline-offset: 2px; }
+.ablegeflaeche--aktiv { border-color: var(--bezahlt); background: var(--bezahlt-zart); }
+.ablegeflaeche__symbol { grid-row: span 2; color: var(--tinte-hell); display: flex; }
+.ablegeflaeche--aktiv .ablegeflaeche__symbol { color: var(--bezahlt); }
+.ablegeflaeche__text { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.5rem; color: var(--tinte); }
+.ablegeflaeche__hinweis { font-size: 0.8rem; }
+.ablegeflaeche__unter { margin: -0.75rem 0 1.25rem; font-size: 0.8rem; }
+.ablegeflaeche--klein { margin: 0.75rem 1.1rem; padding: 0.7rem 0.9rem; border-width: 1.5px; }
+.ablegeflaeche--klein .ablegeflaeche__hinweis { display: none; }
+.ablegeflaeche--klein .ablegeflaeche__symbol { grid-row: auto; }
+.ablegeflaeche--klein svg { width: 22px; height: 22px; }
+
+/* --- Objekte: Karten und Ordnerbaum ----------------------------------- */
+.objektkarten { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 0.75rem; }
+.objektkarte {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.9rem;
+  padding: 1rem 1.1rem; background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius);
+  text-decoration: none; color: inherit; box-shadow: var(--schatten);
+}
+.objektkarte:hover { border-color: var(--tinte-hell); background: #f8fafd; }
+.objektkarte__symbol {
+  width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center;
+  background: var(--tinte-zart); color: var(--tinte);
+}
+.objektkarte__text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.objektkarte__name { font-weight: 600; color: var(--tinte); overflow-wrap: anywhere; }
+.objektkarte__zahlen { font-size: 0.82rem; color: var(--text-leise); margin-top: 0.15rem; }
+.objektkarte__pfeil { font-size: 1.6rem; color: var(--text-leise); line-height: 1; }
+
+.baum { padding: 0.35rem 0; }
+.baum__ordner > summary {
+  display: flex; align-items: center; gap: 0.55rem; padding: 0.55rem 1.1rem; cursor: pointer; list-style: none;
+  min-height: 2.6rem;
+}
+.baum__ordner > summary::-webkit-details-marker { display: none; }
+.baum__ordner > summary::before {
+  content: "›"; display: inline-block; width: 0.7rem; color: var(--text-leise); transition: transform 0.15s;
+  font-size: 1.1rem; line-height: 1;
+}
+.baum__ordner[open] > summary::before { transform: rotate(90deg); }
+.baum__ordner > summary:hover { background: #f6f8fb; }
+.baum__symbol { color: var(--messing); display: flex; flex: none; }
+.baum__ordner--leer > summary .baum__symbol { color: #c9cfd8; }
+.baum__name { font-weight: 600; color: var(--tinte); min-width: 0; overflow-wrap: anywhere; }
+.baum__ordner--leer > summary .baum__name { font-weight: 500; color: var(--text-leise); }
+.baum__zahl {
+  margin-left: auto; min-width: 1.6rem; text-align: center; font-size: 0.78rem; color: var(--text-leise);
+  background: #eef0f3; border-radius: 999px; padding: 0 0.45rem;
+}
+.baum__inhalt { margin-left: 1.55rem; border-left: 1px solid var(--linie); }
+.baum__inhalt > .dok { padding-left: 0.9rem; }
+.baum__leer { padding: 0.35rem 1.1rem 0.6rem; font-size: 0.82rem; }
+.baum > .baum__ordner + .baum__ordner { border-top: 1px solid #edf0f4; }
+@media (max-width: 480px) {
+  .ablegeflaeche { padding: 0.9rem 1rem; }
+  .baum__ordner > summary { padding: 0.55rem 0.75rem; }
+  .baum__inhalt { margin-left: 0.9rem; }
+  .baum__ordner .marker { display: none; }
+}
+.dok--neu { background: var(--bezahlt-zart); box-shadow: inset 3px 0 0 var(--bezahlt); }
+/* Schmale Bildschirme: „Einstellungen“ als Zahnrad, damit sechs Menüpunkte in eine Zeile passen */
+.nav-kurz { display: none; vertical-align: middle; }
+@media (max-width: 520px) {
+  .navigation .nav-lang { display: none; }
+  .navigation .nav-kurz { display: inline-block; }
+}
+/* Touch-Geräte (Handy, Tablet): Hineinziehen gibt es dort nicht, nur „Dateien auswählen“ */
+@media (hover: none) and (pointer: coarse) { .nur-maus { display: none; } }

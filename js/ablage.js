@@ -139,6 +139,53 @@ async function istPdfDatei(datei) {
 }
 
 // ---------------------------------------------------------------------------
+// Ablagefläche: Dateien hineinziehen oder auswählen (wie ein Upload-Feld).
+// Ist eine Fläche auf der Seite, nimmt die ganze Seite Dateien an; sonst öffnet der Browser
+// fallengelassene Dateien nicht versehentlich.
+// ---------------------------------------------------------------------------
+const DATEI_TYPEN = "image/*,application/pdf,.docx,.xlsx," + DOCX_TYP + "," + XLSX_TYP;
+const ICON_PLUS_GROSS = `<svg viewBox="0 0 24 24" width="30" height="30"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM11 18h2v-4h3l-4-4-4 4h3v4z"/></svg>`;
+const flaechenOptionen = new WeakMap();
+export function ablegeflaecheHtml({ text = "Dateien hierher ziehen", klein = false } = {}) {
+  return `
+    <label class="ablegeflaeche ${klein ? "ablegeflaeche--klein" : ""}" data-ablegeflaeche>
+      <input type="file" accept="${DATEI_TYPEN}" multiple hidden>
+      <span class="ablegeflaeche__symbol" aria-hidden="true">${ICON_PLUS_GROSS}</span>
+      <span class="ablegeflaeche__text"><strong class="nur-maus">${esc(text)}</strong> <span class="nur-breit nur-maus">oder</span>
+        <span class="knopf knopf--klein ablegeflaeche__knopf">Dateien auswählen</span></span>
+      <span class="ablegeflaeche__hinweis leise">Fotos, PDF, Word, Excel · auch mehrere · Die KI benennt sie nach dem Ablage-Schema und schlägt den Ordner vor.</span>
+    </label>`;
+}
+/** optionen wie bei erfasseAlle: { objektId, nurAblage } */
+export function verbindeAblegeflaeche(el, optionen = {}) {
+  if (!el) return;
+  flaechenOptionen.set(el, optionen);
+  const input = $("input[type=file]", el);
+  input.addEventListener("change", () => { const d = [...input.files]; input.value = ""; erfasseAlle(d, optionen); });
+}
+const hatDateien = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+const aktiveFlaeche = () => $("[data-ablegeflaeche]");
+let ziehTiefe = 0;
+const markiere = (an) => aktiveFlaeche()?.classList.toggle("ablegeflaeche--aktiv", an);
+document.addEventListener("dragenter", (e) => { if (hatDateien(e)) { ziehTiefe++; markiere(true); } });
+document.addEventListener("dragleave", (e) => { if (hatDateien(e) && --ziehTiefe <= 0) { ziehTiefe = 0; markiere(false); } });
+document.addEventListener("dragover", (e) => {
+  if (!hatDateien(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = aktiveFlaeche() && !$("dialog[open]") ? "copy" : "none";
+});
+document.addEventListener("drop", (e) => {
+  if (!hatDateien(e)) return;
+  e.preventDefault();
+  ziehTiefe = 0; markiere(false);
+  const el = aktiveFlaeche();
+  if ($("dialog[open]")) return;
+  if (!el) return melde("Zum Ablegen bitte unter „Objekte“ ein Haus öffnen und die Dateien dort hineinziehen.", "info");
+  const dateien = [...e.dataTransfer.files];
+  if (dateien.length) erfasseAlle(dateien, flaechenOptionen.get(el) || {});
+});
+
+// ---------------------------------------------------------------------------
 // Mehrere Dateien nacheinander erfassen (je Datei ein Dialog), am Ende einmal weiter
 // ---------------------------------------------------------------------------
 export async function erfasseAlle(dateien, optionen = {}) {
@@ -158,8 +205,9 @@ export async function erfasseAlle(dateien, optionen = {}) {
 // Foto, PDF, Word oder Excel erfassen: die KI liest, schlägt Ablage, Ordner und Dateinamen vor
 // objektId: Haus vorbelegen (null = Allgemein), nurAblage: kein Postfach (z. B. auf der Seite eines Hauses)
 // nr/von: Position bei mehreren Dateien; weiter: false = nicht selbst weiterspringen (Rückgabe { ziel })
+// ablageZiel: (objektId) => Seite nach dem Ablegen (Standard: Seite des Hauses)
 // ---------------------------------------------------------------------------
-export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von = 1, weiter = true } = {}) {
+export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von = 1, weiter = true, ablageZiel = null } = {}) {
   if (!datei) return null;
   const vorname = von > 1 ? `„${datei.name || "Datei"}“: ` : "";
   if (datei.size > MAX_DATEI) { melde(vorname + "Die Datei ist zu groß (höchstens 15 MB).", "fehler"); return null; }
@@ -297,7 +345,7 @@ export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von 
   if (nurAblage || daten.get("ziel") === "dokument") {
     const objekt_id = daten.get("objekt_id") || null;
     try {
-      await db.legeDokumentAb({
+      const neu = await db.legeDokumentAb({
         objekt_id,
         mieter_id: daten.get("mieter_id") || null,
         ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: daten.get("mieter_id") || null, wohnungId: kiTeile.wohnungId }),
@@ -310,8 +358,9 @@ export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von 
         pfad: `${objekt_id || "allgemein"}/${crypto.randomUUID()}.${endung}`,
         typ, groesse: blob.size,
       }, blob);
+      zustand.zuletztAbgelegt = neu?.id || null;
       melde(von > 1 ? `Abgelegt: ${String(daten.get("titel") || "").trim()}` : "Abgelegt.", "ok");
-      return fertig(`#/objekt/${objekt_id || "allgemein"}`, true);
+      return fertig(ablageZiel ? ablageZiel(objekt_id) : `#/objekt/${objekt_id || "allgemein"}`, true);
     } catch (err) {
       melde(err.message, "fehler");
     }
@@ -378,16 +427,18 @@ function nachOrdner(liste, reihenfolge, { unbekannteBehalten = false } = {}) {
   });
 }
 
-export function dokumentListe(liste, { leer = "Keine Dokumente." } = {}) {
-  if (!liste.length) return `<div class="leer">${esc(leer)}</div>`;
-  return nachOrdner(liste, zustand.dokOrdner || DOKUMENT_ORDNER, { unbekannteBehalten: true }).map(([ordner, l]) => `
-    <div class="ordner"><h3 class="ordner__titel">${esc(ordnerAnzeige(ordner))} <span class="leise">${l.length}</span></h3>
-      ${l.map((d) => `
+/** Ein Dokument als Knopf (öffnet über verbindeListen) */
+export const dokKnopf = (d) => `
         <button type="button" class="dok" data-dok="${esc(d.id)}">
           <span class="dok__icon ${symbolVon(d.typ)[1]}">${symbolVon(d.typ)[0]}</span>
           <span class="dok__text"><span class="dok__titel">${esc(d.titel).replace(/_/g, "_<wbr>")}</span>
             <span class="leise">${esc([d.datum ? datumDE(d.datum) : "", d.art, d.zusammenfassung].filter(Boolean).join(" · "))}</span></span>
-        </button>`).join("")}
+        </button>`;
+export function dokumentListe(liste, { leer = "Keine Dokumente." } = {}) {
+  if (!liste.length) return `<div class="leer">${esc(leer)}</div>`;
+  return nachOrdner(liste, zustand.dokOrdner || DOKUMENT_ORDNER, { unbekannteBehalten: true }).map(([ordner, l]) => `
+    <div class="ordner"><h3 class="ordner__titel">${esc(ordnerAnzeige(ordner))} <span class="leise">${l.length}</span></h3>
+      ${l.map(dokKnopf).join("")}
     </div>`).join("");
 }
 

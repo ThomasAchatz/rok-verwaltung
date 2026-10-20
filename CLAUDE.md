@@ -77,5 +77,10 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Upload: `erfasseAlle(dateien, opt)` → je Datei `erfasse()` (Rückgabe { ziel, abgelegt } bzw. { abbruch }).
   KI-Aktion `brief_lesen` nimmt `bild` (Foto/PDF) oder `datei_text: { text, art: "word"|"excel" }` plus `dateiname`;
   Text aus Office-Dateien liest `js/officetext.js` im Browser, `liesDokument()` entfernt IBANs vor der KI.
+- Objekte: `js/objekte.js` (Routen `#/objekte`, `#/ablage/<id|allgemein>`), `ordnerBaum()` aus Ordnerliste + Dokumenten,
+  offene Ordner in `zustand.ordnerOffen`, neue Datei über `zustand.zuletztAbgelegt` markiert.
+  Ablagefläche: `ablegeflaecheHtml()` + `verbindeAblegeflaeche(el, { objektId, nurAblage, ablageZiel })` in `js/ablage.js`;
+  ein Dokument-weiter Drop-Handler leitet auf die Fläche der Seite um (ohne Fläche: Hinweis).
+  Menü: 6 Punkte; unter 520 px wird „Einstellungen“ zum Zahnrad (`.nav-lang`/`.nav-kurz`).
 - Stammdaten-Maske: `js/stammdaten.js` (Route `#/stammdaten`, Links in Einstellungen und Mieterliste). Löschen nur,
   wenn leer (Haus ohne Wohnungen, Wohnung ohne Mietpartei); Haus löschen kaskadiert auf Wissen/Handwerker des Hauses.

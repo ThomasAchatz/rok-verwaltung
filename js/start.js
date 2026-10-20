@@ -303,7 +303,7 @@ export async function zeigeObjekt(id) {
   const neuLaden = () => zeigeObjekt(id);
 
   inhalt().innerHTML = `
-    <a class="zurueck" href="#/uebersicht">Zur Übersicht</a>
+    <a class="zurueck" href="#/objekte">Alle Objekte</a>
     <div class="kopf">
       <div><h1>${esc(titel)}</h1>
         <p>${allgemein ? "Unterlagen, Wissen und Notizen, die zu keinem bestimmten Haus gehören." : esc([o.strasse, [o.plz, o.ort].filter(Boolean).join(" ")].filter(Boolean).join(", "))}</p></div>
@@ -326,8 +326,10 @@ export async function zeigeObjekt(id) {
       </details>`}
       <details class="flaeche ausklapp" ${dokumente.length && dokumente.length <= 12 ? "open" : ""}>
         <summary>Dokumente (${dokumente.length})</summary>
+        ${ablage.ablegeflaecheHtml({ text: "Dateien hierher ziehen", klein: true })}
         ${ablage.dokumentListe(dokumente, { leer: "Noch keine Dokumente. Mit „Dokument ablegen“ ein Foto oder PDF hinzufügen." })}
         <div class="flaeche__fuss knopfreihe">
+          <a class="knopf knopf--klein knopf--primaer" href="#/ablage/${esc(id)}">Alle Ordner öffnen</a>
           <button type="button" class="knopf knopf--klein" id="ordner-bearbeiten">Ordner bearbeiten</button>
           ${dokumente.length ? `<button type="button" class="knopf knopf--klein" id="zip">Als ZIP herunterladen</button>` : ""}
         </div>
@@ -364,6 +366,7 @@ export async function zeigeObjekt(id) {
   ablage.verbindeListen(inhalt(), { dokumente, wissen: wissenHier, dienstleister: dienstHier, objektId, nachher: neuLaden });
   $("#notiz-neu").addEventListener("click", () => aufgabeDialog({ objekt_id: objektId }, { nachher: neuLaden }));
   $("#erfassen").addEventListener("change", (e) => { const d = [...e.target.files]; e.target.value = ""; ablage.erfasseAlle(d, { objektId, nurAblage: true }); });
+  ablage.verbindeAblegeflaeche($("[data-ablegeflaeche]", inhalt()), { objektId, nurAblage: true });
   $("#wissen-sprechen").addEventListener("click", () => ablage.wissenEinsprechen({ objektId, nachher: neuLaden }));
   $("#wissen-neu").addEventListener("click", () => ablage.bearbeiteWissen({ objekt_id: objektId }, { nachher: neuLaden }));
   $("#dienst-neu").addEventListener("click", () => ablage.bearbeiteDienstleister({ objekt_id: objektId }, { nachher: neuLaden }));

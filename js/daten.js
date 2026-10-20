@@ -301,6 +301,10 @@ export async function ladeDokumente({ objektId, mieterId = null } = {}) {
   if (mieterId) q = q.eq("mieter_id", mieterId);
   return pruefe(await q);
 }
+/** Nur Haus und Ordner aller Dokumente (für die Zahlen in der Objektübersicht) */
+export async function ladeDokumentZahlen() {
+  return pruefe(await sb.from("dokumente").select("objekt_id,ordner").limit(10000));
+}
 export async function legeDokumentAb(zeile, blob) {
   const { error } = await sb.storage.from("dokumente").upload(zeile.pfad, blob, { upsert: false, contentType: blob.type });
   if (error) throw new Error("Datei konnte nicht gespeichert werden: " + error.message);

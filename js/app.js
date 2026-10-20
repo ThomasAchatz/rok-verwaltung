@@ -13,6 +13,7 @@ import * as postfach from "./postfach.js";
 import * as start from "./start.js";
 import * as ablage from "./ablage.js";
 import * as stamm from "./stammdaten.js";
+import * as objekte from "./objekte.js";
 import { oeffneChat } from "./chat.js";
 import {
   MONATE_KURZ, monatISO, letzteMonate, mietbuch, LEGENDE, naechsterSchritt, mieterZeile, schreibenKachel, oeffneSchreiben, emailDaten,
@@ -147,7 +148,7 @@ window.addEventListener("hashchange", () => route());
 async function route() {
   if ($("#app").hidden) return;
   const [, teil = "uebersicht", id] = (location.hash || "#/uebersicht").split("/");
-  const navTeil = { schreiben: "postfach", entwurf: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "uebersicht", stammdaten: "mieter" }[teil] || teil;
+  const navTeil = { schreiben: "postfach", entwurf: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "objekte", ablage: "objekte", stammdaten: "mieter" }[teil] || teil;
   for (const a of $$("[data-nav]")) {
     if (a.dataset.nav === navTeil) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -161,6 +162,8 @@ async function route() {
     else if (teil === "schreiben") await postfach.zeigeNeuesSchreiben(id || null);
     else if (teil === "entwurf" && id) await postfach.zeigeNeuesSchreiben(null, id);
     else if (teil === "objekt" && id) await start.zeigeObjekt(id);
+    else if (teil === "objekte") await objekte.zeigeObjekte();
+    else if (teil === "ablage" && id) await objekte.zeigeOrdner(id);
     else if (teil === "wissen") await ablage.zeigeWissen();
     else if (teil === "vorlagen") await zeigeVorlagen();
     else if (teil === "stammdaten") await stamm.zeigeStammdaten();
