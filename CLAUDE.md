@@ -94,6 +94,9 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Empfänger-Suche: `suchauswahlHtml()` + `verbindeSuchauswahl(box, eintraege, waehle)` in `js/ui.js` (Combobox, Gruppen).
   `zeigeNeuesSchreiben(ziel)`: Mieter-ID | `d-` Handwerker | `k-` Kontakt | `t-<kt>[.<mieter>]` Kostenträger; `baueEntwurf` kennt
   `k.kontakt` / `k.kostentraeger` (Spalten `antworten.kontakt_id/kostentraeger_id`, KI `entwurf` mit `kontakt_id/kostentraeger_id`).
+  Empfänger wechseln (`wechsle()`): `el.mitnehmen()` von baueEntwurf → `zustand.vorbelegung.uebernahme`; Anweisung, Betreff/Text
+  und ein gespeicherter Entwurf (`k.uebernahme.antwort`) ziehen um, der Entwurf wird auf den neuen Empfänger umgeschrieben (kein zweiter).
+  Chat-Aktion `entwurf` kennt auch `dienstleister_id`, `kostentraeger_id`, `objekt_id` (→ `zustand.hausVorgabe`).
 - Chat-Vorschläge (`js/chat.js`): Karte je Aktion mit Status (`a.status` gespeichert/abgelehnt), Knöpfe `data-vorschlag="i:j:op"`
   (annehmen/aendern/ablehnen/oeffnen/ansehen/laden/ablage). PDF-Aktion `pdf` { titel, einleitung, abschnitte, objekt_id, mieter_id }
   → `ablage.pdfEintrag` (Name im Feld `data-pdfname`, Ablage über `inAblageDialog` mit `e.thema` = Titel).

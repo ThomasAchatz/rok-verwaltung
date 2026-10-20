@@ -644,7 +644,9 @@ async function auftragStarten(n, mieter, bilder, objekt) {
 // auftrag: Entwurf eines Auftrags an einen Handwerker (antwort.art = "auftrag")
 // ---------------------------------------------------------------------------
 function baueEntwurf(el, k) {
-  let antwort = k.antwort;
+  // Empfänger gewechselt: Anweisung und Text (ggf. der schon gespeicherte Entwurf) kommen von der vorigen Seite mit
+  const umzug = !k.antwort && !k.nachricht ? k.uebernahme || null : null;
+  let antwort = k.antwort || umzug?.antwort || null;
   const kiDa = !!zustand.ki?.ki;
   const standardAn = k.nachricht?.absender_email || k.dienstleister?.email || k.kontakt?.email || k.kostentraeger?.email || k.mieter?.email || "";
   const signatur = signaturText();
@@ -676,7 +678,7 @@ function baueEntwurf(el, k) {
           <div class="ki-hinweise" data-teil="hinweise" hidden></div>
           ${k.auftrag && antwort?.anhaenge?.length ? `<p class="leise">Im Anhang: ${antwort.anhaenge.length} ${antwort.anhaenge.length === 1 ? "Foto" : "Fotos"} aus der Nachricht.</p>` : ""}
           <div class="formraster formraster--zwei">
-            <label class="feld"><span>An (E-Mail)</span><input type="email" name="an" value="${esc(antwort?.empfaenger_email || standardAn)}" placeholder="name@beispiel.de" autocomplete="off"></label>
+            <label class="feld"><span>An (E-Mail)</span><input type="email" name="an" value="${esc((umzug ? "" : antwort?.empfaenger_email) || standardAn)}" placeholder="name@beispiel.de" autocomplete="off"></label>
             <label class="feld"><span>Betreff</span><input name="betreff" value="${esc(antwort?.betreff || "")}"></label>
           </div>
           <label class="feld"><span>Text</span><textarea name="text" rows="10" class="entwurf__text">${esc(antwort?.text || "")}</textarea></label>
@@ -729,7 +731,7 @@ function baueEntwurf(el, k) {
   }
 
   // Vorgang: der der Nachricht, ein vorgegebener (aus der Vorgangsseite) oder ein neuer
-  let eigenesThema = !k.nachricht && !k.themaId;
+  let eigenesThema = umzug ? !!umzug.eigenesThema : !k.nachricht && !k.themaId;
   async function themaId(v) {
     if (antwort?.thema_id) return antwort.thema_id;
     if (k.nachricht) return vorgaenge.themaFuerNachricht(k.nachricht);
@@ -1046,6 +1048,28 @@ function baueEntwurf(el, k) {
   for (const b of $$("[data-k]", el)) {
     b.addEventListener("click", () => aktionen[b.dataset.k](b));
   }
+
+  // Für einen Wechsel des Empfängers: was bisher eingegeben bzw. entworfen wurde
+  el.mitnehmen = () => ({
+    ...werte(), editor: !editor.hidden, eigenesThema,
+    antwortId: antwort?.id && (!antwort.status || antwort.status === "entwurf") && !k.nachricht && !k.auftrag ? antwort.id : null,
+  });
+  if (umzug && (umzug.antwort || (umzug.editor && (umzug.text || umzug.betreff)))) {
+    // Die Felder der vorigen Seite sind neuer als der gespeicherte Entwurf (ungespeicherte Änderungen)
+    zeigeEditor(umzug.editor ? { betreff: umzug.betreff, text: umzug.text } : null);
+    el.querySelector('[data-k="selbst"]')?.remove();
+    zeigeHinweise(["Der Text wurde für den vorigen Empfänger geschrieben: Anrede und Inhalt prüfen oder „Neu entwerfen“."]);
+    if (umzug.antwort) {
+      // Den Entwurf auf den neuen Empfänger umschreiben (alte Zuordnung löschen), den eigenen Vorgang mitnehmen
+      const ziel = {
+        mieter_id: k.mieter?.id || null, dienstleister_id: k.dienstleister?.id || null,
+        kontakt_id: k.kontakt?.id || null, kostentraeger_id: k.kostentraeger?.id || null,
+      };
+      speichere(ziel).then(async (a) => {
+        if (eigenesThema && a?.thema_id) await db.speichereThema(a.thema_id, { ...ziel, objekt_id: k.objektId?.() || null, partner_email: feld("an").value.trim().toLowerCase() || null }).catch(() => null);
+      }).catch((err) => melde(err.message, "fehler"));
+    }
+  }
 }
 
 // Druckansicht für einen Auftrag (Text und Fotos), ohne Datei-Download
@@ -1186,9 +1210,11 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
   ];
   const gewaehlt = kontakt ? kontaktName(kontakt) : dienstleister ? dienstleister.name : kostentraeger ? kostentraeger.name : mieter ? mieterName(mieter) : "";
   const gruppe = kontakt ? "Sonstige" : dienstleister ? "Handwerker" : kostentraeger ? "Kostenträger" : mieter ? "Mietpartei" : "";
+  const hausVorgabe = zustand.hausVorgabe || null;
+  zustand.hausVorgabe = null;
   const hausWahl = (vorwahl) => `<label class="feld feld--eng feld--oben"><span>Betrifft Haus (optional)</span><select id="empf-haus" ${antwort ? "disabled" : ""}>
       <option value="">–</option>
-      ${zustand.stamm.objekte.map((x) => `<option value="${esc(x.id)}" ${x.id === vorwahl ? "selected" : ""}>${esc(x.bezeichnung)}</option>`).join("")}
+      ${zustand.stamm.objekte.map((x) => `<option value="${esc(x.id)}" ${x.id === (hausVorgabe || vorwahl) ? "selected" : ""}>${esc(x.bezeichnung)}</option>`).join("")}
     </select></label>`;
   const mail = (adresse) => `<dt>E-Mail</dt><dd>${adresse ? esc(adresse) : `<span class="betrag--offen">keine hinterlegt</span>`}</dd>`;
   const telefon = (t) => (t ? `<dt>Telefon</dt><dd><a href="tel:${esc(String(t).replace(/[^\d+]/g, ""))}">${esc(t)}</a></dd>` : "");
@@ -1258,11 +1284,16 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
     </div>`;
 
   const vorbelegt = zustand.vorbelegung && !zustand.vorbelegung.nachricht_id ? zustand.vorbelegung.anweisung : null;
+  let uebernahme = !antwort && zustand.vorbelegung && !zustand.vorbelegung.nachricht_id ? zustand.vorbelegung.uebernahme || null : null;
   zustand.vorbelegung = null;
+  if (uebernahme?.antwortId) {
+    const a = await db.ladeAntwort(uebernahme.antwortId).catch(() => null);
+    uebernahme = { ...uebernahme, antwort: a && (!a.status || a.status === "entwurf") ? a : null };
+  }
   const themaVorgabe = antwort ? null : zustand.themaVorgabe || null;
   zustand.themaVorgabe = null;
   baueEntwurf($("#entwurf"), {
-    nachricht: null, mieter, dienstleister, kontakt, kostentraeger, antwort, anweisung: vorbelegt, themaId: themaVorgabe,
+    nachricht: null, mieter, dienstleister, kontakt, kostentraeger, antwort, anweisung: vorbelegt, themaId: themaVorgabe, uebernahme,
     hinweise: antwort ? zustand.entwurfHinweise?.get(antwort.id) : null,
     objektId: () => $("#empf-haus")?.value || null,
     nachEnde: () => geheZu(zurueck),
@@ -1271,10 +1302,20 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
   if (ohneMail && !(dienstleister || kontakt || kostentraeger).email) {
     melde(`Für ${gewaehlt} ist keine E-Mail hinterlegt. Bitte im Feld „An“ eintragen oder als Brief schicken.`, "info");
   }
+  // Empfänger wechseln: Anweisung, Text und Entwurf wandern mit (Roberts Wunsch: der KI-Vorschlag soll bleiben)
+  const wechsle = (ziel) => {
+    const alt = $("#entwurf")?.mitnehmen?.();
+    if (alt && (alt.anweisung || alt.antwortId || (alt.editor && alt.text.trim()))) {
+      zustand.vorbelegung = {
+        nachricht_id: null, anweisung: alt.anweisung,
+        uebernahme: { betreff: alt.betreff, text: alt.text, editor: alt.editor, antwortId: alt.antwortId, eigenesThema: alt.eigenesThema },
+      };
+    }
+    geheZu(`#/schreiben/${ziel}`);
+  };
   const such = $("#empfaenger .suchauswahl");
-  if (such) verbindeSuchauswahl(such, eintraege, (e) => geheZu(`#/schreiben/${e.wert}`));
-  $("#empf-kt-mieter")?.addEventListener("change", (e) =>
-    geheZu(`#/schreiben/t-${kostentraeger.id}${e.target.value ? "." + e.target.value : ""}`));
+  if (such) verbindeSuchauswahl(such, eintraege, (e) => wechsle(e.wert));
+  $("#empf-kt-mieter")?.addEventListener("change", (e) => wechsle(`t-${kostentraeger.id}${e.target.value ? "." + e.target.value : ""}`));
 }
 
 // ---------------------------------------------------------------------------

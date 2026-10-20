@@ -56,7 +56,9 @@ const WERKZEUGE = [
     description:
       "Schlägt Robert eine Aktion vor. Sie wird NICHT ausgeführt: Robert nimmt sie per Klick an oder lehnt sie ab. Arten: " +
       "notiz (daten: titel, notiz?, faellig_am? JJJJ-MM-TT, mieter_id?, objekt_id?, kontakt_id?), " +
-      "entwurf (daten: mieter_id? oder nachricht_id? oder kontakt_id?, anweisung): öffnet 'Neues Schreiben' mit der Anweisung, " +
+      "entwurf (daten: genau EIN Empfänger: nachricht_id? (Antwort) oder mieter_id? oder kontakt_id? oder dienstleister_id? (Handwerker) oder kostentraeger_id? (Amt, optional mit mieter_id), " +
+      "objekt_id? (betroffenes Haus), anweisung): öffnet 'Neues Schreiben' an genau diesen Empfänger mit der Anweisung. " +
+      "Geht das Schreiben an einen Handwerker, dienstleister_id verwenden, nicht die Mietpartei; die Anweisung beschreibt nur den Inhalt, " +
       `wissen (daten: titel, inhalt, ordner aus [${WISSEN_ORDNER.join(", ")}], objekt_id?), ` +
       "oeffnen (daten: ziel aus [mieter, kontakt, objekt, nachricht, postfach, wissen], id?), " +
       "pdf (daten: titel, einleitung?, abschnitte: [{ titel, text }], objekt_id?, mieter_id?): eine PDF-Datei, z. B. eine Liste oder Übersicht; " +
@@ -148,7 +150,7 @@ async function fuehreAus(werkzeug: string, e: any, zugriff: Zugriff, aktionen: u
         rest(`wissen?objekt_id=eq.${id}&select=id,titel,ordner`, zugriff),
         rest(`dokumente?objekt_id=eq.${id}&select=id,titel,ordner,datum&order=datum.desc.nullslast&limit=30`, zugriff),
         rest(`aufgaben?objekt_id=eq.${id}&status=eq.offen&select=id,titel,faellig_am`, zugriff),
-        rest(`dienstleister?or=(objekt_id.is.null,objekt_id.eq.${id})&aktiv=is.true&select=name,gewerk,telefon,email`, zugriff),
+        rest(`dienstleister?or=(objekt_id.is.null,objekt_id.eq.${id})&aktiv=is.true&select=id,name,gewerk,telefon,email`, zugriff),
       ]);
       if (!o) return { fehler: "nicht gefunden" };
       return {
@@ -222,9 +224,11 @@ export function pruefeAktion(e: any): Record<string, unknown> | null {
         kontakt_id: opt(d.kontakt_id),
       } };
     case "entwurf":
-      if (!opt(d.mieter_id) && !opt(d.nachricht_id) && !opt(d.kontakt_id)) return null;
+      if (!opt(d.mieter_id) && !opt(d.nachricht_id) && !opt(d.kontakt_id) && !opt(d.dienstleister_id) && !opt(d.kostentraeger_id)) return null;
       return { art: "entwurf", beschriftung, daten: {
-        mieter_id: opt(d.mieter_id), nachricht_id: opt(d.nachricht_id), kontakt_id: opt(d.kontakt_id), anweisung: String(d.anweisung ?? "").slice(0, 2000),
+        mieter_id: opt(d.mieter_id), nachricht_id: opt(d.nachricht_id), kontakt_id: opt(d.kontakt_id),
+        dienstleister_id: opt(d.dienstleister_id), kostentraeger_id: opt(d.kostentraeger_id), objekt_id: opt(d.objekt_id),
+        anweisung: String(d.anweisung ?? "").slice(0, 2000),
       } };
     case "wissen":
       if (!String(d.titel ?? "").trim() || !String(d.inhalt ?? "").trim()) return null;

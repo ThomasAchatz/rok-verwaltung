@@ -271,7 +271,12 @@ async function behandle(a, op, knopf) {
           zustand.vorbelegung = { nachricht_id: d.nachricht_id || null, anweisung: d.anweisung || "" };
           dlg.close();
           melde("Anweisung eingetragen. Mit „Entwurf mit KI“ den Entwurf erstellen.", "info");
-          return geheZu(d.nachricht_id ? `#/postfach/${d.nachricht_id}` : d.kontakt_id ? `#/schreiben/k-${d.kontakt_id}` : d.mieter_id ? `#/schreiben/${d.mieter_id}` : "#/schreiben");
+          if (d.objekt_id) zustand.hausVorgabe = d.objekt_id;
+          return geheZu(d.nachricht_id ? `#/postfach/${d.nachricht_id}`
+            : d.dienstleister_id ? `#/schreiben/d-${d.dienstleister_id}`
+            : d.kontakt_id ? `#/schreiben/k-${d.kontakt_id}`
+            : d.kostentraeger_id ? `#/schreiben/t-${d.kostentraeger_id}${d.mieter_id ? "." + d.mieter_id : ""}`
+            : d.mieter_id ? `#/schreiben/${d.mieter_id}` : "#/schreiben");
         }
         dlg.close();
         return geheZu(ZIELE[d.ziel] ? ZIELE[d.ziel] + d.id : d.ziel === "wissen" ? "#/wissen" : "#/postfach");
