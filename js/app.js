@@ -903,9 +903,35 @@ document.addEventListener("click", async (e) => {
     <div class="knopfreihe"><button class="knopf knopf--primaer" value="ok">Verstanden</button></div>`);
 });
 
+// Service Worker: Updates selbst holen. Die installierte App bleibt auf dem Handy oft tagelang offen,
+// darum beim Zurückholen in den Vordergrund nach einer neuen Version fragen.
 if ("serviceWorker" in navigator) {
+  let geradeSichtbar = Date.now();
+  const hatteSteuerung = !!navigator.serviceWorker.controller;
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch((err) => console.warn("Service Worker:", err));
+    navigator.serviceWorker.register("sw.js").then((reg) => {
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState !== "visible") return;
+        geradeSichtbar = Date.now();
+        reg.update().catch(() => {});
+      });
+      setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+    }).catch((err) => console.warn("Service Worker:", err));
+  });
+  let neuGeladen = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hatteSteuerung || neuGeladen) return; // erste Installation: nichts zu tun
+    const offen = document.querySelector("dialog[open]");
+    const ungespeichert = /^#\/(schreiben|entwurf|postfach\/)/.test(location.hash);
+    // Gerade erst geöffnet oder im Hintergrund und nichts in Arbeit: still neu laden
+    if (document.visibilityState === "hidden" || (!offen && !ungespeichert && Date.now() - geradeSichtbar < 5000)) {
+      neuGeladen = true;
+      return location.reload();
+    }
+    melde("Es gibt eine neue Version der App.", "info", {
+      dauer: 10 * 60 * 1000,
+      aktion: { text: "Jetzt neu laden", beiKlick: () => { neuGeladen = true; location.reload(); } },
+    });
   });
 }
 

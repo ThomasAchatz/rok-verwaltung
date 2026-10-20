@@ -168,8 +168,11 @@ function vorschlagHtml(a, i, j) {
     knoepfe = k("oeffnen", "Schreiben öffnen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "pdf") {
     knoepfe = k("ansehen", "Ansehen") + k("laden", "Herunterladen") + k("ablage", "In Ablage", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
-  } else {
+  } else if (a.art === "oeffnen") {
     knoepfe = k("oeffnen", esc(a.beschriftung));
+  } else {
+    // Vorschlag, den diese Version noch nicht kennt (Server ist neuer als die App)
+    knoepfe = `<span class="chatvorschlag__status">Diese Version der App kennt den Vorschlag noch nicht.</span>${k("neuladen", "App neu laden", "knopf--primaer")}`;
   }
   const nameFeld = a.art === "pdf" && a.status !== "abgelehnt"
     ? `<label class="feld chatvorschlag__name"><span>Dateiname</span>
@@ -228,6 +231,7 @@ async function behandle(a, op, knopf) {
   const neuLaden = () => geheZu(location.hash || "#/uebersicht");
   try {
     switch (op) {
+      case "neuladen": return location.reload();
       case "ablehnen": return setze(a, "abgelehnt");
       case "zurueck": return setze(a, undefined);
       case "annehmen":

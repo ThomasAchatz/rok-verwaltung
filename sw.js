@@ -4,7 +4,7 @@
 //   fremde Adressen laufen direkt ins Netz.
 // - „Netz zuerst“: Online gibt es immer die neueste Version, offline startet wenigstens die Hülle.
 // Bei jeder Änderung an der App VERSION hochzählen.
-const VERSION = "rok-v19";
+const VERSION = "rok-v20";
 const HUELLE = [
   "./",
   "index.html",
@@ -58,8 +58,9 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(anfrage.url);
   if (url.origin !== self.location.origin) return; // Supabase, CDN, Schriften: direkt ins Netz
 
+  // Immer beim Server nachfragen (nicht den 10-Minuten-Cache von GitHub Pages nehmen), offline aus dem Speicher
   e.respondWith(
-    fetch(anfrage)
+    fetch(anfrage, { cache: "no-cache" })
       .then((antwort) => {
         if (antwort.ok) {
           const kopie = antwort.clone();
