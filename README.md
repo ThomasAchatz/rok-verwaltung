@@ -111,7 +111,10 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   IBANs werden vorher entfernt); bei Briefen mit Bankverbindung sieht sie nur Titel und Empfänger.
 - **Gesendetes automatisch ablegen** (E-Mail, Brief, Auftrag, Mahnung/Nachweis): Name nach Schema, Ordner von der KI,
   danach Meldung „Abgelegt in … – Ändern“. Schalter in den Einstellungen (`vermieter_profil.auto_ablage`).
-- **Upload vom Gerät:** Fotos, PDF, Word (.docx) und Excel (.xlsx); Word/Excel liest die KI nicht.
+- **Upload vom Gerät:** Fotos, PDF, Word (.docx) und Excel (.xlsx), auch mehrere auf einmal (je Datei ein Dialog,
+  „Überspringen“ / „Alle abbrechen“). Die KI liest jede Datei und schlägt Haus, Mietpartei, Ordner, Art und den
+  Dateinamen nach Roberts Schema vor. Word/Excel: Der Text wird im Browser ausgelesen (`js/officetext.js`, JSZip),
+  der Server entfernt IBANs, erst dann geht er an die KI. Der Dateiname vom Gerät geht nur als Hinweis mit.
 - **Ordnerstruktur nach Robert** (je Haus gleich): 01_Kalkulation & Ankauf … 09_Archiv mit festen Unterordnern.
   Automatische Unterordner (`dokument_ordner.automatik`): 04_Betriebskosten und 05_Instandhaltung **je Jahr**,
   03_Vermietung **je Wohnung** („Wohnung - Nachname“ aus den Mietparteien, nie von Hand angelegt).
@@ -194,6 +197,7 @@ Danach die Zeile für die Antwortvorlage aus `supabase/migrations/20261015020000
 - [x] Ablage aus der App: Mails, Notizen und Gesendetes mit KI-Ordnervorschlag, Word/Excel hochladen
 - [x] Roberts Ordnerstruktur (automatische Jahres- und Wohnungsordner) und Dateinamen-Schema
 - [x] Dateiname vor dem Speichern sichtbar und änderbar (KI-Vorschlag nach Schema)
+- [x] Upload: KI liest auch Word/Excel, mehrere Dateien auf einmal
 - [x] Eingabemaske Stammdaten (`#/stammdaten`): Häuser, Wohnungen (auch „WHG 01–12“ auf einmal), Kostenträger,
       neue Mietparteien; Details der Mietpartei weiter in der Akte
 - [ ] Später: Antwort als PDF-Anhang mailen, Import offener Posten aus immocloud (CSV)

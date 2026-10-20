@@ -219,7 +219,7 @@ export async function zeigePostfach() {
       <div><h1>Postfach</h1>
         <p>${pf?.adresse ? `Eingang: <strong class="umbruch">${esc(pf.adresse)}</strong>` : "Anfragen von Mietern, Ämtern und Interessenten"}</p></div>
       <div class="knopfreihe">
-        <label class="knopf">${ICON_KAMERA} Foto / Datei<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="foto" hidden></label>
+        <label class="knopf">${ICON_KAMERA} Foto / Datei<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="foto" multiple hidden></label>
         <button type="button" class="knopf" id="notiz">Anruf erfassen</button>
         <a class="knopf knopf--primaer" href="#/schreiben">Neues Schreiben</a>
       </div>
@@ -234,7 +234,7 @@ export async function zeigePostfach() {
     </section>`;
 
   for (const b of $$("[data-filter]")) b.addEventListener("click", () => { filter = b.dataset.filter; zeigePostfach(); });
-  $("#foto").addEventListener("change", (e) => { const d = e.target.files[0]; e.target.value = ""; ablage.erfasse(d); });
+  $("#foto").addEventListener("change", (e) => { const d = [...e.target.files]; e.target.value = ""; ablage.erfasseAlle(d); });
   $("#notiz").addEventListener("click", notizErfassen);
   aktualisiereZaehler();
   if (zustand.ki?.ki) ordneNachEin(liste.filter((n) => !n.ki_am).slice(0, 8), namen);

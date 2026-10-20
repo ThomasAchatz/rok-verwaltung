@@ -74,5 +74,8 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   `automatischAblegen(e, { vorgabe })`. Brief-Vorschau: Option `name: { vorschlag }` in `js/vorschau.js`,
   `vorAbschluss({ titel })` übernimmt den Namen (Feld danach gesperrt). Jede neue Stelle, die eine Datei erzeugt,
   muss den Namen so vorher zeigen.
+- Upload: `erfasseAlle(dateien, opt)` → je Datei `erfasse()` (Rückgabe { ziel, abgelegt } bzw. { abbruch }).
+  KI-Aktion `brief_lesen` nimmt `bild` (Foto/PDF) oder `datei_text: { text, art: "word"|"excel" }` plus `dateiname`;
+  Text aus Office-Dateien liest `js/officetext.js` im Browser, `liesDokument()` entfernt IBANs vor der KI.
 - Stammdaten-Maske: `js/stammdaten.js` (Route `#/stammdaten`, Links in Einstellungen und Mieterliste). Löschen nur,
   wenn leer (Haus ohne Wohnungen, Wohnung ohne Mietpartei); Haus löschen kaskadiert auf Wissen/Handwerker des Hauses.

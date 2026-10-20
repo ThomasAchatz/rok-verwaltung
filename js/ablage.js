@@ -7,6 +7,7 @@ import {
   ICON_KI, istEmail, norm, geheZu, mieterListe, mieterOptionen, mikroKnopf, verbindeDiktat, wartehinweis, verkleinere, alsBase64,
 } from "./ui.js";
 import { textPdf } from "./pdf.js";
+import { officeText } from "./officetext.js";
 
 export const DOKUMENT_ORDNER = [
   "Rechnungen", "Verträge", "Versorger", "Versicherungen", "Behörden & Steuern", "Handwerker & Angebote", "Mietverhältnisse", "Sonstiges",
@@ -138,28 +139,47 @@ async function istPdfDatei(datei) {
 }
 
 // ---------------------------------------------------------------------------
-// Foto oder PDF erfassen
-// objektId: Haus vorbelegen (null = Allgemein), nurAblage: kein Postfach (z. B. auf der Seite eines Hauses)
+// Mehrere Dateien nacheinander erfassen (je Datei ein Dialog), am Ende einmal weiter
 // ---------------------------------------------------------------------------
-export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
-  if (!datei) return;
-  if (datei.size > MAX_DATEI) return melde("Die Datei ist zu groß (höchstens 15 MB).", "fehler");
+export async function erfasseAlle(dateien, optionen = {}) {
+  const liste = [...(dateien || [])].filter(Boolean);
+  if (liste.length <= 1) return erfasse(liste[0], optionen);
+  let ziel = null, abgelegt = 0;
+  for (let i = 0; i < liste.length; i++) {
+    const r = await erfasse(liste[i], { ...optionen, nr: i + 1, von: liste.length, weiter: false });
+    if (r?.abbruch) break;
+    if (r?.ziel) { ziel = r.ziel; if (r.abgelegt) abgelegt++; }
+  }
+  if (abgelegt > 1) melde(`${abgelegt} Dateien abgelegt.`, "ok");
+  if (ziel) geheZu(ziel);
+}
+
+// ---------------------------------------------------------------------------
+// Foto, PDF, Word oder Excel erfassen: die KI liest, schlägt Ablage, Ordner und Dateinamen vor
+// objektId: Haus vorbelegen (null = Allgemein), nurAblage: kein Postfach (z. B. auf der Seite eines Hauses)
+// nr/von: Position bei mehreren Dateien; weiter: false = nicht selbst weiterspringen (Rückgabe { ziel })
+// ---------------------------------------------------------------------------
+export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von = 1, weiter = true } = {}) {
+  if (!datei) return null;
+  const vorname = von > 1 ? `„${datei.name || "Datei"}“: ` : "";
+  if (datei.size > MAX_DATEI) { melde(vorname + "Die Datei ist zu groß (höchstens 15 MB).", "fehler"); return null; }
   const pdf = datei.type === "application/pdf" || /\.pdf$/i.test(datei.name || "");
-  // Word/Excel vom Gerät: ohne KI, nur in die Ablage
+  // Word/Excel vom Gerät: nur in die Ablage; die KI liest den Text
   const office = /\.docx$/i.test(datei.name || "") || datei.type === DOCX_TYP ? DOCX_TYP
     : /\.xlsx$/i.test(datei.name || "") || datei.type === XLSX_TYP ? XLSX_TYP : null;
   if (office) nurAblage = true;
   if (!pdf && !office && !/^image\//.test(datei.type || "") && !/\.(jpe?g|png|webp|heic)$/i.test(datei.name || "")) {
-    return melde("Dieses Dateiformat geht nicht. Möglich sind Fotos, PDF, Word (.docx) und Excel (.xlsx).", "fehler");
+    melde(vorname + "Dieses Dateiformat geht nicht. Möglich sind Fotos, PDF, Word (.docx) und Excel (.xlsx).", "fehler");
+    return null;
   }
   let blob, base64 = null, vorschau = null;
   try {
     if (office) {
       const kopf = new Uint8Array(await datei.slice(0, 2).arrayBuffer());
-      if (kopf[0] !== 0x50 || kopf[1] !== 0x4b) return melde("Die Datei ist beschädigt oder kein echtes Word/Excel-Dokument.", "fehler");
+      if (kopf[0] !== 0x50 || kopf[1] !== 0x4b) return melde(vorname + "Die Datei ist beschädigt oder kein echtes Word/Excel-Dokument.", "fehler");
       blob = new Blob([datei], { type: office });
     } else if (pdf) {
-      if (!(await istPdfDatei(datei))) return melde("Das ist keine gültige PDF-Datei.", "fehler");
+      if (!(await istPdfDatei(datei))) return melde(vorname + "Das ist keine gültige PDF-Datei.", "fehler");
       blob = new Blob([datei], { type: "application/pdf" });
       if (blob.size <= MAX_PDF_KI) base64 = await alsBase64(blob);
     } else {
@@ -168,23 +188,38 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
       vorschau = bild.url;
     }
   } catch (err) {
-    return melde("Die Datei konnte nicht gelesen werden: " + err.message, "fehler");
+    return melde(vorname + "Die Datei konnte nicht gelesen werden: " + err.message, "fehler");
   }
 
   let erkannt = {};
-  if (zustand.ki?.ki && base64) {
-    const warte = wartehinweis(pdf ? "Die KI liest das PDF …" : "Die KI liest das Foto …");
+  let kiHinweis = zustand.ki?.ki ? "Bitte die Angaben eintragen." : "Die KI ist noch nicht eingerichtet. Bitte die Angaben selbst eintragen.";
+  if (zustand.ki?.ki && (base64 || office)) {
+    const was = office === XLSX_TYP ? "die Excel-Datei" : office ? "das Word-Dokument" : pdf ? "das PDF" : "das Foto";
+    const warte = wartehinweis(`Die KI liest ${was} …`);
     try {
-      erkannt = await db.funktion("ki", { aktion: "brief_lesen", bild: { daten: base64, typ: pdf ? "application/pdf" : "image/jpeg" } });
-      if (erkannt.lesbar === false) melde("Schwer lesbar. Bitte die Angaben prüfen.", "info");
+      const dateiname = String(datei.name || "").slice(0, 150) || null;
+      let anfrage = null;
+      if (office) {
+        const art = office === XLSX_TYP ? "excel" : "word";
+        const text = await officeText(blob, art).catch(() => "");
+        if (text.trim()) anfrage = { aktion: "brief_lesen", datei_text: { text, art }, dateiname };
+        else kiHinweis = "In der Datei steht kein lesbarer Text. Bitte die Angaben eintragen.";
+      } else {
+        anfrage = { aktion: "brief_lesen", bild: { daten: base64, typ: pdf ? "application/pdf" : "image/jpeg" }, dateiname };
+      }
+      if (anfrage) {
+        erkannt = await db.funktion("ki", anfrage);
+        if (erkannt.lesbar === false) melde("Schwer lesbar. Bitte die Angaben prüfen.", "info");
+      }
     } catch (err) {
       melde(err.message, "fehler");
     } finally {
       await warte.ende();
     }
   } else if (zustand.ki?.ki && pdf) {
-    melde("Das PDF ist zu groß für die KI. Bitte die Angaben selbst eintragen.", "info");
+    kiHinweis = "Das PDF ist zu groß für die KI. Bitte die Angaben selbst eintragen.";
   }
+  const vonKi = !!erkannt.betreff;
 
   const [mieterL, ordnerL] = await Promise.all([mieterListe(), ordnerListe()]);
   const ziel = nurAblage ? "dokument" : erkannt.eingang === "anfrage" ? "anfrage" : erkannt.eingang ? "dokument" : "anfrage";
@@ -199,9 +234,9 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
     (name ? mieterL.find((m) => name.includes(norm(m.nachname)) && (!m.vorname || name.includes(norm(m.vorname))))?.id : null) || null;
 
   const daten = await dialogFormular(`
-    <h2>${office ? "Datei ablegen" : pdf ? "PDF erfassen" : "Foto erfassen"}</h2>
+    <h2>${office ? "Datei ablegen" : pdf ? "PDF erfassen" : "Foto erfassen"}${von > 1 ? ` <span class="leise">(${nr} von ${von})</span>` : ""}</h2>
     ${vorschau ? `<img class="fotovorschau" src="${vorschau}" alt="Vorschau">` : `<p class="dateizeile"><span class="dok__icon ${symbolKlasse}">${symbol}</span> ${esc(datei.name || "Dokument")} <span class="leise">(${(blob.size / 1048576).toFixed(1).replace(".", ",")} MB)</span></p>`}
-    <p class="leise">${erkannt.betreff ? "Von der KI gelesen. Bitte kurz prüfen." : office ? "Word- und Excel-Dateien liest die KI nicht. Bitte die Angaben eintragen." : zustand.ki?.ki ? "Bitte die Angaben eintragen." : "Die KI ist noch nicht eingerichtet. Bitte die Angaben selbst eintragen."}</p>
+    <p class="leise">${vonKi ? "Von der KI gelesen: Ordner, Art und Dateiname sind Vorschläge. Bitte kurz prüfen." : esc(kiHinweis)}</p>
     ${nurAblage ? "" : `
     <div class="wahl" role="radiogroup" aria-label="Wohin damit?">
       <label><input type="radio" name="ziel" value="anfrage" ${ziel === "anfrage" ? "checked" : ""}> <span><strong>Ins Postfach</strong><br><span class="leise">Jemand will etwas, braucht eine Antwort</span></span></label>
@@ -217,7 +252,8 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
         <label class="feld"><span>Details (für den Namen)</span><input name="details" value="${esc(detailsVorschlag({ mieterId: erkannt.mieter_id || null, art: artStart, ki: kiTeile }))}" maxlength="80" placeholder="z. B. Wasserschaden_WHG 1_2430,31"></label>
         <label class="feld"><span>Datum des Schreibens</span><input type="date" name="datum" value="${esc(datumStart)}" required></label>
       </div>
-      <label class="feld"><span>Dateiname</span><input name="titel" required maxlength="160" spellcheck="false"></label>
+      <label class="feld"><span>Dateiname</span><input name="titel" required maxlength="160" spellcheck="false">
+        ${vonKi ? `<span class="feldhinweis feldhinweis--leise">Vorschlag der KI nach dem Ablage-Schema, änderbar</span>` : ""}</label>
       <label class="feld"><span>Kurz zusammengefasst</span><textarea name="zusammenfassung" rows="2">${esc(erkannt.zusammenfassung || "")}</textarea></label>
     </fieldset>
     ${nurAblage ? "" : `
@@ -229,7 +265,8 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
         <span class="diktat"><textarea name="text" rows="7">${esc(erkannt.text || "")}</textarea>${mikroKnopf()}</span></label>
     </fieldset>`}
     <div class="knopfreihe">
-      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      ${nr < von ? `<button class="knopf" value="stopp" formnovalidate>Alle abbrechen</button>` : ""}
+      <button class="knopf" value="abbrechen" formnovalidate>${nr < von ? "Überspringen" : "Abbrechen"}</button>
       <button class="knopf knopf--primaer" value="ok" data-sichtbar="dokument">Ablegen</button>
       ${nurAblage ? "" : `<button class="knopf knopf--primaer" value="ok" data-sichtbar="anfrage">Ins Postfach</button>`}
     </div>`, {
@@ -247,7 +284,13 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
     },
   });
   if (vorschau) setTimeout(() => URL.revokeObjectURL(vorschau), 5000);
-  if (!daten) return;
+  if (!daten) return null;
+  if (daten.get("_aktion") === "stopp") return { abbruch: true };
+  // Ziel anspringen (einzelne Datei) oder an erfasseAlle zurückgeben
+  const fertig = (ziel, abgelegt = false) => {
+    if (weiter) geheZu(ziel);
+    return { ziel, abgelegt };
+  };
 
   const typ = office || (pdf ? "application/pdf" : "image/jpeg");
   const endung = ENDUNG[typ];
@@ -267,12 +310,12 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
         pfad: `${objekt_id || "allgemein"}/${crypto.randomUUID()}.${endung}`,
         typ, groesse: blob.size,
       }, blob);
-      melde("Abgelegt.", "ok");
-      geheZu(`#/objekt/${objekt_id || "allgemein"}`);
+      melde(von > 1 ? `Abgelegt: ${String(daten.get("titel") || "").trim()}` : "Abgelegt.", "ok");
+      return fertig(`#/objekt/${objekt_id || "allgemein"}`, true);
     } catch (err) {
       melde(err.message, "fehler");
     }
-    return;
+    return null;
   }
 
   // Ins Postfach
@@ -301,10 +344,11 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
       catch (err) { melde("Einordnen nicht möglich: " + err.message, "fehler"); }
       finally { await warte.ende(); }
     }
-    geheZu(`#/postfach/${n.id}`);
+    return fertig(`#/postfach/${n.id}`);
   } catch (err) {
     melde(err.message, "fehler");
   }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

@@ -196,7 +196,7 @@ export async function zeigeStart() {
       <div><h1>Übersicht</h1><p>${esc(zustand.profil?.firma || "")}, ${datumDE(new Date())}</p></div>
       <div class="knopfreihe">
         <button type="button" class="knopf knopf--primaer" id="notiz-neu">${ICON_PLUS} Notiz</button>
-        <label class="knopf">${ICON_KAMERA} Foto / Datei<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="erfassen" hidden></label>
+        <label class="knopf">${ICON_KAMERA} Foto / Datei<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="erfassen" multiple hidden></label>
       </div>
     </div>
     <div class="lage lage--kompakt">
@@ -254,7 +254,7 @@ export async function zeigeStart() {
 
   verbindeTodos(inhalt(), { aufgaben, nachher: zeigeStart });
   $("#notiz-neu").addEventListener("click", () => aufgabeDialog(null, { nachher: zeigeStart }));
-  $("#erfassen").addEventListener("change", (e) => { const d = e.target.files[0]; e.target.value = ""; ablage.erfasse(d); });
+  $("#erfassen").addEventListener("change", (e) => { const d = [...e.target.files]; e.target.value = ""; ablage.erfasseAlle(d); });
   for (const b of $$("[data-schreiben]", inhalt())) {
     b.addEventListener("click", async () => {
       const v = vorgaenge.find((x) => x.id === b.dataset.schreiben);
@@ -309,7 +309,7 @@ export async function zeigeObjekt(id) {
         <p>${allgemein ? "Unterlagen, Wissen und Notizen, die zu keinem bestimmten Haus gehören." : esc([o.strasse, [o.plz, o.ort].filter(Boolean).join(" ")].filter(Boolean).join(", "))}</p></div>
       <div class="knopfreihe">
         <button type="button" class="knopf knopf--primaer" id="notiz-neu">${ICON_PLUS} Notiz</button>
-        <label class="knopf">${ICON_KAMERA} Dokument ablegen<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="erfassen" hidden></label>
+        <label class="knopf">${ICON_KAMERA} Dokument ablegen<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="erfassen" multiple hidden></label>
         <button type="button" class="knopf" id="wissen-sprechen">${ICON_KI} Wissen einsprechen</button>
       </div>
     </div>
@@ -363,7 +363,7 @@ export async function zeigeObjekt(id) {
   verbindeTodos(inhalt(), { aufgaben, nachher: neuLaden });
   ablage.verbindeListen(inhalt(), { dokumente, wissen: wissenHier, dienstleister: dienstHier, objektId, nachher: neuLaden });
   $("#notiz-neu").addEventListener("click", () => aufgabeDialog({ objekt_id: objektId }, { nachher: neuLaden }));
-  $("#erfassen").addEventListener("change", (e) => { const d = e.target.files[0]; e.target.value = ""; ablage.erfasse(d, { objektId, nurAblage: true }); });
+  $("#erfassen").addEventListener("change", (e) => { const d = [...e.target.files]; e.target.value = ""; ablage.erfasseAlle(d, { objektId, nurAblage: true }); });
   $("#wissen-sprechen").addEventListener("click", () => ablage.wissenEinsprechen({ objektId, nachher: neuLaden }));
   $("#wissen-neu").addEventListener("click", () => ablage.bearbeiteWissen({ objekt_id: objektId }, { nachher: neuLaden }));
   $("#dienst-neu").addEventListener("click", () => ablage.bearbeiteDienstleister({ objekt_id: objektId }, { nachher: neuLaden }));

@@ -413,7 +413,7 @@ export async function auftrag(o: { zugriff: Zugriff; nachrichtId: string; dienst
 }
 
 // ---------------------------------------------------------------------------
-// Foto oder PDF lesen: Anfrage fürs Postfach oder Dokument für die Ablage?
+// Foto, PDF, Word oder Excel lesen: Anfrage fürs Postfach oder Dokument für die Ablage?
 // ---------------------------------------------------------------------------
 const WERKZEUG_DOKUMENT: Werkzeug = {
   name: "dokument",
@@ -440,11 +440,24 @@ const WERKZEUG_DOKUMENT: Werkzeug = {
   },
 };
 
-// deno-lint-ignore no-explicit-any
-export async function liesDokument(datei: { daten: string; typ: string }, zugriff: Zugriff): Promise<any> {
+// datei: Foto/PDF als { daten, typ } oder ausgelesener Text einer Word-/Excel-Datei als { text, art: "word" | "excel" };
+// dateiname (optional): Name auf dem Gerät, nur als Hinweis
+export async function liesDokument(
+  datei: { daten?: string; typ?: string; text?: string; art?: string },
+  zugriff: Zugriff,
+  dateiname: unknown = null,
+  // deno-lint-ignore no-explicit-any
+): Promise<any> {
+  const alsText = typeof datei.text === "string";
   const istPdf = datei.typ === "application/pdf";
-  if (!istPdf && !/^image\/(jpeg|png|webp|gif)$/.test(datei.typ)) throw new Fehler(400, "Bitte ein Foto (JPEG/PNG) oder ein PDF senden.", "eingabe");
-  if (datei.daten.length > (istPdf ? 11_000_000 : 7_000_000)) throw new Fehler(413, "Die Datei ist zu groß.", "eingabe");
+  if (alsText) {
+    if (!datei.text!.trim()) throw new Fehler(400, "In der Datei steht kein lesbarer Text.", "eingabe");
+  } else {
+    if (typeof datei.daten !== "string" || !datei.typ) throw new Fehler(400, "Foto oder PDF fehlt", "eingabe");
+    if (!istPdf && !/^image\/(jpeg|png|webp|gif)$/.test(datei.typ)) throw new Fehler(400, "Bitte ein Foto (JPEG/PNG) oder ein PDF senden.", "eingabe");
+    if (datei.daten.length > (istPdf ? 11_000_000 : 7_000_000)) throw new Fehler(413, "Die Datei ist zu groß.", "eingabe");
+  }
+  const name = ohneIban(dateiname).replace(/[\u0000-\u001f<>]/g, " ").trim().slice(0, 150);
   const [{ objekte, text: objekteText }, { mieter, text: mieterText }, { namen: ordnerListe, hinweis: ordnerHinweis }, { wohnungen, text: wohnungenText }] = await Promise.all([
     objektListe(zugriff), mieterListe(zugriff), dokumentOrdnerInfo(zugriff), wohnungListe(zugriff),
   ]);
@@ -459,12 +472,16 @@ export async function liesDokument(datei: { daten: string; typ: string }, zugrif
       },
     },
   };
-  const block = istPdf
+  // Text aus Word/Excel: Bankverbindungen entfernen, Länge begrenzen
+  const block = alsText
+    ? { type: "text", text: `<datei art="${datei.art === "excel" ? "Excel-Tabelle" : "Word-Dokument"}">\n${kuerze(ohneIban(datei.text), 20000)}\n</datei>` }
+    : istPdf
     ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: datei.daten } }
     : { type: "image", source: { type: "base64", media_type: datei.typ, data: datei.daten } };
+  const hinweisName = name ? `\n\nDateiname auf dem Gerät (nur ein Hinweis, kann ungenau sein): ${name}` : "";
   const { daten } = await claude({
     system: `Du liest Schreiben für eine Hausverwaltung ab und schlägst die Ablage vor. Heute ist ${heuteDE()}. ${KI_REGEL_FREMD} Antworte ausschließlich über das Werkzeug 'dokument'.`,
-    inhalt: [block, { type: "text", text: `${objekteText}\n\n${wohnungenText}\n\n${mieterText}\n\nLies das Schreiben und ordne es ein.` }],
+    inhalt: [block, { type: "text", text: `${objekteText}\n\n${wohnungenText}\n\n${mieterText}${hinweisName}\n\n${alsText ? "Lies die Datei (Tabellen: Zeilen mit Tabulatoren) und ordne sie ein." : "Lies das Schreiben und ordne es ein."}` }],
     werkzeug,
     maxTokens: 4000,
   });
