@@ -14,6 +14,7 @@ import * as start from "./start.js";
 import * as ablage from "./ablage.js";
 import * as stamm from "./stammdaten.js";
 import * as objekte from "./objekte.js";
+import * as kontakte from "./kontakte.js";
 import { oeffneChat } from "./chat.js";
 import {
   MONATE_KURZ, monatISO, letzteMonate, mietbuch, LEGENDE, naechsterSchritt, mieterZeile, schreibenKachel, oeffneSchreiben, emailDaten,
@@ -148,7 +149,7 @@ window.addEventListener("hashchange", () => route());
 async function route() {
   if ($("#app").hidden) return;
   const [, teil = "uebersicht", id] = (location.hash || "#/uebersicht").split("/");
-  const navTeil = { schreiben: "postfach", entwurf: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "objekte", ablage: "objekte", stammdaten: "mieter" }[teil] || teil;
+  const navTeil = { schreiben: "postfach", entwurf: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "objekte", ablage: "objekte", stammdaten: "mieter", kontakte: "mieter", kontakt: "mieter", handwerker: "mieter" }[teil] || teil;
   for (const a of $$("[data-nav]")) {
     if (a.dataset.nav === navTeil) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -163,6 +164,9 @@ async function route() {
     else if (teil === "entwurf" && id) await postfach.zeigeNeuesSchreiben(null, id);
     else if (teil === "objekt" && id) await start.zeigeObjekt(id);
     else if (teil === "objekte") await objekte.zeigeObjekte();
+    else if (teil === "kontakte") await kontakte.zeigeKontakte();
+    else if (teil === "kontakt" && id) await kontakte.zeigeKontakt(id);
+    else if (teil === "handwerker") await kontakte.zeigeHandwerker();
     else if (teil === "ablage" && id) await objekte.zeigeOrdner(id);
     else if (teil === "wissen") await ablage.zeigeWissen();
     else if (teil === "vorlagen") await zeigeVorlagen();
@@ -192,6 +196,7 @@ async function zeigeMieterliste() {
   }
 
   inhalt.innerHTML = `
+    ${kontakte.reiterHtml("mieter")}
     <div class="kopf">
       <div><h1>Mieter</h1><p>${liste.length} Mietparteien in ${gruppen.size} Objekten</p>
         <p class="knopfreihe"><button type="button" class="knopf knopf--klein" id="mieter-neu">+ Neue Mietpartei</button>
@@ -231,7 +236,7 @@ async function zeigeMieterliste() {
 // Mieter-Akte
 // ---------------------------------------------------------------------------
 async function zeigeAkte(id) {
-  const [mieter, forderungen, vorgaenge, nachrichten, antworten, aufgaben, dokumente] = await Promise.all([
+  const [mieter, forderungen, vorgaenge, nachrichten, antworten, aufgaben, dokumente, verlauf] = await Promise.all([
     db.ladeMieter(id),
     db.ladeForderungen({ mieterId: id }),
     db.ladeVorgaenge({ mieterId: id }),
@@ -239,6 +244,7 @@ async function zeigeAkte(id) {
     db.ladeAntworten({ mieterId: id, anzahl: 20 }).catch(() => []),
     db.ladeAufgaben({ mieterId: id }).catch(() => []),
     db.ladeDokumente({ mieterId: id }).catch(() => []),
+    db.ladeVerlauf({ mieterId: id }).catch(() => []),
   ]);
   const entwuerfe = antworten.filter((a) => a.status === "entwurf");
   sortiereForderungen(forderungen);
@@ -372,6 +378,12 @@ async function zeigeAkte(id) {
             ? `<div class="posts">${nachrichten.map((n) => postfach.nachrichtZeile(n, { [mieter.id]: mieterName(mieter) })).join("")}</div>`
             : entwuerfe.length ? "" : `<div class="leer">Keine Nachrichten von dieser Mietpartei.</div>`}
         </section>
+        <section class="flaeche" id="verlauf">
+          <div class="flaeche__kopf"><h2>Verlauf (Gespräche)</h2>
+            <span class="knopfreihe"><button type="button" class="knopf knopf--klein" id="einsprechen">Notiz einsprechen</button>
+              <button type="button" class="knopf knopf--klein" id="eintrag-neu">+ Eintrag</button></span></div>
+          ${kontakte.verlaufHtml(verlauf, { leer: "Noch keine Gespräche festgehalten.", sichtbar: 5 })}
+        </section>
         <section class="flaeche" id="notizen">
           <div class="flaeche__kopf"><h2>Notizen &amp; Wiedervorlagen</h2><button type="button" class="knopf knopf--klein" id="notiz-neu">+ Notiz</button></div>
           ${start.todoListe(start.aufgabenKurz(aufgaben), { leer: "Keine offenen Notizen." })}
@@ -413,6 +425,9 @@ async function zeigeAkte(id) {
   });
   const nachher = () => zeigeAkte(id);
   start.verbindeTodos($("#notizen"), { aufgaben, nachher });
+  kontakte.verbindeVerlauf($("#verlauf"), { verlauf, nachher });
+  $("#einsprechen").addEventListener("click", () => kontakte.notizEinsprechen({ mieterId: id }));
+  $("#eintrag-neu").addEventListener("click", () => kontakte.verlaufDialog({ mieter_id: id }, { nachher }));
   ablage.verbindeListen(inhalt, { dokumente, nachher });
   $("#notiz-neu").addEventListener("click", () => start.aufgabeDialog({ mieter_id: id, objekt_id: objekt?.id || null }, { nachher }));
   $("#mh-pruefen").addEventListener("click", () => start.mieterhoehungPruefen(mieter, aufgaben, nachher));

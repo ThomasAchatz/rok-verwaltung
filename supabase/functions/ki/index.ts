@@ -9,9 +9,11 @@
 //   { aktion: "wissen_ordnen", text, objekt_id? }                             → eingesprochenes Wissen ordnen
 //   { aktion: "notiz_pruefen", aufgabe_id }                                   → Notiz prüfen (z. B. Mieterhöhung)
 //   { aktion: "chat", verlauf: [{ rolle: "robert"|"ki", text }] }            → Fragen an die App
+//   { aktion: "notiz_lesen", text, kontakt_id?, mieter_id? }                  → eingesprochene Notiz: wer, was, Termine
 import { CORS, Fehler, MODELL, env, fehlerAntwort, json, kiEingerichtet, pruefeMitglied } from "../_shared/gemeinsam.ts";
 import { ablageVorschlag, auftrag, entwirf, liesDokument, ordneEin, ordneWissen, pruefeNotiz } from "../_shared/fach.ts";
 import { chat } from "../_shared/chat.ts";
+import { liesNotiz } from "../_shared/notiz.ts";
 
 export async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -59,6 +61,8 @@ export async function handler(req: Request): Promise<Response> {
         return json(await pruefeNotiz(e.aufgabe_id, zugriff));
       case "chat":
         return json(await chat(e.verlauf, zugriff));
+      case "notiz_lesen":
+        return json(await liesNotiz(String(e.text ?? ""), zugriff, { kontaktId: e.kontakt_id ?? null, mieterId: e.mieter_id ?? null }));
       default:
         throw new Fehler(400, "Unbekannte Aktion", "eingabe");
     }

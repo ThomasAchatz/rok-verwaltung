@@ -123,6 +123,13 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   Thema, Betrag und Wohnung schlägt die KI vor; die Mietpartei (Name) kommt bei Schriftverkehr dazu, nicht bei Rechnungen.
   Orts-Kürzel je Haus (`objekte.kuerzel`, Hausseite → Einstellungen zum Haus). Details schlägt die KI vor
   (Firma_Betrag, Vertragspartner …); bei einer Mietpartei setzt die App „Wohnung_Nachname“.
+- **Kontakte (Mini-CRM):** Menüpunkt „Kontakte“ mit den Reitern Mieter, Kontakte (Makler, Bank, Behörden …) und
+  Handwerker (eigene Listen). Je Kontakt und je Mietpartei ein **Verlauf** mit datierten Gesprächsnotizen.
+  **„Notiz einsprechen“** (Übersicht, Kontaktliste, Kontaktseite, Mietakte): diktieren, die KI (`notiz_lesen`) erkennt
+  Kontakt oder Mietpartei (oder schlägt einen neuen Kontakt vor), Notiz, Datum, Geburtstag, feste Infos und To-dos;
+  Robert prüft im Dialog und speichert. Bei Mietparteien optional zusätzlich als PDF in die Ablage (Name sichtbar).
+  **Geburtstage** stehen jedes Jahr ab 7 Tagen vorher in „Zu erledigen“ (abhaken = für dieses Jahr erledigt).
+  Der Chat kennt Kontakte und Verlauf („Was weiß ich über …?“). Testdaten: `supabase/seed_kontakte.sql` (erfunden).
 - **Ordner bearbeiten** (gilt für alle Häuser): oben „Neuen Ordner anlegen“ mit Name und „Einsortieren in“
   (Oberste Ebene oder unter einem Ordner, wie im Mail-Programm), bei jedem Ordner „+ Unterordner“. Die Liste ist ein
   eingerückter Baum; Verschieben und Umbenennen nehmen Unterordner und Dokumente mit, Löschen ebenfalls (Dokumente
@@ -208,6 +215,7 @@ Danach die Zeile für die Antwortvorlage aus `supabase/migrations/20261015020000
 - [x] Dateiname vor dem Speichern sichtbar und änderbar (KI-Vorschlag nach Schema)
 - [x] Upload: KI liest auch Word/Excel, mehrere Dateien auf einmal
 - [x] Menüpunkt „Objekte“ mit Ordnerbaum je Haus und Ablagefläche zum Hineinziehen
+- [x] Kontakte mit Verlauf, „Notiz einsprechen“ (KI), jährliche Geburtstags-Erinnerungen
 - [x] Eingabemaske Stammdaten (`#/stammdaten`): Häuser, Wohnungen (auch „WHG 01–12“ auf einmal), Kostenträger,
       neue Mietparteien; Details der Mietpartei weiter in der Akte
 - [ ] Später: Antwort als PDF-Anhang mailen, Import offener Posten aus immocloud (CSV)

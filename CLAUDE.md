@@ -36,12 +36,12 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 
 - Projekt `rok-verwaltung`, Ref `hjrmwdcvsngovhtrkobc`, Region eu-central-1.
 - Tabellen: mitglieder, vermieter_profil, objekte, wohnungen, kostentraeger, mieter, forderungen,
-  vorgaenge, vorlagen, nachrichten, antworten, wissen, postfach, aufgaben, dienstleister, dokumente,
+  vorgaenge, vorlagen, nachrichten, antworten, wissen, postfach, aufgaben, dienstleister, dokumente, kontakte, verlauf,
   dokument_ordner (bearbeitbare Ordnerliste, Unterordner mit „/“, „Sonstiges“ fest; KI liest sie über `dokumentOrdner()`);
   View mieter_uebersicht (security_invoker); Buckets `vorlagen`, `schreiben`, `eingang`, `dokumente` (privat).
 - Edge Functions `ki`, `posteingang`, `versand` (Quellen in `supabase/functions/`, gemeinsamer Code in
-  `_shared/` (gemeinsam, fach, mieterhoehung, chat), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
-  Postfach-Token). Beim Deploy über MCP alle importierten `_shared`-Dateien mitschicken (ki: alle vier,
+  `_shared/` (gemeinsam, fach, mieterhoehung, chat, notiz), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
+  Postfach-Token). Beim Deploy über MCP alle importierten `_shared`-Dateien mitschicken (ki: alle fünf,
   posteingang: gemeinsam + fach + mieterhoehung, versand: gemeinsam).
   service_role hat nur die Rechte aus `20261015010200_rechte_server.sql` (Projekt vergibt keine automatischen Grants).
 - Secrets: ANTHROPIC_API_KEY, RESEND_API_KEY, VERSAND_ABSENDER, optional RESEND_WEBHOOK_SECRET, KI_MODELL.
@@ -85,5 +85,10 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Ordner-Editor `ordnerBearbeiten()`: Modell mit `eltern`-Verweis (voller Name = Eltern + "/" + teil), neu zeichnen nur bei
   Struktur-Änderungen (beim Umbenennen nicht, sonst geht der nächste Klick verloren). Löschen kaskadiert auf Unterordner.
   `wieWohnung()` erkennt von Hand angelegte Wohnungsordner. Fehler stehen im Dialog (`[data-fehler]`), nicht als Meldung.
+- Kontakte: `js/kontakte.js` (Routen `#/kontakte`, `#/kontakt/<id>`, `#/handwerker`; Reiter via `reiterHtml()`, Menüpunkt
+  „Kontakte“ = data-nav "mieter"). Tabellen `kontakte` (Geburtstag als Tag/Monat/Jahr?, `geburtstag_erledigt` = Jahr),
+  `verlauf` (kontakt_id ODER mieter_id), `aufgaben.kontakt_id`, `dokumente.verlauf_id`. KI-Aktion `notiz_lesen`
+  (`_shared/notiz.ts`) liefert nur Vorschläge, IDs werden gegen die Listen geprüft. Geburtstage: `geburtstagTodos()`
+  in sammle() (start.js). Testdaten: `supabase/seed_kontakte.sql` (erfunden, mehrfach ausführbar).
 - Stammdaten-Maske: `js/stammdaten.js` (Route `#/stammdaten`, Links in Einstellungen und Mieterliste). Löschen nur,
   wenn leer (Haus ohne Wohnungen, Wohnung ohne Mietpartei); Haus löschen kaskadiert auf Wissen/Handwerker des Hauses.

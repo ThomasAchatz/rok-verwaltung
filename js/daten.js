@@ -237,11 +237,12 @@ export async function zaehleNeue() {
 }
 
 // --- Notizen und Wiedervorlagen (Tabelle aufgaben) -------------------------
-export async function ladeAufgaben({ status = "offen", mieterId = null, objektId = null } = {}) {
+export async function ladeAufgaben({ status = "offen", mieterId = null, objektId = null, kontaktId = null } = {}) {
   let q = sb.from("aufgaben").select("*").order("faellig_am", { ascending: true, nullsFirst: false }).order("erstellt_am", { ascending: false }).limit(300);
   if (status) q = q.eq("status", status);
   if (mieterId) q = q.eq("mieter_id", mieterId);
   if (objektId) q = q.eq("objekt_id", objektId);
+  if (kontaktId) q = q.eq("kontakt_id", kontaktId);
   return pruefe(await q);
 }
 export async function ladeAufgabe(id) {
@@ -253,6 +254,39 @@ export async function speichereAufgabe(id, felder) {
 }
 export async function loescheAufgabe(id) {
   pruefe(await sb.from("aufgaben").delete().eq("id", id));
+}
+
+// --- Kontakte (Makler, Bank, Behörden …) und Verlauf (Gesprächsnotizen) ------
+export async function ladeKontakte() {
+  return pruefe(await sb.from("kontakte").select("*").order("nachname", { nullsFirst: false }).order("firma").limit(2000));
+}
+export async function ladeKontakt(id) {
+  return pruefe(await sb.from("kontakte").select("*").eq("id", id).single());
+}
+export async function speichereKontakt(id, felder) {
+  if (!id) return pruefe(await sb.from("kontakte").insert(felder).select().single());
+  return pruefe(await sb.from("kontakte").update(felder).eq("id", id).select().single());
+}
+export async function loescheKontakt(id) {
+  pruefe(await sb.from("kontakte").delete().eq("id", id));
+}
+/** Verlauf eines Kontakts oder einer Mietpartei, neueste zuerst */
+export async function ladeVerlauf({ kontaktId = null, mieterId = null, anzahl = 200 } = {}) {
+  let q = sb.from("verlauf").select("*").order("datum", { ascending: false }).order("erstellt_am", { ascending: false }).limit(anzahl);
+  if (kontaktId) q = q.eq("kontakt_id", kontaktId);
+  if (mieterId) q = q.eq("mieter_id", mieterId);
+  return pruefe(await q);
+}
+/** Datum des letzten Verlaufseintrags je Kontakt (für die Liste) */
+export async function ladeLetzteKontakte() {
+  return pruefe(await sb.from("verlauf").select("kontakt_id,datum").not("kontakt_id", "is", null).order("datum", { ascending: false }).limit(2000));
+}
+export async function speichereVerlauf(id, felder) {
+  if (!id) return pruefe(await sb.from("verlauf").insert(felder).select().single());
+  return pruefe(await sb.from("verlauf").update(felder).eq("id", id).select().single());
+}
+export async function loescheVerlauf(id) {
+  pruefe(await sb.from("verlauf").delete().eq("id", id));
 }
 
 // --- Handwerker und Dienstleister ------------------------------------------
@@ -346,7 +380,7 @@ export async function ladeEingangDatei(pfad) {
 }
 /** Dokumente, die schon aus einer Nachricht, Antwort, Notiz oder einem Schreiben abgelegt wurden */
 export async function ladeAbgelegte(feld, ids) {
-  if (!["nachricht_id", "antwort_id", "aufgabe_id", "vorgang_id"].includes(feld)) throw new Error("Unbekanntes Feld");
+  if (!["nachricht_id", "antwort_id", "aufgabe_id", "vorgang_id", "verlauf_id"].includes(feld)) throw new Error("Unbekanntes Feld");
   const liste = (ids || []).filter(Boolean);
   if (!liste.length) return [];
   return pruefe(await sb.from("dokumente").select("*").in(feld, liste).order("erstellt_am"));

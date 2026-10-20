@@ -4,10 +4,11 @@ import * as db from "./daten.js";
 import { euro, datumDE, mieterName } from "./dokumente.js";
 import { $, $$, esc, melde, dialogFormular, frage, heuteISO, zustand, objektVon, wohnungVon } from "./helfer.js";
 import {
-  ICON_KI, ICON_KAMERA, kurz, norm, geheZu, mieterListe, mieterOptionen, mikroKnopf, verbindeDiktat, wartehinweis,
+  ICON_KI, ICON_KAMERA, ICON_MIKRO, kurz, norm, geheZu, mieterListe, mieterOptionen, mikroKnopf, verbindeDiktat, wartehinweis,
 } from "./ui.js";
 import { letzteMonate, mieterZeile, LEGENDE, naechsterSchritt, schreibenKachel, oeffneSchreiben } from "./bausteine.js";
 import * as ablage from "./ablage.js";
+import * as kontakte from "./kontakte.js";
 
 const inhalt = () => $("#inhalt");
 const ICON_PLUS = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>`;
@@ -39,7 +40,7 @@ export const fristVon = (n) => (n.frist_bestaetigt ? n.frist : n.frist || n.ki_f
 // Was ist zu tun? Alles aus Nachrichten, Notizen, Rückständen und Entwürfen, nach Dringlichkeit
 // ---------------------------------------------------------------------------
 // stufe 0 = überfällig/sehr knapp, 1 = bald/dringend, 2 = normal, 3 = wenn Zeit ist
-function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = [], entwuerfe = [], namen = {} }) {
+function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = [], entwuerfe = [], namen = {}, kontaktListe = [] }) {
   const heute = heuteISO();
   const jetzt = [], spaeter = [];
   const stufeFuer = (iso) => { const t = tageBis(iso); return t <= 3 ? 0 : t <= 7 ? 1 : 2; };
@@ -71,7 +72,7 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
   }
 
   for (const a of aufgaben) {
-    const bezug = a.mieter_id ? namen[a.mieter_id] : a.objekt_id ? objektVon(a.objekt_id)?.bezeichnung : "";
+    const bezug = a.mieter_id ? namen[a.mieter_id] : a.kontakt_id ? kontakte.kontaktName(kontakte.kontaktVon(a.kontakt_id)) : a.objekt_id ? objektVon(a.objekt_id)?.bezeichnung : "";
     const eintrag = {
       art: a.faellig_am ? "Wiedervorlage" : "Notiz", aufgabe: a, titel: a.titel,
       unter: [bezug, a.antwort ? "KI-Antwort liegt vor" : ""].filter(Boolean).join(" · "),
@@ -109,6 +110,9 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
     });
   }
 
+  // Geburtstage von Kontakten (jedes Jahr, ab 7 Tagen vorher)
+  jetzt.push(...kontakte.geburtstagTodos(kontaktListe, heute));
+
   const ordnen = (x, y) => x.stufe - y.stufe || String(x.datum).localeCompare(String(y.datum));
   return { jetzt: jetzt.sort(ordnen), spaeter: spaeter.sort(ordnen) };
 }
@@ -125,7 +129,9 @@ function todoZeile(t) {
     <div class="todo todo--s${t.stufe}">
       ${haupt}
       <span class="todo__wann ${t.wannNot ? "todo__wann--not" : ""}">${esc(t.wann || "")}</span>
-      ${t.aufgabe ? `<button type="button" class="todo__haken" data-erledigt="${esc(t.aufgabe.id)}" title="Erledigt" aria-label="Erledigt: ${esc(t.titel)}">${ICON_HAKEN}</button>` : `<span class="todo__haken todo__haken--leer" aria-hidden="true"></span>`}
+      ${t.aufgabe ? `<button type="button" class="todo__haken" data-erledigt="${esc(t.aufgabe.id)}" title="Erledigt" aria-label="Erledigt: ${esc(t.titel)}">${ICON_HAKEN}</button>`
+        : t.geburtstag ? `<button type="button" class="todo__haken" data-geburtstag="${esc(t.geburtstag.id)}" data-jahr="${t.geburtstag.jahr}" title="Gratuliert" aria-label="Gratuliert: ${esc(t.titel)}">${ICON_HAKEN}</button>`
+        : `<span class="todo__haken todo__haken--leer" aria-hidden="true"></span>`}
     </div>`;
 }
 
@@ -140,6 +146,20 @@ function todoListe({ jetzt, spaeter }, { leer = "Nichts zu tun. Schön!" } = {})
 function verbindeTodos(root, { aufgaben, nachher }) {
   for (const b of $$("[data-aufgabe]", root)) {
     b.addEventListener("click", () => aufgabeDialog(aufgaben.find((a) => a.id === b.dataset.aufgabe), { nachher }));
+  }
+  for (const b of $$("[data-geburtstag]", root)) {
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        await db.speichereKontakt(b.dataset.geburtstag, { geburtstag_erledigt: Number(b.dataset.jahr) });
+        await kontakte.kontakteListe(true);
+        melde("Erledigt. Nächstes Jahr erinnert die App wieder.", "ok");
+        nachher();
+      } catch (err) {
+        b.disabled = false;
+        melde(err.message, "fehler");
+      }
+    });
   }
   for (const b of $$("[data-erledigt]", root)) {
     b.addEventListener("click", async () => {
@@ -161,7 +181,7 @@ function verbindeTodos(root, { aufgaben, nachher }) {
 // ---------------------------------------------------------------------------
 export async function zeigeStart() {
   const monate = letzteMonate(4);
-  const [liste, forderungen, vorgaenge, nachrichten, aufgaben, antworten, mieterL] = await Promise.all([
+  const [liste, forderungen, vorgaenge, nachrichten, aufgaben, antworten, mieterL, kontaktListe] = await Promise.all([
     db.ladeUebersicht(),
     db.ladeForderungen({ abMonat: monate[0] }),
     db.ladeVorgaenge({ anzahl: 200 }),
@@ -169,12 +189,13 @@ export async function zeigeStart() {
     db.ladeAufgaben().catch(() => []),
     db.ladeAntworten({ anzahl: 50 }).catch(() => []),
     mieterListe(),
+    kontakte.kontakteListe(true),
   ]);
   const namen = Object.fromEntries(mieterL.map((m) => [m.id, mieterName(m)]));
   const rueckstand = liste.filter((m) => Number(m.offen_summe) > 0).sort((a, b) => b.offen_summe - a.offen_summe);
   const gesamt = rueckstand.reduce((s, m) => s + Number(m.offen_summe), 0);
   const entwuerfe = antworten.filter((a) => a.status === "entwurf");
-  const todos = sammle({ nachrichten, aufgaben, rueckstand, vorgaenge, entwuerfe, namen });
+  const todos = sammle({ nachrichten, aufgaben, rueckstand, vorgaenge, entwuerfe, namen, kontaktListe });
   const dringend = todos.jetzt.filter((t) => t.stufe <= 1).length;
   const neu = nachrichten.filter((n) => n.status === "neu").length;
   const nachName = Object.fromEntries(liste.map((m) => [m.id, m]));
@@ -196,6 +217,7 @@ export async function zeigeStart() {
       <div><h1>Übersicht</h1><p>${esc(zustand.profil?.firma || "")}, ${datumDE(new Date())}</p></div>
       <div class="knopfreihe">
         <button type="button" class="knopf knopf--primaer" id="notiz-neu">${ICON_PLUS} Notiz</button>
+        <button type="button" class="knopf" id="einsprechen" title="Gespräch festhalten: die KI ordnet es dem Kontakt zu">${ICON_MIKRO} Notiz einsprechen</button>
         <label class="knopf">${ICON_KAMERA} Foto / Datei<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="erfassen" multiple hidden></label>
       </div>
     </div>
@@ -254,6 +276,7 @@ export async function zeigeStart() {
 
   verbindeTodos(inhalt(), { aufgaben, nachher: zeigeStart });
   $("#notiz-neu").addEventListener("click", () => aufgabeDialog(null, { nachher: zeigeStart }));
+  $("#einsprechen").addEventListener("click", () => kontakte.notizEinsprechen());
   $("#erfassen").addEventListener("change", (e) => { const d = [...e.target.files]; e.target.value = ""; ablage.erfasseAlle(d); });
   for (const b of $$("[data-schreiben]", inhalt())) {
     b.addEventListener("click", async () => {
@@ -393,7 +416,7 @@ export async function zeigeObjekt(id) {
 // ---------------------------------------------------------------------------
 export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = null } = {}) {
   a = a || {};
-  const mieterL = await mieterListe();
+  const [mieterL, kontaktListe] = await Promise.all([mieterListe(), kontakte.kontakteListe()]);
   const vorhanden = !!a.id;
   const kiDa = !!zustand.ki?.ki;
   const faellig = vorschlag?.wiedervorlage || a.faellig_am || "";
@@ -407,6 +430,9 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
       <span class="diktat"><textarea name="notiz" rows="3">${esc(a.notiz || "")}</textarea>${mikroKnopf()}</span></label>
     <div class="formraster formraster--zwei">
       <label class="feld"><span>Mietpartei</span><select name="mieter_id">${mieterOptionen(mieterL, a.mieter_id || null)}</select></label>
+      ${kontaktListe.length || a.kontakt_id ? `<label class="feld"><span>Kontakt</span><select name="kontakt_id"><option value="">–</option>
+        ${kontaktListe.map((k) => `<option value="${esc(k.id)}" ${k.id === a.kontakt_id ? "selected" : ""}>${esc(kontakte.kontaktName(k))}${k.firma && (k.vorname || k.nachname) ? ` (${esc(k.firma)})` : ""}</option>`).join("")}
+      </select></label>` : ""}
       <label class="feld"><span>Haus</span><select name="objekt_id">
         <option value="">–</option>
         ${zustand.stamm.objekte.map((o) => `<option value="${esc(o.id)}" ${o.id === a.objekt_id ? "selected" : ""}>${esc(o.bezeichnung)}</option>`).join("")}
@@ -466,6 +492,7 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
       notiz: String(daten.get("notiz") || "").trim() || null,
       mieter_id: daten.get("mieter_id") || null,
       objekt_id: daten.get("objekt_id") || null,
+      kontakt_id: daten.get("kontakt_id") || null,
       faellig_am: daten.get("faellig_am") || null,
       vorlauf_tage: vorlauf,
     };

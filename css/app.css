@@ -922,3 +922,63 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
   .oz { grid-template-columns: minmax(0, 1fr); padding-left: calc(0.55rem + var(--tiefe, 0) * 0.9rem); padding-right: 0.55rem; }
   .oz__knoepfe { justify-content: flex-start; margin-left: 1.6rem; }
 }
+
+/* --- Kontakte, Verlauf, Geburtstage ----------------------------------------- */
+.reiter--seiten { margin-bottom: 1.1rem; }
+a.reiter__knopf { text-decoration: none; display: inline-block; }
+.reiter__knopf[aria-current="page"] { background: var(--tinte); border-color: var(--tinte); color: #fff; font-weight: 600; }
+.kontaktliste { display: flex; flex-direction: column; }
+.kontaktzeile {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.8rem; align-items: center;
+  padding: 0.7rem 1.1rem; border-bottom: 1px solid #edf0f4; text-decoration: none; color: inherit;
+}
+.kontaktzeile:last-of-type { border-bottom: none; }
+.kontaktzeile:hover { background: #f6f8fb; }
+.kontaktzeile__bild {
+  width: 2.4rem; height: 2.4rem; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: var(--tinte-zart); color: var(--tinte); font-weight: 700; font-size: 0.85rem; letter-spacing: 0.02em;
+}
+.kontaktzeile__bild--gross { width: 3.2rem; height: 3.2rem; font-size: 1.05rem; }
+.kontaktzeile__text { display: flex; flex-direction: column; min-width: 0; }
+.kontaktzeile__name { font-weight: 600; color: var(--tinte); overflow-wrap: anywhere; }
+.kontaktzeile__text .leise { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; }
+.kontaktzeile__rechts { display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; font-size: 0.8rem; text-align: right; }
+.kontaktzeile__rechts .marker svg, .geburtstage h2 svg { vertical-align: -2px; }
+.kontaktkopf { display: flex; align-items: center; gap: 0.9rem; min-width: 0; }
+.kontaktkopf h1 { overflow-wrap: anywhere; }
+.kontaktinfo { margin-top: 0.9rem; padding: 0.7rem 0.85rem; background: var(--messing-zart); border-radius: var(--radius); font-size: 0.9rem; }
+.kontaktinfo p { margin: 0.25rem 0 0; white-space: pre-line; }
+.geburtstage { margin-bottom: 1rem; }
+.geburtstag {
+  display: flex; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; padding: 0.6rem 1.1rem;
+  border-bottom: 1px solid #edf0f4; text-decoration: none; color: inherit;
+}
+.geburtstag:last-child { border-bottom: none; }
+.geburtstag:hover { background: #f6f8fb; }
+.geburtstag__name { font-weight: 600; color: var(--tinte); }
+.geburtstag__wann { font-size: 0.85rem; color: var(--text-leise); }
+.geburtstag__wann--bald { color: #7a5d2e; font-weight: 600; }
+.verlauf { display: flex; flex-direction: column; }
+.verlauf__eintrag {
+  font: inherit; text-align: left; cursor: pointer; width: 100%; background: none; color: inherit;
+  border: none; border-bottom: 1px solid #edf0f4; padding: 0.75rem 1.1rem 0.75rem 1.5rem; position: relative;
+  display: flex; flex-direction: column; gap: 0.25rem;
+}
+.verlauf__eintrag::before {
+  content: ""; position: absolute; left: 0.7rem; top: 1.05rem; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--messing);
+}
+.verlauf__eintrag:hover { background: #f6f8fb; }
+.verlauf__kopf { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; font-size: 0.82rem; }
+.verlauf__art { font-weight: 700; color: var(--tinte); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.72rem; }
+.verlauf__text { white-space: pre-line; overflow-wrap: anywhere; font-size: 0.92rem; }
+.aufgabenzeile { display: grid; grid-template-columns: auto minmax(0, 1fr) 10.5rem; gap: 0.5rem; align-items: center; margin-bottom: 0.45rem; }
+.geburtstagsfeld { display: grid; grid-template-columns: 6rem minmax(0, 1fr) 7.5rem; gap: 0.6rem; }
+.geburtstagsfeld .feld { margin: 0; }
+@media (max-width: 600px) {
+  .kontaktzeile { grid-template-columns: auto minmax(0, 1fr); }
+  .kontaktzeile__rechts { grid-column: 2; align-items: flex-start; text-align: left; flex-direction: row; flex-wrap: wrap; gap: 0.4rem; }
+  .aufgabenzeile { grid-template-columns: auto minmax(0, 1fr); }
+  .aufgabenzeile input[type=date] { grid-column: 2; }
+  .geburtstagsfeld { grid-template-columns: 4rem minmax(0, 1fr) 5.5rem; gap: 0.4rem; }
+}
+.geburtstagsfeld__titel { display: block; font-size: 0.85rem; font-weight: 600; margin: 0.25rem 0 0.2rem; }

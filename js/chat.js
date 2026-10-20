@@ -16,7 +16,7 @@ const verlauf = []; // { rolle: "robert" | "ki" | "fehler", text, aktionen? }
 let laeuft = false;
 let eingerichtet = false;
 
-const ZIELE = { mieter: "#/mieter/", objekt: "#/objekt/", nachricht: "#/postfach/" };
+const ZIELE = { mieter: "#/mieter/", kontakt: "#/kontakt/", objekt: "#/objekt/", nachricht: "#/postfach/" };
 
 // Sichere Darstellung: erst alles maskieren, dann nur fett, Listen und App-interne Links erlauben
 function formatiere(text) {
@@ -135,7 +135,7 @@ async function fuehreAus(a) {
   const neuLaden = () => geheZu(location.hash || "#/uebersicht");
   switch (a.art) {
     case "notiz":
-      return aufgabeDialog({ titel: d.titel, notiz: d.notiz, faellig_am: d.faellig_am, mieter_id: d.mieter_id, objekt_id: d.objekt_id }, { nachher: neuLaden });
+      return aufgabeDialog({ titel: d.titel, notiz: d.notiz, faellig_am: d.faellig_am, mieter_id: d.mieter_id, objekt_id: d.objekt_id, kontakt_id: d.kontakt_id }, { nachher: neuLaden });
     case "wissen":
       return bearbeiteWissen({ titel: d.titel, inhalt: d.inhalt, ordner: d.ordner, objekt_id: d.objekt_id, aktiv: true },
         { nachher: neuLaden, hinweis: "Vorschlag aus dem Chat. Bitte prüfen und speichern." });

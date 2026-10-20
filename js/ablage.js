@@ -1097,6 +1097,7 @@ async function legeEintragAb(e, f) {
     antwort_id: e.quelle?.antwort_id || null,
     aufgabe_id: e.quelle?.aufgabe_id || null,
     vorgang_id: e.quelle?.vorgang_id || null,
+    verlauf_id: e.quelle?.verlauf_id || null,
     ordner: f.ordner,
     art: f.art || null,
     absender: f.absender || null,
