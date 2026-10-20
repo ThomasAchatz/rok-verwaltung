@@ -123,6 +123,11 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   Thema, Betrag und Wohnung schlägt die KI vor; die Mietpartei (Name) kommt bei Schriftverkehr dazu, nicht bei Rechnungen.
   Orts-Kürzel je Haus (`objekte.kuerzel`, Hausseite → Einstellungen zum Haus). Details schlägt die KI vor
   (Firma_Betrag, Vertragspartner …); bei einer Mietpartei setzt die App „Wohnung_Nachname“.
+- **Ordner bearbeiten** (gilt für alle Häuser): oben „Neuen Ordner anlegen“ mit Name und „Einsortieren in“
+  (Oberste Ebene oder unter einem Ordner, wie im Mail-Programm), bei jedem Ordner „+ Unterordner“. Die Liste ist ein
+  eingerückter Baum; Verschieben und Umbenennen nehmen Unterordner und Dokumente mit, Löschen ebenfalls (Dokumente
+  kommen nach „Sonstiges“). Hinweise bei „je Wohnung“/„je Jahr“; von Hand angelegte Wohnungsordner werden erkannt
+  und es wird davon abgeraten (die entstehen automatisch aus den Mietparteien).
 - **Objekte (Menüpunkt):** alle Häuser als Karten, je Haus die Ordner der Ablage als aufklappbarer Baum
   (`#/ablage/<id>`, auch leere Ordner, automatische Unterordner je Jahr/Wohnung). Oben eine Ablagefläche:
   Dateien hineinziehen (am Handy: auswählen), die KI benennt sie nach dem Schema; danach klappt der Zielordner

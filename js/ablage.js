@@ -710,92 +710,256 @@ export async function bearbeiteDienstleister(d, { nachher = () => {}, objektId =
 
 // ---------------------------------------------------------------------------
 // Ordner der Ablage bearbeiten (gilt für alle Häuser)
+// Oben „Neuen Ordner anlegen“ mit „Einsortieren in“ (wie im Mail-Programm), darunter die Ordner als Baum.
+// Geändert wird erst mit „Speichern“.
 // ---------------------------------------------------------------------------
 const ordnerName = (s) => String(s || "").split("/").map((t) => t.trim().replace(/\s+/g, " ")).filter(Boolean).join("/").slice(0, 80);
+const ordnerTeil = (s) => String(s || "").replace(/\//g, "-").replace(/\s+/g, " ").trim().slice(0, 60);
+// Sieht ein Name aus wie ein Wohnungsordner („Wohnung 1 - Meier“, „WHG 3“, „EG links“)?
+export const wieWohnung = (s) => /^(wohnung|whg\.?|we)\s*\d+/i.test(String(s).trim()) || /^(eg|og|dg|\d+\.\s*og)\b/i.test(String(s).trim()) || /(dach|erd)geschoss/i.test(s);
+const ICON_ORDNER_KLEIN = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>`;
 
 export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
   await ordnerListe(true);
-  const zeilen = (zustand.dokOrdnerZeilen || []).filter((o) => o.name !== "Sonstiges");
+  const roh = (zustand.dokOrdnerZeilen || []).filter((o) => o.name !== "Sonstiges");
   const namenAlle = new Set((zustand.dokOrdnerZeilen || []).map((o) => o.name));
   const anzahl = {};
-  // Dokumente in automatischen Unterordnern (z. B. „04_Betriebskosten/2026“) zählen beim Hauptordner mit
+  // Dokumente in automatischen Unterordnern (z. B. „04_Betriebskosten/2026“) zählen beim Ordner darüber mit
   for (const d of await db.ladeDokumente({}).catch(() => [])) {
     let k = d.ordner;
     while (k && !namenAlle.has(k) && k.includes("/")) k = k.slice(0, k.lastIndexOf("/"));
     anzahl[k] = (anzahl[k] || 0) + 1;
   }
-  const zeile = (o) => `
-    <div class="ordnerzeile ${o.name.includes("/") ? "ordnerzeile--unter" : ""}" data-id="${esc(o.id)}" data-alt="${esc(o.name)}">
-      <input value="${esc(o.name)}" maxlength="80" aria-label="Ordnername" autocomplete="off">
-      <span class="leise ordnerzeile__zahl">${anzahl[o.name] ? `${anzahl[o.name]} Dok.` : ""}</span>
-      <button type="button" class="knopf knopf--klein" data-schritt="-1" aria-label="Nach oben">↑</button>
-      <button type="button" class="knopf knopf--klein" data-schritt="1" aria-label="Nach unten">↓</button>
-      <button type="button" class="knopf knopf--klein knopf--gefahr" data-weg aria-label="Löschen">✕</button>
-      <select class="ordnerzeile__auto" aria-label="Automatische Unterordner">
-        <option value="">ohne automatische Unterordner</option>
-        <option value="jahr" ${o.automatik === "jahr" ? "selected" : ""}>Unterordner je Jahr (z. B. 2026)</option>
-        <option value="wohnung" ${o.automatik === "wohnung" ? "selected" : ""}>Unterordner je Wohnung (Wohnung - Name)</option>
-      </select>
-    </div>`;
-  let ergebnis = null;
+
+  // Modell: jede Zeile kennt ihren Eltern-Ordner; der volle Name ergibt sich daraus
+  let zaehler = 0;
+  const liste = roh.map((o) => ({
+    key: `k${zaehler++}`, id: o.id, alt: o.name, teil: o.name, eltern: null,
+    automatik: o.automatik || null, vorher: o.automatik || null, weg: false, neu: false, zahl: anzahl[o.name] || 0,
+  }));
+  const nachAlt = new Map(liste.map((x) => [x.alt, x]));
+  for (const x of liste) {
+    let p = x.alt;
+    while (p.includes("/")) {
+      p = p.slice(0, p.lastIndexOf("/"));
+      if (nachAlt.has(p)) { x.eltern = nachAlt.get(p).key; x.teil = x.alt.slice(p.length + 1); break; }
+    }
+  }
+  const nachKey = (k) => liste.find((x) => x.key === k) || null;
+  const voll = (x) => (x.eltern ? `${voll(nachKey(x.eltern))}/` : "") + ordnerTeil(x.teil);
+  const kinder = (k) => liste.filter((x) => x.eltern === k);
+  const nachkommen = (k) => kinder(k).flatMap((x) => [x, ...nachkommen(x.key)]);
+  const baum = (k = null, tiefe = 0, nurAktiv = false) =>
+    kinder(k).filter((x) => !nurAktiv || !x.weg).flatMap((x) => [{ x, tiefe }, ...baum(x.key, tiefe + 1, nurAktiv)]);
+  const wohnungsOrdner = () => liste.find((x) => !x.eltern && !x.weg && x.automatik === "wohnung");
+
+  const warnungVon = (x, wo = wohnungsOrdner()) => !x.weg && wieWohnung(x.teil) && !(x.eltern && nachKey(x.eltern)?.automatik === "wohnung")
+    ? `Sieht aus wie ein Wohnungsordner. Die entstehen${wo ? ` unter „${esc(ordnerTeil(wo.teil))}“` : ""} automatisch aus den Mietparteien. Diesen Ordner am besten löschen.` : "";
+  const zeileHtml = ({ x, tiefe }) => {
+    const elternWeg = x.eltern && nachKey(x.eltern)?.weg;
+    const wo = wohnungsOrdner();
+    const hinweise = [];
+    if (!tiefe && !x.weg && x.automatik === "wohnung") hinweise.push(`Wohnungsordner („Wohnung - Nachname“) legt die App hier automatisch an, sobald etwas für eine Mietpartei abgelegt wird. Nicht von Hand anlegen.`);
+    if (!tiefe && !x.weg && x.automatik === "jahr") hinweise.push(`Jahresordner (z. B. ${new Date().getFullYear()}) legt die App hier automatisch an.`);
+    const warnung = warnungVon(x, wo);
+    return `
+      <div class="oz ${tiefe ? "oz--unter" : ""} ${x.weg ? "oz--weg" : ""} ${x.neu ? "oz--neu" : ""}" data-key="${x.key}" data-alt="${esc(x.alt || "")}" style="--tiefe:${tiefe}">
+        <div class="oz__zeile">
+          <span class="oz__symbol">${ICON_ORDNER_KLEIN}</span>
+          <input class="oz__name" value="${esc(x.teil)}" maxlength="60" aria-label="Name des Ordners" autocomplete="off" ${x.weg ? "disabled" : ""}>
+          ${x.zahl ? `<span class="leise oz__zahl">${x.zahl} Dok.</span>` : ""}
+          ${x.neu ? `<span class="marker marker--neu">neu</span>` : ""}
+        </div>
+        <div class="oz__knoepfe">
+          ${x.weg ? (elternWeg ? `<span class="leise">wird mit gelöscht</span>`
+            : `<span class="leise">wird gelöscht${x.zahl ? `, ${x.zahl} Dok. kommen nach „Sonstiges“` : ""}</span>
+               <button type="button" class="knopf knopf--klein" data-weg>Doch behalten</button>`) : `
+            <button type="button" class="knopf knopf--klein" data-unter>+ Unterordner</button>
+            <button type="button" class="knopf knopf--klein" data-schritt="-1" aria-label="Nach oben">↑</button>
+            <button type="button" class="knopf knopf--klein" data-schritt="1" aria-label="Nach unten">↓</button>
+            <button type="button" class="knopf knopf--klein knopf--gefahr" data-weg aria-label="Ordner löschen">✕</button>`}
+        </div>
+        ${!tiefe && !x.weg ? `
+        <select class="oz__auto" aria-label="Automatische Unterordner">
+          <option value="">ohne automatische Unterordner</option>
+          <option value="jahr" ${x.automatik === "jahr" ? "selected" : ""}>automatisch je Jahr (2025, 2026 …)</option>
+          <option value="wohnung" ${x.automatik === "wohnung" ? "selected" : ""}>automatisch je Wohnung (Wohnung - Nachname)</option>
+        </select>` : ""}
+        ${hinweise.map((h) => `<p class="oz__hinweis">${h}</p>`).join("")}
+        ${warnung ? `<p class="oz__hinweis oz__hinweis--warn">${warnung}</p>` : ""}
+      </div>`;
+  };
+
+  let ergebnis = null, formular = null;
+  const zeichne = (fokusKey = null) => {
+    const form = formular;
+    $(".ozliste", form).innerHTML = baum().map(zeileHtml).join("") + `
+      <div class="oz oz--fest" style="--tiefe:0"><div class="oz__zeile"><span class="oz__symbol">${ICON_ORDNER_KLEIN}</span>
+        <input value="Sonstiges" readonly tabindex="-1" aria-label="Sonstiges (immer da)">
+        ${anzahl.Sonstiges ? `<span class="leise oz__zahl">${anzahl.Sonstiges} Dok.</span>` : ""}</div>
+        <div class="oz__knoepfe"><span class="leise">immer da, für alles ohne passenden Ordner</span></div></div>`;
+    auswahlNeu();
+    if (fokusKey) {
+      const z = $(`.oz[data-key="${fokusKey}"]`, form);
+      z?.scrollIntoView({ block: "nearest" });
+    }
+  };
+  // Auswahl „Einsortieren in“ neu füllen (gewählten Ordner behalten)
+  const auswahlNeu = () => {
+    const sel = $("[data-neu-eltern]", formular);
+    const vorher = sel.value;
+    sel.innerHTML = `<option value="">Oberste Ebene (Hauptordner)</option>` +
+      baum(null, 0, true).map(({ x, tiefe }) => `<option value="${x.key}">${"\u00a0".repeat(4 * (tiefe + 1))}${esc(ordnerTeil(x.teil) || "(ohne Namen)")}</option>`).join("");
+    sel.value = nachKey(vorher) && !nachKey(vorher).weg ? vorher : "";
+    neuHinweis();
+  };
+  // Nach dem Umbenennen nur die Warnung der Zeile anpassen (nicht neu zeichnen, sonst geht ein Klick verloren)
+  const warnungNeu = (x) => {
+    const z = $(`.oz[data-key="${x.key}"]`, formular);
+    if (!z) return;
+    const text = warnungVon(x);
+    let p = $(".oz__hinweis--warn", z);
+    if (!text) return p?.remove();
+    if (!p) { p = document.createElement("p"); p.className = "oz__hinweis oz__hinweis--warn"; z.append(p); }
+    p.innerHTML = text;
+  };
+  // Hinweis unter „Neuen Ordner anlegen“: wo landet er, passt das?
+  const neuHinweis = (text = null, art = "") => {
+    const form = formular;
+    const h = $("[data-neu-hinweis]", form);
+    const name = ordnerTeil($("[data-neu-name]", form).value);
+    const eltern = nachKey($("[data-neu-eltern]", form).value);
+    const wo = wohnungsOrdner();
+    if (text) { h.textContent = text; h.className = `feldhinweis ${art}`; return; }
+    if (name && wieWohnung(name)) {
+      h.textContent = `Wohnungsordner bitte nicht von Hand anlegen: Sie entstehen${wo ? ` unter „${ordnerTeil(wo.teil)}“` : ""} automatisch, sobald etwas für eine Mietpartei abgelegt wird. Wohnungen und Mietparteien legt man unter Mieter → „Häuser & Wohnungen“ an.`;
+      h.className = "feldhinweis feldhinweis--warn";
+    } else if (eltern?.automatik === "wohnung") {
+      h.textContent = `In „${ordnerTeil(eltern.teil)}“ entstehen die Wohnungsordner automatisch. Hier nur Ordner anlegen, die in jedem Haus gleich sind (z. B. Auszüge).`;
+      h.className = "feldhinweis";
+    } else {
+      h.textContent = name ? `Wird angelegt als: ${ordnerAnzeige((eltern ? voll(eltern) + "/" : "") + name)} (in jedem Haus)` : "Gilt für alle Häuser.";
+      h.className = "feldhinweis feldhinweis--leise";
+    }
+  };
+  const hinzufuegen = () => {
+    const form = formular;
+    const feld = $("[data-neu-name]", form);
+    const teil = ordnerTeil(feld.value);
+    const elternKey = $("[data-neu-eltern]", form).value || null;
+    if (!teil) { feld.focus(); return neuHinweis("Bitte zuerst einen Namen eingeben.", "feldhinweis--warn"); }
+    const name = (elternKey ? voll(nachKey(elternKey)) + "/" : "") + teil;
+    const vorhanden = liste.filter((x) => !x.weg).map((x) => voll(x).toLowerCase());
+    if (vorhanden.includes(name.toLowerCase()) || name.toLowerCase() === "sonstiges") {
+      return neuHinweis(`„${ordnerAnzeige(name)}“ gibt es schon.`, "feldhinweis--warn");
+    }
+    const x = { key: `k${zaehler++}`, id: null, alt: null, teil, eltern: elternKey, automatik: null, vorher: null, weg: false, neu: true, zahl: 0 };
+    // hinter dem letzten Unterordner des Eltern-Ordners einsortieren
+    const letzte = elternKey ? [nachKey(elternKey), ...nachkommen(elternKey)].at(-1) : null;
+    if (letzte) liste.splice(liste.indexOf(letzte) + 1, 0, x); else liste.push(x);
+    feld.value = "";
+    zeichne(x.key);
+    neuHinweis(`„${ordnerAnzeige(name)}“ ist vorgemerkt. Mit „Speichern“ übernehmen.`, "feldhinweis--ok");
+    feld.focus();
+  };
+
   const daten = await dialogFormular(`
     <h2>Ordner der Ablage</h2>
-    <p class="leise">Gilt für alle Häuser. Unterordner mit „/“ schreiben, z. B. „07_Verträge/Strom“.
-      Die KI wählt beim Ablegen aus genau dieser Liste. Ordner „je Jahr“ oder „je Wohnung“ bekommen ihre Unterordner automatisch.</p>
-    <div class="ordnerliste">${zeilen.map(zeile).join("")}
-      <div class="ordnerzeile ordnerzeile--fest"><input value="Sonstiges" readonly tabindex="-1" aria-label="Sonstiges (immer da)">
-        <span class="leise ordnerzeile__zahl">${anzahl.Sonstiges ? `${anzahl.Sonstiges} Dok.` : ""}</span><span class="leise">immer da</span></div>
-    </div>
-    <label class="feld"><span>Neue Ordner (einer pro Zeile)</span><textarea name="neu" rows="2" placeholder="z. B. Versorger/Strom"></textarea></label>
+    <p class="leise">Diese Ordner gibt es in <strong>jedem Haus</strong> gleich. Die KI legt Dateien nur hier ab.</p>
+    <fieldset class="ordner-neu">
+      <legend>Neuen Ordner anlegen</legend>
+      <div class="ordner-neu__zeile">
+        <label class="feld"><span>Name</span><input data-neu-name maxlength="60" placeholder="z. B. Kautionen" autocomplete="off"></label>
+        <label class="feld"><span>Einsortieren in</span><select data-neu-eltern></select></label>
+        <button type="button" class="knopf" data-neu-hinzu>Hinzufügen</button>
+      </div>
+      <p class="feldhinweis feldhinweis--leise" data-neu-hinweis></p>
+    </fieldset>
+    <h3 class="ordner-titel">Vorhandene Ordner</h3>
+    <div class="ozliste"></div>
+    <p class="leise">Umbenennen: einfach den Namen ändern. Unterordner wandern beim Verschieben und Umbenennen mit, Dokumente auch.</p>
+    <p class="oz-fehler" data-fehler role="alert" hidden></p>
     <div class="knopfreihe">
       <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
       <button class="knopf knopf--primaer" value="ok">Speichern</button>
     </div>`, {
     breit: true,
     vorbereiten: (form) => {
-      const liste = $(".ordnerliste", form);
-      liste.addEventListener("click", (e) => {
-        const z = e.target.closest(".ordnerzeile");
-        if (!z) return;
+      formular = form;
+      zeichne();
+      const neuName = $("[data-neu-name]", form);
+      neuName.addEventListener("input", () => neuHinweis());
+      neuName.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); hinzufuegen(); } });
+      $("[data-neu-eltern]", form).addEventListener("change", () => neuHinweis());
+      $("[data-neu-hinzu]", form).addEventListener("click", hinzufuegen);
+      const ozliste = $(".ozliste", form);
+      ozliste.addEventListener("input", (e) => {
+        const x = nachKey(e.target.closest(".oz")?.dataset.key);
+        if (x && e.target.classList.contains("oz__name")) x.teil = e.target.value;
+      });
+      ozliste.addEventListener("change", (e) => {
+        const x = nachKey(e.target.closest(".oz")?.dataset.key);
+        if (!x) return;
+        if (e.target.classList.contains("oz__auto")) { x.automatik = e.target.value || null; zeichne(x.key); }
+        if (e.target.classList.contains("oz__name")) { warnungNeu(x); auswahlNeu(); }
+      });
+      // Enter im Namensfeld soll nicht den Dialog schließen
+      ozliste.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && e.target.classList.contains("oz__name")) { e.preventDefault(); e.target.blur(); }
+      });
+      ozliste.addEventListener("click", (e) => {
+        const x = nachKey(e.target.closest(".oz")?.dataset.key);
+        if (!x) return;
+        if (e.target.closest("[data-unter]")) {
+          $("[data-neu-eltern]", form).value = x.key;
+          neuHinweis();
+          $(".ordner-neu", form).scrollIntoView({ block: "nearest" });
+          neuName.focus();
+          return;
+        }
         const schritt = e.target.closest("[data-schritt]");
         if (schritt) {
-          const nachbar = schritt.dataset.schritt === "-1" ? z.previousElementSibling : z.nextElementSibling;
-          if (nachbar && !nachbar.classList.contains("ordnerzeile--fest")) {
-            schritt.dataset.schritt === "-1" ? nachbar.before(z) : nachbar.after(z);
-          }
+          const geschwister = kinder(x.eltern);
+          const i = geschwister.indexOf(x), j = i + Number(schritt.dataset.schritt);
+          if (j < 0 || j >= geschwister.length) return;
+          const a = liste.indexOf(x), b = liste.indexOf(geschwister[j]);
+          [liste[a], liste[b]] = [liste[b], liste[a]];
+          zeichne(x.key);
+          $(`.oz[data-key="${x.key}"] [data-schritt="${schritt.dataset.schritt}"]`, form)?.focus();
+          return;
         }
         if (e.target.closest("[data-weg]")) {
-          const weg = z.classList.toggle("ordnerzeile--weg");
-          $("input", z).disabled = weg;
-          e.target.closest("[data-weg]").textContent = weg ? "↺" : "✕";
-          e.target.closest("[data-weg]").setAttribute("aria-label", weg ? "Doch behalten" : "Löschen");
+          if (x.neu) {
+            for (const y of [x, ...nachkommen(x.key)]) liste.splice(liste.indexOf(y), 1);
+          } else {
+            const weg = !x.weg;
+            for (const y of [x, ...nachkommen(x.key)]) y.weg = weg;
+          }
+          zeichne(x.key);
         }
       });
-      form.addEventListener("submit", () => {
-        ergebnis = $$(".ordnerzeile[data-id]", form).map((z, i) => ({
-          id: z.dataset.id, alt: z.dataset.alt, name: ordnerName($("input", z).value),
-          weg: z.classList.contains("ordnerzeile--weg"), reihenfolge: (i + 1) * 10,
-          automatik: $(".ordnerzeile__auto", z)?.value || null,
-          vorher: zeilen.find((o) => o.id === z.dataset.id)?.automatik || null,
-        }));
+      // Vor dem Schließen prüfen, damit nichts verloren geht
+      form.addEventListener("submit", (e) => {
+        if (e.submitter?.value !== "ok") return;
+        const aktiv = baum(null, 0, true).map(({ x }) => x);
+        const namen = aktiv.map(voll);
+        let fehler = "";
+        if (aktiv.some((x) => !ordnerTeil(x.teil))) fehler = "Bitte keinen Ordner ohne Namen speichern.";
+        else if (namen.some((n) => n.toLowerCase() === "sonstiges")) fehler = "„Sonstiges“ gibt es schon.";
+        else if (new Set(namen.map((n) => n.toLowerCase())).size !== namen.length) fehler = "Jeder Ordnername darf nur einmal vorkommen (innerhalb desselben Ordners).";
+        const feldFehler = $("[data-fehler]", form);
+        feldFehler.textContent = fehler;
+        feldFehler.hidden = !fehler;
+        if (fehler) { e.preventDefault(); return; }
+        ergebnis = aktiv.map((x, i) => ({ ...x, name: voll(x), reihenfolge: (i + 1) * 10 }));
       });
     },
   });
   if (!daten || !ergebnis) return;
-  const neue = String(daten.get("neu") || "").split(/\n+/).map(ordnerName).filter(Boolean);
-  const bleiben = ergebnis.filter((o) => !o.weg);
-  // Wird ein Oberordner umbenannt, wandern seine Unterordner mit (sofern sie nicht selbst geändert wurden)
-  for (const o of bleiben.filter((x) => x.name !== x.alt)) {
-    for (const u of bleiben) {
-      if (u !== o && u.name === u.alt && u.alt.startsWith(o.alt + "/")) u.name = o.name + u.alt.slice(o.alt.length);
-    }
-  }
-  const namen = [...bleiben.map((o) => o.name), ...neue];
-  if (namen.some((n) => !n)) return melde("Bitte keinen Ordner ohne Namen speichern.", "fehler");
-  if (namen.some((n) => n.toLowerCase() === "sonstiges")) return melde("„Sonstiges“ gibt es schon.", "fehler");
-  if (new Set(namen.map((n) => n.toLowerCase())).size !== namen.length) return melde("Jeder Ordnername darf nur einmal vorkommen.", "fehler");
-  const loeschen = ergebnis.filter((o) => o.weg);
-  const betroffen = loeschen.reduce((s, o) => s + (anzahl[o.alt] || 0), 0);
+  const bleiben = ergebnis.filter((o) => !o.neu);
+  const neue = ergebnis.filter((o) => o.neu);
+  const loeschen = liste.filter((o) => o.weg && !o.neu);
+  const betroffen = loeschen.reduce((s, o) => s + o.zahl, 0);
   if (betroffen && !(await frage("Ordner löschen?",
     `<p>${betroffen} ${betroffen === 1 ? "Dokument liegt" : "Dokumente liegen"} in ${loeschen.length === 1 ? "diesem Ordner" : "diesen Ordnern"}.
       Sie werden nach „Sonstiges“ verschoben, nichts wird gelöscht.</p>`, "Löschen und verschieben"))) return;
@@ -812,8 +976,9 @@ export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
       await db.speichereDokumentOrdner(o.id, felder);
       if (o.name !== o.alt) await db.verschiebeDokumente(o.alt, o.name);
     }
-    let r = (bleiben.length + 1) * 10;
-    for (const n of neue) await db.speichereDokumentOrdner(null, { name: n, reihenfolge: (r += 10) });
+    for (const o of neue) {
+      await db.speichereDokumentOrdner(null, { name: o.name, reihenfolge: o.reihenfolge, ...(o.automatik ? { automatik: o.automatik } : {}) });
+    }
     await ordnerListe(true);
     melde("Ordner gespeichert.", "ok");
   } catch (err) {

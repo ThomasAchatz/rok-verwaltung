@@ -82,5 +82,8 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   Ablagefläche: `ablegeflaecheHtml()` + `verbindeAblegeflaeche(el, { objektId, nurAblage, ablageZiel })` in `js/ablage.js`;
   ein Dokument-weiter Drop-Handler leitet auf die Fläche der Seite um (ohne Fläche: Hinweis).
   Menü: 6 Punkte; unter 520 px wird „Einstellungen“ zum Zahnrad (`.nav-lang`/`.nav-kurz`).
+- Ordner-Editor `ordnerBearbeiten()`: Modell mit `eltern`-Verweis (voller Name = Eltern + "/" + teil), neu zeichnen nur bei
+  Struktur-Änderungen (beim Umbenennen nicht, sonst geht der nächste Klick verloren). Löschen kaskadiert auf Unterordner.
+  `wieWohnung()` erkennt von Hand angelegte Wohnungsordner. Fehler stehen im Dialog (`[data-fehler]`), nicht als Meldung.
 - Stammdaten-Maske: `js/stammdaten.js` (Route `#/stammdaten`, Links in Einstellungen und Mieterliste). Löschen nur,
   wenn leer (Haus ohne Wohnungen, Wohnung ohne Mietpartei); Haus löschen kaskadiert auf Wissen/Handwerker des Hauses.

@@ -779,24 +779,9 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
 }
 
 /* --- Ordner der Ablage bearbeiten ----------------------------------------- */
-.ordnerliste { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
-.ordnerzeile { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; gap: 0.35rem; align-items: center; }
-.ordnerzeile__auto { grid-column: 1 / -1; font-size: 0.78rem; padding: 0.25rem 0.4rem; min-height: 0; color: var(--text-leise); }
-.ordnerzeile--unter { padding-left: 1.2rem; }
-.ordnerzeile--unter .ordnerzeile__auto { display: none; }
-.ordnerzeile + .ordnerzeile:not(.ordnerzeile--unter) { margin-top: 0.4rem; }
-.ordnerzeile--fest { grid-template-columns: minmax(0, 1fr) auto auto; }
-.ordnerzeile--fest input { color: var(--text-leise); background: #f7f9fb; }
-.ordnerzeile__zahl { min-width: 3.5rem; text-align: right; font-size: 0.78rem; }
-.ordnerzeile--weg input { text-decoration: line-through; opacity: 0.5; }
+
 @media (max-width: 420px) {
-  .ordnerzeile { grid-template-columns: minmax(0, 1fr) auto auto auto; }
-  .ordnerzeile .ordnerzeile__zahl { display: none; }
-  .ordnerzeile--fest { grid-template-columns: minmax(0, 1fr) auto; }
   /* Unterordner haben lange Namen: Eingabe über die ganze Breite, Knöpfe darunter */
-  .ordnerzeile--unter { grid-template-columns: minmax(0, 1fr) auto auto auto; padding-left: 0.8rem; }
-  .ordnerzeile--unter input { grid-column: 1 / -1; font-size: 0.9rem; }
-  .ordnerzeile--unter .ordnerzeile__zahl { display: block; grid-column: 1; min-width: 0; text-align: left; }
 }
 
 /* --- Stammdaten (Häuser, Wohnungen, Kostenträger) ------------------------ */
@@ -897,3 +882,43 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
 }
 /* Touch-Geräte (Handy, Tablet): Hineinziehen gibt es dort nicht, nur „Dateien auswählen“ */
 @media (hover: none) and (pointer: coarse) { .nur-maus { display: none; } }
+
+/* --- Ordner-Editor: neuer Ordner + Baum ---------------------------------- */
+.ordner-neu {
+  border: 1px solid var(--linie); border-radius: var(--radius); background: #f8fafd; padding: 0.75rem 0.9rem 0.6rem; margin: 0.75rem 0 1rem;
+}
+.ordner-neu legend { font-weight: 600; color: var(--tinte); padding: 0 0.3rem; }
+.ordner-neu__zeile { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 0.6rem; align-items: end; }
+.ordner-neu__zeile .feld { margin: 0; }
+.ordner-neu .feldhinweis { margin: 0.45rem 0 0; }
+.feldhinweis--warn { color: var(--offen); }
+.feldhinweis--ok { color: var(--bezahlt); }
+.ordner-titel { font-size: 0.95rem; margin: 0 0 0.4rem; }
+.ozliste { display: flex; flex-direction: column; border: 1px solid var(--linie); border-radius: var(--radius); margin-bottom: 0.75rem; }
+.oz {
+  padding: 0.5rem 0.7rem 0.5rem calc(0.7rem + var(--tiefe, 0) * 1.5rem);
+  border-top: 1px solid #edf0f4; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.35rem 0.6rem; align-items: center;
+}
+.oz:first-child { border-top: none; }
+.oz:not(.oz--unter) { background: #fbfcfd; }
+.oz--unter { border-top-style: dashed; }
+.oz__zeile { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.oz__symbol { color: var(--messing); display: flex; flex: none; }
+.oz--unter .oz__symbol { color: #c4a676; }
+.oz__name { flex: 1; min-width: 0; }
+.oz:not(.oz--unter) .oz__name { font-weight: 600; }
+.oz__zahl { font-size: 0.78rem; white-space: nowrap; }
+.oz__knoepfe { display: flex; flex-wrap: wrap; gap: 0.3rem; justify-content: flex-end; align-items: center; }
+.oz__auto { grid-column: 1 / -1; font-size: 0.82rem; padding: 0.3rem 0.45rem; min-height: 0; color: var(--text-leise); width: auto; max-width: min(26rem, calc(100% - 1.6rem)); margin-left: 1.6rem; }
+.oz__hinweis { grid-column: 1 / -1; margin: 0 0 0 1.6rem; font-size: 0.8rem; color: var(--text-leise); }
+.oz__hinweis--warn { color: var(--offen); }
+.oz--weg .oz__name { text-decoration: line-through; opacity: 0.55; }
+.oz--weg .oz__symbol { color: #c9cfd8; }
+.oz--neu { background: var(--bezahlt-zart) !important; }
+.oz--fest input { color: var(--text-leise); background: #f7f9fb; }
+.oz-fehler { color: var(--offen); font-weight: 600; margin: 0 0 0.5rem; }
+@media (max-width: 600px) {
+  .ordner-neu__zeile { grid-template-columns: 1fr; }
+  .oz { grid-template-columns: minmax(0, 1fr); padding-left: calc(0.55rem + var(--tiefe, 0) * 0.9rem); padding-right: 0.55rem; }
+  .oz__knoepfe { justify-content: flex-start; margin-left: 1.6rem; }
+}
