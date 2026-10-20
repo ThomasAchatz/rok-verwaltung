@@ -1063,3 +1063,18 @@ a.reiter__knopf { text-decoration: none; display: inline-block; }
 .zip__ordner li { display: flex; justify-content: space-between; gap: 0.6rem; padding: 0.2rem 0; border-top: 1px dashed #edf0f4; overflow-wrap: anywhere; }
 .fortschritt progress { width: min(320px, 100%); height: 0.6rem; accent-color: var(--tinte); }
 .fortschritt [data-stand] { max-width: 320px; overflow-wrap: anywhere; min-height: 2.6em; }
+
+/* Übersicht: Filter Alle / Eilig / Wiedervorlagen / Erledigt */
+.reiter--filter { padding: 0.75rem 1.1rem 0; margin-bottom: 0.6rem; }
+.reiter__zahl { font-variant-numeric: tabular-nums; opacity: 0.75; margin-left: 0.15rem; }
+.lage__link {
+  font: inherit; background: none; border: none; padding: 0; color: var(--tinte-hell); cursor: pointer;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px;
+}
+.lage__link:hover { color: var(--tinte); text-decoration-color: currentColor; }
+.lage__mehr { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; margin-top: 0.3rem; font-size: 0.84rem; }
+.todo--erledigt { border-left-color: var(--bezahlt-zart); }
+.todo--erledigt .todo__titel { font-weight: 500; color: var(--text-leise); }
+.todo__haken--zurueck { color: var(--tinte-hell); }
+.todo__haken--zurueck svg { opacity: 0.55; }
+.todo__haken--zurueck:hover { border-color: var(--tinte-hell); background: var(--tinte-zart); }

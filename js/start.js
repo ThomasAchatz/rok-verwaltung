@@ -136,6 +136,48 @@ function todoZeile(t) {
     </div>`;
 }
 
+// Erledigtes (Filter „Erledigt“ auf der Übersicht): schlicht, mit „Wieder öffnen“ bei Notizen
+const ICON_ZURUECK = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05 1-6.9 2.6L2 7v9h9l-3.62-3.62A7.95 7.95 0 0 1 20.1 16l2.37-.78A10.5 10.5 0 0 0 12.5 8z"/></svg>`;
+function erledigtZeile(t) {
+  const kopf = `
+      <span class="todo__art">${esc(t.art)}</span>
+      <span class="todo__titel">${esc(t.titel)}</span>
+      ${t.unter ? `<span class="todo__unter"><span>${esc(t.unter)}</span></span>` : ""}`;
+  return `
+    <div class="todo todo--erledigt">
+      ${t.aufgabe ? `<button type="button" class="todo__haupt" data-aufgabe="${esc(t.aufgabe.id)}">${kopf}</button>` : `<a class="todo__haupt" href="${esc(t.href)}">${kopf}</a>`}
+      <span class="todo__wann">${esc(t.wann || "")}</span>
+      ${t.aufgabe ? `<button type="button" class="todo__haken todo__haken--zurueck" data-wieder="${esc(t.aufgabe.id)}" title="Wieder öffnen" aria-label="Wieder öffnen: ${esc(t.titel)}">${ICON_ZURUECK}</button>`
+        : `<span class="todo__haken todo__haken--leer" aria-hidden="true"></span>`}
+    </div>`;
+}
+
+/** Erledigtes der letzten Zeit: Notizen/Wiedervorlagen, beantwortete Nachrichten, Gratulationen dieses Jahr */
+async function sammleErledigt({ namen = {}, kontaktListe = [] }) {
+  const [aufgaben, nachrichten] = await Promise.all([
+    db.ladeAufgaben({ status: "erledigt" }).catch(() => []),
+    db.ladeNachrichten({ status: ["beantwortet", "erledigt"], anzahl: 40 }).catch(() => []),
+  ]);
+  const jahr = Number(heuteISO().slice(0, 4));
+  const liste = [
+    ...aufgaben.map((a) => ({
+      art: a.faellig_am ? "Wiedervorlage" : "Notiz", aufgabe: a, titel: a.titel,
+      zeit: a.erledigt_am || a.aktualisiert_am || a.erstellt_am,
+      unter: [a.mieter_id ? namen[a.mieter_id] : a.kontakt_id ? kontakte.kontaktName(kontakte.kontaktVon(a.kontakt_id)) : a.dienstleister?.name || (a.objekt_id ? objektVon(a.objekt_id)?.bezeichnung : ""),
+        a.faellig_am ? `war fällig ${datumDE(a.faellig_am)}` : ""].filter(Boolean).join(" · "),
+    })),
+    ...nachrichten.map((n) => ({
+      art: n.status === "beantwortet" ? "Beantwortet" : "Nachricht erledigt", href: `#/postfach/${n.id}`, titel: n.betreff || "(ohne Betreff)",
+      zeit: n.eingang_am, unter: (n.mieter_id && namen[n.mieter_id]) || n.absender_name || n.absender_email || "",
+    })),
+    ...kontaktListe.filter((k) => Number(k.geburtstag_erledigt) === jahr).map((k) => ({
+      art: "Geburtstag", href: `#/kontakt/${k.id}`, titel: kontakte.kontaktName(k), zeit: null, unter: "gratuliert",
+    })),
+  ];
+  liste.sort((x, y) => String(y.zeit || "").localeCompare(String(x.zeit || "")));
+  return liste.map((t) => ({ ...t, wann: t.zeit ? (t.aufgabe ? `erledigt ${kurzDatum(String(t.zeit).slice(0, 10))}` : kurzDatum(String(t.zeit).slice(0, 10))) : "" }));
+}
+
 function todoListe({ jetzt, spaeter }, { leer = "Nichts zu tun. Schön!" } = {}) {
   const erste = jetzt.slice(0, SICHTBAR), rest = jetzt.slice(SICHTBAR);
   return `
@@ -155,6 +197,19 @@ function verbindeTodos(root, { aufgaben, nachher }) {
         await db.speichereKontakt(b.dataset.geburtstag, { geburtstag_erledigt: Number(b.dataset.jahr) });
         await kontakte.kontakteListe(true);
         melde("Erledigt. Nächstes Jahr erinnert die App wieder.", "ok");
+        nachher();
+      } catch (err) {
+        b.disabled = false;
+        melde(err.message, "fehler");
+      }
+    });
+  }
+  for (const b of $$("[data-wieder]", root)) {
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        await db.speichereAufgabe(b.dataset.wieder, { status: "offen", erledigt_am: null });
+        melde("Wieder offen.", "ok");
         nachher();
       } catch (err) {
         b.disabled = false;
@@ -198,6 +253,9 @@ export async function zeigeStart() {
   const entwuerfe = antworten.filter((a) => a.status === "entwurf");
   const todos = sammle({ nachrichten, aufgaben, rueckstand, vorgaenge, entwuerfe, namen, kontaktListe });
   const dringend = todos.jetzt.filter((t) => t.stufe <= 1).length;
+  const wiedervorlagen = [...todos.jetzt.filter((t) => t.art === "Wiedervorlage"), ...todos.spaeter]
+    .sort((x, y) => String(x.datum).localeCompare(String(y.datum)));
+  const filter = ["alle", "eilig", "wiedervorlage", "erledigt"].includes(zustand.startFilter) ? zustand.startFilter : "alle";
   const neu = nachrichten.filter((n) => n.status === "neu").length;
   const nachName = Object.fromEntries(liste.map((m) => [m.id, m]));
 
@@ -224,7 +282,11 @@ export async function zeigeStart() {
     </div>
     <div class="lage lage--kompakt">
       <div><div class="lage__wert ${dringend ? "lage__wert--offen" : ""}">${todos.jetzt.length}</div>
-        <div class="lage__text">zu erledigen${dringend ? `, ${dringend} davon eilig` : ""}</div></div>
+        <div class="lage__text">zu erledigen${dringend ? `, <button type="button" class="lage__link" data-filter="eilig">${dringend} davon eilig</button>` : ""}</div>
+        <div class="lage__mehr">
+          ${wiedervorlagen.length ? `<button type="button" class="lage__link" data-filter="wiedervorlage">${wiedervorlagen.length} ${wiedervorlagen.length === 1 ? "Wiedervorlage" : "Wiedervorlagen"}</button>` : ""}
+          <button type="button" class="lage__link" data-filter="erledigt">Erledigtes ansehen</button>
+        </div></div>
       <a href="#/postfach"><div class="lage__wert">${neu}</div><div class="lage__text">neue Nachrichten</div></a>
       <div><div class="lage__wert ${gesamt > 0 ? "lage__wert--offen" : ""}">${euro(gesamt)}</div>
         <div class="lage__text">Mietrückstand, ${rueckstand.length} von ${liste.length} Mietparteien</div></div>
@@ -232,8 +294,12 @@ export async function zeigeStart() {
 
     <div class="start">
       <section class="flaeche start__liste" id="zu-erledigen">
-        <div class="flaeche__kopf"><h2>Zu erledigen</h2><span class="leise">das Dringendste zuerst</span></div>
-        ${todoListe(todos)}
+        <div class="flaeche__kopf"><h2>Zu erledigen</h2><span class="leise" id="todo-sortierung">das Dringendste zuerst</span></div>
+        <div class="reiter reiter--filter" role="group" aria-label="Anzeigen">
+          ${[["alle", "Alle", todos.jetzt.length], ["eilig", "Eilig", dringend], ["wiedervorlage", "Wiedervorlagen", wiedervorlagen.length], ["erledigt", "Erledigt", null]]
+            .map(([w, t, n]) => `<button type="button" class="reiter__knopf" data-filter="${w}" aria-pressed="${w === filter}">${t}${n != null ? ` <span class="reiter__zahl">${n}</span>` : ""}</button>`).join("")}
+        </div>
+        <div id="todo-inhalt"></div>
       </section>
 
       <div class="stapel">
@@ -275,7 +341,38 @@ export async function zeigeStart() {
       </div>
     </div>`;
 
-  verbindeTodos(inhalt(), { aufgaben, nachher: zeigeStart });
+  // Filter über der Liste (bleibt beim Zurückkommen erhalten)
+  let erledigtCache = null;
+  const zeigeFilter = async (f, { scrollen = false } = {}) => {
+    zustand.startFilter = f;
+    for (const b of $$(".reiter--filter [data-filter]", inhalt())) b.setAttribute("aria-pressed", String(b.dataset.filter === f));
+    const ziel = $("#todo-inhalt");
+    $("#todo-sortierung").textContent = f === "wiedervorlage" ? "nach Datum" : f === "erledigt" ? "das Neueste zuerst" : "das Dringendste zuerst";
+    if (f === "erledigt") {
+      ziel.innerHTML = `<div class="leer">Lädt …</div>`;
+      erledigtCache ||= await sammleErledigt({ namen, kontaktListe });
+      if (zustand.startFilter !== "erledigt") return;
+      const erste = erledigtCache.slice(0, 15), rest = erledigtCache.slice(15, 60);
+      ziel.innerHTML = erledigtCache.length
+        ? `<div class="todos">${erste.map(erledigtZeile).join("")}</div>
+           ${rest.length ? `<details class="mehr"><summary>${rest.length} ältere anzeigen</summary><div class="todos">${rest.map(erledigtZeile).join("")}</div></details>` : ""}`
+        : `<div class="leer">Noch nichts erledigt.</div>`;
+      const alle = erledigtCache.filter((t) => t.aufgabe).map((t) => t.aufgabe);
+      verbindeTodos(ziel, { aufgaben: alle, nachher: zeigeStart });
+    } else {
+      ziel.innerHTML = f === "eilig"
+        ? todoListe({ jetzt: todos.jetzt.filter((t) => t.stufe <= 1), spaeter: [] }, { leer: "Nichts Eiliges. Gut so!" })
+        : f === "wiedervorlage"
+        ? todoListe({ jetzt: wiedervorlagen, spaeter: [] }, { leer: "Keine Wiedervorlagen." })
+        : todoListe(todos);
+      verbindeTodos(ziel, { aufgaben, nachher: zeigeStart });
+    }
+    if (scrollen) $("#zu-erledigen").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  for (const b of $$("[data-filter]", inhalt())) {
+    b.addEventListener("click", () => zeigeFilter(b.dataset.filter, { scrollen: !!b.closest(".lage") }));
+  }
+  await zeigeFilter(filter);
   $("#notiz-neu").addEventListener("click", () => aufgabeDialog(null, { nachher: zeigeStart }));
   $("#einsprechen").addEventListener("click", () => kontakte.notizEinsprechen());
   $("#erfassen").addEventListener("change", (e) => { const d = [...e.target.files]; e.target.value = ""; ablage.erfasseAlle(d); });

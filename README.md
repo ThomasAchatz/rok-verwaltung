@@ -164,6 +164,8 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   mit der Anweisung (auch an Kontakte). **PDF aus dem Chat** (Liste/Übersicht): Dateiname sichtbar und änderbar,
   Ansehen, Herunterladen, **Per E-Mail** (Empfänger suchen, die hinterlegte Adresse wird übernommen, PDF als Anhang,
   optional zusätzlich in die Ablage) oder In Ablage (Ablage-Dialog mit Namen nach Schema). Andere Dateiformate folgen später.
+- **Übersicht filtern:** über „Zu erledigen“ Alle, Eilig, Wiedervorlagen (auch die späteren) und Erledigt. Unter Erledigt
+  stehen abgehakte Notizen/Wiedervorlagen (mit „Wieder öffnen“), beantwortete Nachrichten und Gratulationen.
 - **Vorgänge (E-Mail-Verlauf):** Alles Hin und Her zu einer Sache landet in einem Vorgang (Tabelle `themen`).
   Eingehende Mails werden über die Antwort-Kennung (In-Reply-To/References) zugeordnet, sonst über gleichen Betreff
   derselben Person (offen, letzte 120 Tage). Die Vorgangsseite (`#/thema/<id>`) zeigt den Verlauf als Gesprächsfaden,

@@ -103,6 +103,9 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   „Per E-Mail“ (`pdfPerMail`): Suchfeld übernimmt die E-Mail, speichert eine Antwort + Vorgang, `versand` mit `anhang` (base64).
 - Upload/Ablage: Haus folgt der gewählten Mietpartei, Warnung in `[data-mieter-hinweis]` bei Widerspruch;
   `detailsVorschlag`/`zielOrdner` nehmen eine KI-Wohnung nur, wenn sie zum Haus passt.
+- Übersicht-Filter (`zeigeStart`): Alle | Eilig | Wiedervorlagen (auch spätere) | Erledigt, gemerkt in `zustand.startFilter`, Liste in
+  `#todo-inhalt`. Erledigt = `sammleErledigt()` (erledigte Aufgaben mit „Wieder öffnen“ `data-wieder`, beantwortete/erledigte Nachrichten,
+  Gratulationen dieses Jahr). Links in der Kachel oben (`.lage__link[data-filter]`).
 - Stammdaten-Maske: `js/stammdaten.js` (Route `#/stammdaten`, Links in Einstellungen und Mieterliste). Löschen nur,
   wenn leer (Haus ohne Wohnungen, Wohnung ohne Mietpartei); Haus löschen kaskadiert auf Wissen/Handwerker des Hauses.
 - Vorgänge (`js/vorgaenge.js`, Route `#/thema/<id>`, Migration `20261020210000_themen_verlauf.sql`): Posteingang ordnet über
