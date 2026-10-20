@@ -734,12 +734,13 @@ function baueEntwurf(el, k) {
     const w = k.mieter && wohnungVon(k.mieter.wohnung_id);
     return k.objektId?.() || w?.objekt_id || k.dienstleister?.objekt_id || null;
   }
-  function ablegenNachVersand(kanal, an, extra = {}) {
+  // Was abgelegt wird (für den Namensvorschlag im Bestätigungsdialog und das Ablegen danach)
+  function eintragJetzt(kanal, an, extra = {}) {
     const a = { ...antwort, betreff: werte().betreff, text: werte().text, gesendet_am: new Date().toISOString(), empfaenger_email: an || antwort.empfaenger_email };
-    return ablage.automatischAblegen(
-      eintragAntwort(a, { nachricht: k.nachricht, mieter: k.mieter, objektId: hausId(), kanal, an, ...extra }),
-      { nachher: k.nachEnde, meldung: extra.meldung !== false },
-    );
+    return eintragAntwort(a, { nachricht: k.nachricht, mieter: k.mieter, objektId: hausId(), kanal, an, ...extra });
+  }
+  function ablegenNachVersand(kanal, an, extra = {}) {
+    return ablage.automatischAblegen(eintragJetzt(kanal, an, extra), { nachher: k.nachEnde, meldung: extra.meldung !== false, vorgabe: extra.vorgabe || null });
   }
 
   async function alsGesendetMarkieren(an, kanal) {
@@ -796,11 +797,12 @@ function baueEntwurf(el, k) {
         const urls = await Promise.all((antwort.anhaenge || []).map((a) => db.dateiAdresse(a.bucket, a.pfad).catch(() => null)));
         await druckeAuftrag({ an: antwort.empfaenger_name, betreff: v.betreff, text: v.text, signatur, fotos: urls.filter(Boolean) });
       });
-      if (await frage("Gedruckt?", "<p>Dann wird der Auftrag im Verlauf vermerkt.</p>", "Ja, vermerken")) {
+      const gedruckt = await ablage.frageMitAblage("Gedruckt?", "<p>Dann wird der Auftrag im Verlauf vermerkt.</p>", "Ja, vermerken", eintragJetzt("druck", null));
+      if (gedruckt) {
         try {
           await alsGesendetMarkieren(null, "druck");
           melde("Auftrag vermerkt.", "ok");
-          ablegenNachVersand("druck", null);
+          ablegenNachVersand("druck", null, { vorgabe: gedruckt.vorgabe });
           k.nachEnde();
         } catch (err) { melde(err.message, "fehler"); }
       }
@@ -862,12 +864,12 @@ function baueEntwurf(el, k) {
 
       const anzahlFotos = k.auftrag ? (antwort.anhaenge || []).length : 0;
       if (zustand.ki?.versand) {
-        const ok = await frage("E-Mail jetzt senden?", `
+        const ok = await ablage.frageMitAblage("E-Mail jetzt senden?", `
           <p>An <strong>${esc(v.an)}</strong><br>Betreff: ${esc(v.betreff || "Ihre Nachricht")}${anzahlFotos ? `<br>Anhang: ${anzahlFotos} ${anzahlFotos === 1 ? "Foto" : "Fotos"}` : ""}</p>
           <div class="mailvorschau">${esc(voll)}</div>
           <p class="leise">Absender: ${esc(zustand.ki.absender || "")}${zustand.profil?.antwort_email ? `. Antworten gehen an ${esc(zustand.profil.antwort_email)}.` : ""}
             Unter der Signatur steht der Briefkopf (Firma, Anschrift, Kontakt aus den Einstellungen).</p>`,
-        "Jetzt senden");
+        "Jetzt senden", eintragJetzt("email", v.an));
         if (!ok) return;
         const erfolg = await beschaeftigt(el, knopf, "Wird gesendet …", async () => {
           try {
@@ -881,7 +883,7 @@ function baueEntwurf(el, k) {
         });
         if (erfolg) {
           melde(`E-Mail an ${v.an} gesendet.`, "ok");
-          ablegenNachVersand("email", v.an);
+          ablegenNachVersand("email", v.an, { vorgabe: ok.vorgabe });
           return k.nachEnde();
         }
         if (erfolg === null) return;
@@ -894,11 +896,13 @@ function baueEntwurf(el, k) {
       if (!ok) return;
       window.location.href = `mailto:${encodeURIComponent(v.an)}?subject=${encodeURIComponent(v.betreff)}&body=${encodeURIComponent(voll)}`;
       await new Promise((r) => setTimeout(r, 600));
-      if (await frage("Abgeschickt?", `<p>Wenn die E-Mail raus ist, wird ${k.auftrag ? "der Auftrag im Verlauf vermerkt" : "die Nachricht als beantwortet markiert"}.</p>`, k.auftrag ? "Ja, vermerken" : "Ja, als beantwortet markieren")) {
+      const raus = await ablage.frageMitAblage("Abgeschickt?", `<p>Wenn die E-Mail raus ist, wird ${k.auftrag ? "der Auftrag im Verlauf vermerkt" : "die Nachricht als beantwortet markiert"}.</p>`,
+        k.auftrag ? "Ja, vermerken" : "Ja, als beantwortet markieren", eintragJetzt("email-programm", v.an));
+      if (raus) {
         try {
           await alsGesendetMarkieren(v.an, "email-programm");
           melde("Als beantwortet markiert.", "ok");
-          ablegenNachVersand("email-programm", v.an);
+          ablegenNachVersand("email-programm", v.an, { vorgabe: raus.vorgabe });
           k.nachEnde();
         } catch (err) { melde(err.message, "fehler"); }
       }
@@ -937,28 +941,32 @@ function baueEntwurf(el, k) {
       const vorgangId = crypto.randomUUID();
       const anrede = v.text.split(/\n/)[0] || "Guten Tag,";
       let ablageLaeuft = null;
+      // Dateiname nach eurem Schema: sichtbar in der Vorschau, die KI schlägt ihn vor
+      const briefEintrag = eintragJetzt("brief", null, { bytes, vorgangId: k.mieter ? vorgangId : null });
+      const namensVorschlag = ablage.nameVorschlag(briefEintrag);
       const gespeichert = await zeigeDokument({
         titel: v.betreff || "Schreiben",
         untertitel: `An ${empf.name}`,
         bytes,
         dateiname,
+        name: { vorschlag: namensVorschlag },
         hinweis: k.mieter
           ? "Noch nicht gespeichert. Beim Herunterladen, Drucken oder Versenden wird der Brief in der Akte abgelegt."
           : "Beim Herunterladen, Drucken oder Versenden wird das Schreiben als erledigt vermerkt.",
         email: { an: v.an, betreff: v.betreff, text: `${anrede}\n\nim Anhang erhalten Sie unser Schreiben.\n\nMit freundlichen Grüßen\n${signatur}` },
         melde,
-        vorAbschluss: async () => {
+        vorAbschluss: async ({ titel }) => {
           if (k.mieter) {
             await db.archiviereSchreiben({
               vorgangId, mieterId: k.mieter.id, bytes,
-              vorgang: { typ: "antwort", titel: `Brief: ${v.betreff || "Schreiben"}`, details: { antwort_id: antwort.id, datei: dateiname } },
+              vorgang: { typ: "antwort", titel: `Brief: ${v.betreff || "Schreiben"}`, details: { antwort_id: antwort.id, datei: `${titel}.docx` } },
             });
           }
           await db.speichereAntwort(antwort.id, { status: "als_brief" });
           if (k.nachricht) await db.aendereNachricht(k.nachricht.id, { status: "beantwortet" });
           const h = $("#dialog [data-v=hinweis]");
           if (h) h.textContent = k.mieter ? "In der Akte gespeichert." : "Vermerkt.";
-          ablageLaeuft = ablegenNachVersand("brief", null, { bytes, vorgangId: k.mieter ? vorgangId : null, meldung: false });
+          ablageLaeuft = ablage.automatischAblegen(briefEintrag, { meldung: false, vorgabe: { titel, vorschlag: namensVorschlag } });
           ablageLaeuft.then((doc) => {
             const h2 = $("#dialog [data-v=hinweis]");
             if (doc && h2) h2.textContent += ` Abgelegt in „${ablage.ordnerAnzeige(doc.ordner)}“.`;

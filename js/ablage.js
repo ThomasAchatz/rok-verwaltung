@@ -217,7 +217,7 @@ export async function erfasse(datei, { objektId, nurAblage = false } = {}) {
         <label class="feld"><span>Details (für den Namen)</span><input name="details" value="${esc(detailsVorschlag({ mieterId: erkannt.mieter_id || null, art: artStart, ki: kiTeile }))}" maxlength="80" placeholder="z. B. Wasserschaden_WHG 1_2430,31"></label>
         <label class="feld"><span>Datum des Schreibens</span><input type="date" name="datum" value="${esc(datumStart)}" required></label>
       </div>
-      <label class="feld"><span>Name in der Ablage</span><input name="titel" required maxlength="160" spellcheck="false"></label>
+      <label class="feld"><span>Dateiname</span><input name="titel" required maxlength="160" spellcheck="false"></label>
       <label class="feld"><span>Kurz zusammengefasst</span><textarea name="zusammenfassung" rows="2">${esc(erkannt.zusammenfassung || "")}</textarea></label>
     </fieldset>
     ${nurAblage ? "" : `
@@ -888,18 +888,33 @@ export function zeigeAblageMeldung(doc, { nachher = () => {} } = {}) {
  * Gesendetes automatisch ablegen (Name nach Schema, Ordner von der KI vorgeschlagen).
  * Abschaltbar in den Einstellungen. Liefert das Dokument oder null; Fehler stören den Versand nicht.
  */
-export async function automatischAblegen(e, { meldung = true, nachher = () => {} } = {}) {
-  if (zustand.profil?.auto_ablage === false) return null;
+/** Name, Ordner und Details nach Roberts Schema berechnen (Ordner, Thema, Betrag, Wohnung schlägt die KI vor) */
+export async function nameVorschlag(e) {
+  const [v] = await Promise.all([vorschlagFuer(e), zustand.mieterKurz ? null : mieterListe().catch(() => null)]);
+  const datum = e.datum || heuteISO();
+  const ki = kiTeileVon(e, v);
+  const details = detailsVorschlag({ mieterId: e.mieterId, art: v.art, ki });
+  return {
+    v, datum, details, art: v.art, vonKi: v.vonKi,
+    titel: dokumentTitel({ datum, objekt: objektVon(e.objektId), art: v.art, details }),
+    ordner: zielOrdner(v.ordner, { datum, mieterId: e.mieterId, wohnungId: ki.wohnungId }),
+  };
+}
+
+/**
+ * Gesendetes automatisch ablegen (Name nach Schema, Ordner von der KI vorgeschlagen).
+ * vorgabe: { aus, titel, vorschlag } aus dem Bestätigungsdialog (Name dort sichtbar und änderbar).
+ * Abschaltbar in den Einstellungen. Liefert das Dokument oder null; Fehler stören den Versand nicht.
+ */
+export async function automatischAblegen(e, { meldung = true, nachher = () => {}, vorgabe = null } = {}) {
+  if (zustand.profil?.auto_ablage === false || vorgabe?.aus) return null;
   try {
-    const [v] = await Promise.all([vorschlagFuer(e), zustand.mieterKurz ? null : mieterListe().catch(() => null)]);
-    const datum = e.datum || heuteISO();
-    const ki = kiTeileVon(e, v);
-    const details = detailsVorschlag({ mieterId: e.mieterId, art: v.art, ki });
+    const r = await (vorgabe?.vorschlag || nameVorschlag(e));
     const doc = await legeEintragAb(e, {
-      objekt_id: e.objektId, mieter_id: e.mieterId, ordner: zielOrdner(v.ordner, { datum, mieterId: e.mieterId, wohnungId: ki.wohnungId }), art: v.art,
-      absender: e.gegenueber || kurzName(e, v), details, datum,
-      titel: dokumentTitel({ datum, objekt: objektVon(e.objektId), art: v.art, details }),
-      zusammenfassung: e.zusammenfassung || v.zusammenfassung,
+      objekt_id: e.objektId, mieter_id: e.mieterId, ordner: r.ordner, art: r.art,
+      absender: e.gegenueber || kurzName(e, r.v), details: r.details, datum: r.datum,
+      titel: namensTeil(vorgabe?.titel || "") || r.titel,
+      zusammenfassung: e.zusammenfassung || r.v.zusammenfassung,
     });
     if (meldung) zeigeAblageMeldung(doc, { nachher });
     return doc;
@@ -907,6 +922,55 @@ export async function automatischAblegen(e, { meldung = true, nachher = () => {}
     melde("Gesendet, aber nicht abgelegt: " + err.message, "fehler");
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Dateiname im Bestätigungsdialog: sichtbar und änderbar, die KI füllt ihn vor
+// ---------------------------------------------------------------------------
+export function ablageBlockHtml({ titel = "Wird abgelegt als" } = {}) {
+  if (zustand.profil?.auto_ablage === false) return "";
+  return `
+    <div class="ablageblock" data-ablage>
+      <label class="feld"><span>${esc(titel)}</span>
+        <input name="ablage_titel" maxlength="160" spellcheck="false" autocomplete="off" placeholder="Die KI schlägt den Namen vor …">
+        <span class="feldhinweis feldhinweis--leise" data-ablage-info>Name nach eurem Schema wird erstellt …</span></label>
+      <label class="checkfeld checkfeld--klein"><input type="checkbox" name="ablage_an" checked> In der Ablage speichern</label>
+    </div>`;
+}
+/** Füllt den Namen, sobald der Vorschlag da ist (außer Robert hat schon selbst getippt). Liefert die Vorschlags-Promise. */
+export function verbindeAblageBlock(form, e) {
+  const feld = $("[name=ablage_titel]", form);
+  if (!feld) return null;
+  let vonHand = false;
+  feld.addEventListener("input", () => { vonHand = true; });
+  const vorschlag = nameVorschlag(e);
+  vorschlag.then((r) => {
+    if (!vonHand) feld.value = r.titel;
+    const info = $("[data-ablage-info]", form);
+    if (info) info.textContent = `Ordner: ${ordnerAnzeige(r.ordner)}${r.vonKi ? " · Vorschlag der KI, änderbar" : ""}`;
+  }).catch(() => {
+    const info = $("[data-ablage-info]", form);
+    if (info) info.textContent = "Kein Vorschlag möglich, bitte selbst benennen.";
+  });
+  return vorschlag;
+}
+export function ablageVorgabe(daten, vorschlag) {
+  if (!vorschlag) return { aus: true };
+  return { aus: !daten.get("ablage_an"), titel: String(daten.get("ablage_titel") || "").trim() || null, vorschlag };
+}
+/** Rückfrage (wie frage()) mit Dateiname-Feld; liefert null bei Abbruch, sonst { vorgabe } */
+export async function frageMitAblage(titel, html, jaText, e) {
+  let vorschlag = null;
+  const daten = await dialogFormular(`
+    <h2>${esc(titel)}</h2>
+    ${html}
+    ${ablageBlockHtml()}
+    <div class="knopfreihe">
+      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      <button class="knopf knopf--primaer" value="ok">${esc(jaText)}</button>
+    </div>`, { breit: true, vorbereiten: (form) => { vorschlag = verbindeAblageBlock(form, e); } });
+  if (!daten) return null;
+  return { vorgabe: ablageVorgabe(daten, vorschlag) };
 }
 
 /** Von Hand ablegen: Dialog mit Vorschlag (Ordner von der KI, Name nach Schema) */
@@ -935,7 +999,7 @@ export async function inAblageDialog(e, { nachher = () => {}, schon = [] } = {})
         <input name="details" value="${esc(detailsVorschlag({ mieterId: e.mieterId, art: v.art, ki: kiTeileVon(e, v) }))}" maxlength="80"></label>
       <label class="feld"><span>Datum</span><input type="date" name="datum" value="${esc(datum)}" required></label>
     </div>
-    <label class="feld"><span>Name in der Ablage</span><input name="titel" required maxlength="160" spellcheck="false"></label>
+    <label class="feld"><span>Dateiname</span><input name="titel" required maxlength="160" spellcheck="false"></label>
     <label class="feld"><span>Kurz zusammengefasst</span><textarea name="zusammenfassung" rows="2">${esc(e.zusammenfassung || v.zusammenfassung || "")}</textarea></label>
     ${mitAnhang.length ? `<label class="checkfeld"><input type="checkbox" name="anhaenge" checked> Anhänge mit ablegen (${mitAnhang.length}: ${esc(mitAnhang.map((a) => a.name || "Datei").join(", "))})</label>` : ""}
     <div class="knopfreihe">

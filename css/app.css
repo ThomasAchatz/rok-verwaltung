@@ -813,3 +813,10 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
 .stamm-zeile__name { font-weight: 600; font-size: 0.92rem; overflow-wrap: anywhere; }
 .stamm-zeile__mieter { font-size: 0.88rem; padding: 0.3rem 0 0.3rem 1.1rem; overflow-wrap: anywhere; }
 .stamm-zeile__haupt + .stamm-zeile__mieter { padding-left: 0; }
+
+/* Dateiname sichtbar beim Senden, Drucken und in der Brief-Vorschau */
+.ablageblock { border-top: 1px solid var(--linie); margin-top: 0.9rem; padding-top: 0.8rem; }
+.ablageblock .feld input { font-size: 0.9rem; }
+.vorschau__name { margin: 0 0 0.6rem; }
+.vorschau__namezeile { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.vorschau__namezeile input { flex: 1 1 auto; min-width: 0; font-size: 0.88rem; }

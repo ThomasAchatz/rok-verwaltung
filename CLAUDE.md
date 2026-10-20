@@ -69,5 +69,10 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   Name über `dokumentTitel({ datum, objekt, art, details })` (JJMMTT_Kürzel_Straße_Art_Details), `objekte.kuerzel`,
   `dokumente.details` = `detailsVorschlag()` aus KI-Teilen { thema, betrag, wohnung_id } + Mietpartei (Thema_Wohnung_Name_Betrag).
   Echte Namen/Wohnungen aus Roberts Vorlage NICHT ins Testsystem (erst nach dem Umzug).
+- Dateiname sichtbar: `nameVorschlag(eintrag)` liefert { titel, ordner, … }; `ablageBlockHtml()` + `verbindeAblageBlock()`
+  (Feld `ablage_titel`, Häkchen `ablage_an`) bzw. `frageMitAblage()` für Bestätigungsdialoge → `{ vorgabe }` an
+  `automatischAblegen(e, { vorgabe })`. Brief-Vorschau: Option `name: { vorschlag }` in `js/vorschau.js`,
+  `vorAbschluss({ titel })` übernimmt den Namen (Feld danach gesperrt). Jede neue Stelle, die eine Datei erzeugt,
+  muss den Namen so vorher zeigen.
 - Stammdaten-Maske: `js/stammdaten.js` (Route `#/stammdaten`, Links in Einstellungen und Mieterliste). Löschen nur,
   wenn leer (Haus ohne Wohnungen, Wohnung ohne Mietpartei); Haus löschen kaskadiert auf Wissen/Handwerker des Hauses.

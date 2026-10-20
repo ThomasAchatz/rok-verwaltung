@@ -476,40 +476,43 @@ async function erstelleBrief(typ, knopf) {
     : `${TYP_NAME[typ]} (${monatsspanne(posten)})`;
   const vorgangId = crypto.randomUUID();
   let ablageLaeuft = null;
+  // Für Ablage und Dateinamen: an die KI gehen nur Titel und Empfänger, kein Inhalt (IBAN!)
+  const jc = typ === "nachweis_jobcenter";
+  const eintrag = {
+    quelle: { vorgang_id: vorgangId },
+    richtung: "ausgang",
+    art: typ.startsWith("mahnung") ? "Mahnung" : "Brief", artFest: true,
+    objektId: a.objekt?.id || null, mieterId: a.mieter.id,
+    gegenueber: jc ? a.kostentraeger?.name : mieterName(a.mieter),
+    gegenueberKurz: jc ? null : a.mieter.nachname,
+    kiText: { titel, text: `${TYP_NAME[typ]} an ${jc ? a.kostentraeger?.name : "die Mietpartei"} ${mieterName(a.mieter)}, Summe ${daten.summe}` },
+    zusammenfassung: `${titel}, ${posten.length} Posten über ${daten.summe}`,
+    datei: async () => ({ blob: new Blob([bytes], { type: ablage.DOCX_TYP }), typ: ablage.DOCX_TYP }),
+  };
+  const namensVorschlag = ablage.nameVorschlag(eintrag);
 
   const gespeichert = await zeigeDokument({
     titel,
     untertitel: `${mieterName(a.mieter)}, ${posten.length} Posten über ${daten.summe}`,
     bytes,
     dateiname,
+    name: { vorschlag: namensVorschlag },
     hinweis: "Noch nicht gespeichert. Beim Herunterladen, Drucken oder Versenden wird das Schreiben im Verlauf abgelegt.",
     email: emailDaten(typ, a.mieter, a.kostentraeger, titel),
     melde,
-    vorAbschluss: async () => {
+    vorAbschluss: async ({ titel: dateiTitel }) => {
       await db.archiviereSchreiben({
         vorgangId,
         mieterId: a.mieter.id,
         bytes,
         vorgang: {
           typ, titel, summe: daten.summe_zahl,
-          details: { posten: posten.map((f) => f.id), vorlage: vorlage.storage_pfad ? "eigene" : "standard", datei: dateiname },
+          details: { posten: posten.map((f) => f.id), vorlage: vorlage.storage_pfad ? "eigene" : "standard", datei: `${dateiTitel}.docx` },
         },
       });
       const h = $("#dialog [data-v=hinweis]");
       if (h) h.textContent = "Im Verlauf gespeichert.";
-      // Zusätzlich in die Ablage (Word-Datei); an die KI gehen nur Titel und Empfänger, kein Inhalt (IBAN!)
-      const jc = typ === "nachweis_jobcenter";
-      ablageLaeuft = ablage.automatischAblegen({
-        quelle: { vorgang_id: vorgangId },
-        richtung: "ausgang",
-        art: typ.startsWith("mahnung") ? "Mahnung" : "Brief", artFest: true,
-        objektId: a.objekt?.id || null, mieterId: a.mieter.id,
-        gegenueber: jc ? a.kostentraeger?.name : mieterName(a.mieter),
-        gegenueberKurz: jc ? null : a.mieter.nachname,
-        kiText: { titel, text: `${TYP_NAME[typ]} an ${jc ? a.kostentraeger?.name : "die Mietpartei"} ${mieterName(a.mieter)}` },
-        zusammenfassung: `${titel}, ${posten.length} Posten über ${daten.summe}`,
-        datei: async () => ({ blob: new Blob([bytes], { type: ablage.DOCX_TYP }), typ: ablage.DOCX_TYP }),
-      }, { meldung: false });
+      ablageLaeuft = ablage.automatischAblegen(eintrag, { meldung: false, vorgabe: { titel: dateiTitel, vorschlag: namensVorschlag } });
       ablageLaeuft.then((doc) => {
         const h2 = $("#dialog [data-v=hinweis]");
         if (doc && h2) h2.textContent += ` Abgelegt in „${ablage.ordnerAnzeige(doc.ordner)}“.`;

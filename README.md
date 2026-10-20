@@ -120,6 +120,10 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   Thema, Betrag und Wohnung schlägt die KI vor; die Mietpartei (Name) kommt bei Schriftverkehr dazu, nicht bei Rechnungen.
   Orts-Kürzel je Haus (`objekte.kuerzel`, Hausseite → Einstellungen zum Haus). Details schlägt die KI vor
   (Firma_Betrag, Vertragspartner …); bei einer Mietpartei setzt die App „Wohnung_Nachname“.
+- **Dateiname immer sichtbar:** Wo eine Datei entsteht (Senden-, Druck- und Mail-Bestätigung, Brief-Vorschau,
+  Hochladen, „In Ablage speichern“), steht ein Feld „Dateiname“ mit dem KI-Vorschlag nach diesem Schema und
+  dem Zielordner darunter. Der Name ist änderbar; beim Senden kann das Ablegen per Häkchen abgewählt werden.
+  In der Brief-Vorschau gilt derselbe Name für Download, Archiv und Ablage.
 - **Handwerker** bekommen nur Adresse, Wohnung, Name/Telefon der Mietpartei, Schadensbeschreibung und Fotos –
   keine Miete, keine Rückstände, keinen Kostenträger, keine Bankdaten.
 - **Selbsthilfe-Tipps** in Entwürfen sind als „Unser Tipp (unverbindlich)“ markiert, nie bei Strom, Gas,
@@ -189,6 +193,7 @@ Danach die Zeile für die Antwortvorlage aus `supabase/migrations/20261015020000
 - [x] Ablage: Ordner bearbeitbar (mit Unterordnern), ZIP-Export, Download unter sauberem Namen
 - [x] Ablage aus der App: Mails, Notizen und Gesendetes mit KI-Ordnervorschlag, Word/Excel hochladen
 - [x] Roberts Ordnerstruktur (automatische Jahres- und Wohnungsordner) und Dateinamen-Schema
+- [x] Dateiname vor dem Speichern sichtbar und änderbar (KI-Vorschlag nach Schema)
 - [x] Eingabemaske Stammdaten (`#/stammdaten`): Häuser, Wohnungen (auch „WHG 01–12“ auf einmal), Kostenträger,
       neue Mietparteien; Details der Mietpartei weiter in der Akte
 - [ ] Später: Antwort als PDF-Anhang mailen, Import offener Posten aus immocloud (CSV)

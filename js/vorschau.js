@@ -27,7 +27,8 @@ const RAHMEN_CSS = `
  * @param {Uint8Array|ArrayBuffer} o.bytes
  * @param {string} o.dateiname
  * @param {string} [o.hinweis]           Text unter der Vorschau
- * @param {function} [o.vorAbschluss]   async; wird vor der ersten Aktion einmal aufgerufen (z. B. im Verlauf speichern)
+ * @param {function} [o.vorAbschluss]   async ({ titel }); wird vor der ersten Aktion einmal aufgerufen (z. B. im Verlauf speichern)
+ * @param {{vorschlag?: Promise<{titel: string, ordner?: string}>}} [o.name]  Dateiname sichtbar und änderbar, Vorschlag kommt später
  * @param {{an?: string, betreff?: string, text?: string}} [o.email]
  * @param {function} [o.melde]           Meldungsfunktion (text, art)
  * @returns {Promise<boolean>}           true, wenn eine Aktion ausgeführt wurde
@@ -38,6 +39,8 @@ export function zeigeDokument(o) {
   const url = URL.createObjectURL(blob);
   const melde = o.melde || (() => {});
   let abgeschlossen = !o.vorAbschluss;
+  const basis = o.dateiname.replace(/\.docx$/i, "");
+  const sauber = (t) => String(t || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
   const aufraeumen = new AbortController();
   let aktion = false;
 
@@ -57,11 +60,14 @@ export function zeigeDokument(o) {
       </div>
       <footer class="vorschau__fuss">
         <p class="vorschau__hinweis leise" data-v="hinweis">${esc(o.hinweis || "")}</p>
+        <label class="feld vorschau__name"><span>Dateiname</span>
+          <span class="vorschau__namezeile"><input data-name value="${esc(basis)}" maxlength="160" spellcheck="false" autocomplete="off"><span class="leise">.docx</span></span>
+          <span class="feldhinweis feldhinweis--leise" data-name-info>${o.name?.vorschlag ? "Die KI schlägt den Namen nach eurem Schema vor …" : ""}</span></label>
         <div class="vorschau__aktionen">
           <a class="datei-chip" data-v="ziehen" href="${url}" download="${esc(o.dateiname)}" draggable="true"
              title="Mit der Maus in eine E-Mail ziehen (Chrome/Edge)">
             <span class="datei-chip__icon" aria-hidden="true">W</span>
-            <span><strong>${esc(o.dateiname)}</strong><span class="leise">In die E-Mail ziehen</span></span>
+            <span><strong data-chipname>${esc(o.dateiname)}</strong><span class="leise">In die E-Mail ziehen</span></span>
           </a>
           <div class="knopfreihe">
             <button type="button" class="knopf" data-v="drucken">Drucken / PDF</button>
@@ -73,23 +79,43 @@ export function zeigeDokument(o) {
     </div>`;
 
   const iframe = dlg.querySelector("iframe");
+  const nameFeld = dlg.querySelector("[data-name]");
+  const titelJetzt = () => sauber(nameFeld.value) || basis;
+  const dateinameJetzt = () => `${titelJetzt()}.docx`;
+  const zeigeName = () => {
+    dlg.querySelector('[data-v="ziehen"]').setAttribute("download", dateinameJetzt());
+    dlg.querySelector("[data-chipname]").textContent = dateinameJetzt();
+  };
+  let nameVonHand = false;
+  nameFeld.addEventListener("input", () => { nameVonHand = true; zeigeName(); });
+  o.name?.vorschlag?.then((r) => {
+    if (!dlg.contains(nameFeld)) return;
+    if (!nameVonHand && !nameFeld.readOnly && r?.titel) { nameFeld.value = r.titel; zeigeName(); }
+    const info = dlg.querySelector("[data-name-info]");
+    if (info) info.textContent = r?.ordner ? `Ablage: ${r.ordner.split("/").join(" › ")} · Vorschlag, änderbar` : "Vorschlag, änderbar";
+  }).catch(() => {
+    const info = dlg.querySelector("[data-name-info]");
+    if (info) info.textContent = "";
+  });
   const ladeHinweis = dlg.querySelector(".vorschau__laden");
 
   async function abschliessen() {
     if (abgeschlossen) return;
     abgeschlossen = true;
     try {
-      await o.vorAbschluss();
+      nameFeld.readOnly = true; // nach dem ersten Speichern bleibt der Name
+      await o.vorAbschluss({ titel: titelJetzt() });
       aktion = true;
     } catch (err) {
       abgeschlossen = false;
+      nameFeld.readOnly = false;
       melde(err.message, "fehler");
       throw err;
     }
   }
 
   function herunterladen() {
-    const a = Object.assign(document.createElement("a"), { href: url, download: o.dateiname });
+    const a = Object.assign(document.createElement("a"), { href: url, download: dateinameJetzt() });
     document.body.append(a);
     a.click();
     a.remove();
@@ -110,7 +136,7 @@ export function zeigeDokument(o) {
     }
     if (was === "laden") {
       herunterladen();
-      try { await abschliessen(); melde("Heruntergeladen: " + o.dateiname, "ok"); } catch { /* gemeldet */ }
+      try { await abschliessen(); melde("Heruntergeladen: " + dateinameJetzt(), "ok"); } catch { /* gemeldet */ }
     }
     if (was === "drucken") {
       iframe.contentWindow.focus();
@@ -118,7 +144,7 @@ export function zeigeDokument(o) {
       try { await abschliessen(); } catch { /* gemeldet */ }
     }
     if (was === "email") {
-      const datei = new File([blob], o.dateiname, { type: DOCX_TYP });
+      const datei = new File([blob], dateinameJetzt(), { type: DOCX_TYP });
       const e2 = o.email || {};
       if (navigator.canShare && navigator.canShare({ files: [datei] })) {
         try {
@@ -140,7 +166,7 @@ export function zeigeDokument(o) {
 
   dlg.querySelector('[data-v="ziehen"]').addEventListener("dragstart", (e) => {
     const absolut = new URL(url, location.href).href;
-    e.dataTransfer.setData("DownloadURL", `${DOCX_TYP}:${o.dateiname}:${absolut}`);
+    e.dataTransfer.setData("DownloadURL", `${DOCX_TYP}:${dateinameJetzt()}:${absolut}`);
     e.dataTransfer.effectAllowed = "copy";
     abschliessen().catch(() => {});
   });
