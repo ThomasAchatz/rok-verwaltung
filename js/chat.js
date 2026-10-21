@@ -9,7 +9,7 @@ import {
 } from "./ui.js";
 import { aufgabeDialog } from "./start.js";
 import * as ablage from "./ablage.js";
-import { kontakteListe, kontaktName } from "./kontakte.js";
+import { kontakteListe, kontaktName, kontaktDialog } from "./kontakte.js";
 import * as vorgaenge from "./vorgaenge.js";
 
 const VORSCHLAEGE = [
@@ -145,7 +145,7 @@ async function sende(text) {
 // Vorschläge der KI als kleine Karten: Annehmen (speichert direkt), Ändern (vorbelegter Dialog), Ablehnen.
 // Nichts passiert ohne Klick. a.status: "gespeichert" | "abgelehnt" | undefined
 // ---------------------------------------------------------------------------
-const ART_NAME = { notiz: "To-do", wissen: "Wissen", entwurf: "Schreiben", oeffnen: "Öffnen", pdf: "PDF" };
+const ART_NAME = { notiz: "To-do", wissen: "Wissen", entwurf: "Schreiben", oeffnen: "Öffnen", pdf: "PDF", kontakt: "Neuer Kontakt", handwerker: "Neuer Handwerker" };
 const tag = (iso) => (iso ? datumDE(iso) : "");
 
 function pdfName(a) {
@@ -161,13 +161,16 @@ function vorschlagHtml(a, i, j) {
   const detail = a.art === "notiz" ? [d.titel, d.faellig_am ? `fällig ${tag(d.faellig_am)}` : ""].filter(Boolean).join(" · ")
     : a.art === "wissen" ? [d.titel, d.ordner].filter(Boolean).join(" · ")
     : a.art === "pdf" ? `${d.titel} · ${d.abschnitte?.length || 0} ${d.abschnitte?.length === 1 ? "Abschnitt" : "Abschnitte"}`
+    : a.art === "kontakt" ? [kontaktName(d), d.vorname || d.nachname ? d.firma : "", d.rolle, d.telefon, d.email,
+        d.geburtstag_tag ? `Geburtstag ${d.geburtstag_tag}.${d.geburtstag_monat}.${d.geburtsjahr || ""}` : ""].filter(Boolean).join(" · ")
+    : a.art === "handwerker" ? [d.name, d.gewerk, d.telefon, d.email, d.objekt_id ? objektVon(d.objekt_id)?.bezeichnung || "" : "alle Häuser"].filter(Boolean).join(" · ")
     : "";
   let knoepfe = "";
   if (a.status === "gespeichert") {
-    knoepfe = `<span class="chatvorschlag__status chatvorschlag__status--ok">${a.statusText || "Gespeichert"}</span>`;
+    knoepfe = `<span class="chatvorschlag__status chatvorschlag__status--ok">${a.statusText || "Gespeichert"}</span>${a.href ? `<a class="knopf knopf--klein knopf--leise" href="${esc(a.href)}" data-chat-link>Öffnen</a>` : ""}`;
   } else if (a.status === "abgelehnt") {
     knoepfe = `<span class="chatvorschlag__status">Abgelehnt</span>${k("zurueck", "Doch anzeigen", "knopf--leise")}`;
-  } else if (a.art === "notiz" || a.art === "wissen") {
+  } else if (a.art === "notiz" || a.art === "wissen" || a.art === "kontakt" || a.art === "handwerker") {
     knoepfe = k("annehmen", "Annehmen", "knopf--primaer") + k("aendern", "Ändern") + k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "entwurf") {
     knoepfe = k("oeffnen", "Schreiben öffnen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
@@ -231,6 +234,34 @@ function pdfAblageEintrag(a) {
   };
 }
 
+// Neuer Kontakt / Handwerker aus dem Chat: nur bekannte Felder übernehmen
+const kontaktFelder = (d) => ({
+  vorname: d.vorname || null, nachname: d.nachname || null, firma: d.firma || null, rolle: d.rolle || null,
+  telefon: d.telefon || null, email: d.email || null, adresse: d.adresse || null, notiz: d.notiz || null,
+  geburtstag_tag: d.geburtstag_tag || null, geburtstag_monat: d.geburtstag_monat || null, geburtsjahr: d.geburtsjahr || null,
+});
+const handwerkerFelder = (d) => ({
+  name: d.name, gewerk: d.gewerk || null, telefon: d.telefon || null, email: d.email || null,
+  objekt_id: d.objekt_id || null, notiz: d.notiz || null, aktiv: true,
+});
+const gleich = (x, y) => !!x && !!y && String(x).trim().toLowerCase() === String(y).trim().toLowerCase();
+/** Gibt es den schon? Dann nachfragen, statt doppelt anzulegen */
+async function keinDoppelter(a) {
+  const d = a.daten || {};
+  let treffer = null;
+  if (a.art === "kontakt") {
+    const liste = await kontakteListe(true);
+    treffer = liste.find((k) => gleich(k.email, d.email) || (d.nachname && gleich(k.nachname, d.nachname) && (!d.vorname || gleich(k.vorname, d.vorname)))
+      || (!d.nachname && d.firma && !k.nachname && gleich(k.firma, d.firma)));
+    treffer = treffer && kontaktName(treffer);
+  } else {
+    const liste = await db.ladeDienstleister().catch(() => []);
+    treffer = liste.find((x) => gleich(x.name, d.name) || gleich(x.email, d.email))?.name || null;
+  }
+  if (!treffer) return true;
+  return frage("Gibt es vielleicht schon", `<p>„${esc(treffer)}“ ist bereits angelegt. Trotzdem einen neuen Eintrag anlegen?</p>`, "Trotzdem anlegen");
+}
+
 async function behandle(a, op, knopf) {
   const d = a.daten || {};
   const dlg = $("#chat");
@@ -251,6 +282,17 @@ async function behandle(a, op, knopf) {
         } else if (a.art === "wissen") {
           await db.speichereWissen(null, { titel: d.titel, inhalt: d.inhalt, ordner: d.ordner || "Sonstiges", objekt_id: d.objekt_id || null, aktiv: true });
           setze(a, "gespeichert", "Im Wissen gespeichert");
+        } else if (a.art === "kontakt") {
+          if (!(await keinDoppelter(a))) { knopf.disabled = false; return; }
+          const k = await db.speichereKontakt(null, kontaktFelder(d));
+          await kontakteListe(true);
+          a.href = `#/kontakt/${k.id}`;
+          setze(a, "gespeichert", "Kontakt angelegt");
+        } else if (a.art === "handwerker") {
+          if (!(await keinDoppelter(a))) { knopf.disabled = false; return; }
+          await db.speichereDienstleister(null, handwerkerFelder(d));
+          a.href = "#/handwerker";
+          setze(a, "gespeichert", "Handwerker angelegt");
         }
         neuLaden();
         return;
@@ -259,6 +301,12 @@ async function behandle(a, op, knopf) {
         if (a.art === "notiz") {
           return aufgabeDialog({ titel: d.titel, notiz: d.notiz, faellig_am: d.faellig_am, mieter_id: d.mieter_id, objekt_id: d.objekt_id, kontakt_id: d.kontakt_id },
             { nachher: fertig("Geändert gespeichert") });
+        }
+        if (a.art === "kontakt") {
+          return kontaktDialog(kontaktFelder(d), { nachher: (k) => { a.href = k?.id ? `#/kontakt/${k.id}` : null; setze(a, "gespeichert", "Kontakt angelegt"); neuLaden(); } });
+        }
+        if (a.art === "handwerker") {
+          return ablage.bearbeiteDienstleister({ ...handwerkerFelder(d), id: null }, { nachher: () => { a.href = "#/handwerker"; setze(a, "gespeichert", "Handwerker angelegt"); neuLaden(); } });
         }
         if (a.art === "wissen") {
           return ablage.bearbeiteWissen({ titel: d.titel, inhalt: d.inhalt, ordner: d.ordner, objekt_id: d.objekt_id, aktiv: true },

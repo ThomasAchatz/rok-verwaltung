@@ -169,6 +169,9 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   nicht nach dem Klickweg. Am Handy steht nur „‹ Eltern“ als Zurück-Link.
 - **Übersicht filtern:** über „Zu erledigen“ Alle, Eilig, Wiedervorlagen (auch die späteren) und Erledigt. Unter Erledigt
   stehen abgehakte Notizen/Wiedervorlagen (mit „Wieder öffnen“), beantwortete Nachrichten und Gratulationen.
+- **Kontakte per Chat anlegen:** „Leg Max Beispiel von der Beispielbank an, Tel. …“ – die KI prüft erst, ob es ihn schon gibt,
+  und schlägt dann einen neuen Kontakt bzw. Handwerker als Karte vor (Annehmen, Ändern, Ablehnen). Bei Namensgleichheit fragt die App nach.
+  Mietparteien legt man weiter selbst an (Wohnung, Miete, Mietbeginn).
 - **Vorgänge (E-Mail-Verlauf):** Alles Hin und Her zu einer Sache landet in einem Vorgang (Tabelle `themen`).
   Eingehende Mails werden über die Antwort-Kennung (In-Reply-To/References) zugeordnet, sonst über gleichen Betreff
   derselben Person (offen, letzte 120 Tage). Die Vorgangsseite (`#/thema/<id>`) zeigt den Verlauf als Gesprächsfaden,
