@@ -3,7 +3,7 @@
 // eigene Schreiben bekommen den Vorgang der Nachricht bzw. einen neuen. „Erledigt“ legt den ganzen Verlauf als PDF ab.
 import * as db from "./daten.js";
 import { datumDE, mieterName } from "./dokumente.js";
-import { $, esc, melde, dialogFormular, heuteISO, zustand, wohnungVon, objektVon, kostentraegerVon } from "./helfer.js";
+import { $, esc, melde, dialogFormular, heuteISO, zustand, wohnungVon, objektVon, kostentraegerVon, brotkrumen, KRUMEN } from "./helfer.js";
 import { ICON_KI, datumZeit, geheZu, wartehinweis } from "./ui.js";
 import * as ablage from "./ablage.js";
 import { kontaktName, kontaktVon, kontakteListe } from "./kontakte.js";
@@ -145,11 +145,17 @@ export async function zeigeThema(id) {
   const gesendet = liste.filter((p) => p.art !== "entwurf");
   const doc = t.dokument_id ? (await db.ladeAbgelegte("id", [t.dokument_id]).catch(() => []))[0] : null;
   const wer = gegenueberVon(t, mieter) || dienst?.name || "";
-  const zurueck = mieter ? `#/mieter/${mieter.id}` : t.kontakt_id ? `#/kontakt/${t.kontakt_id}` : "#/postfach";
+  // Wohin gehört der Vorgang? Mietpartei, Kontakt, Handwerker, Haus – sonst Postfach
+  const haus = t.objekt_id ? objektVon(t.objekt_id) : null;
+  const eltern = mieter ? [...KRUMEN.mieter, { text: mieterName(mieter), href: `#/mieter/${mieter.id}` }]
+    : t.kontakt_id && kontaktVon(t.kontakt_id) ? [...KRUMEN.sonstige, { text: kontaktName(kontaktVon(t.kontakt_id)), href: `#/kontakt/${t.kontakt_id}` }]
+    : dienst ? KRUMEN.handwerker
+    : haus ? [...KRUMEN.objekte, { text: haus.bezeichnung, href: `#/objekt/${haus.id}` }]
+    : KRUMEN.postfach;
   const neuLaden = () => zeigeThema(id);
 
   inhalt().innerHTML = `
-    <a class="zurueck" href="${esc(zurueck)}">${mieter ? "Zur Akte" : t.kontakt_id ? "Zum Kontakt" : "Zum Postfach"}</a>
+    ${brotkrumen([...eltern, { text: t.titel || "(ohne Betreff)" }])}
     <div class="kopf">
       <div><h1>${esc(t.titel || "(ohne Betreff)")}</h1>
         <p>${esc([wer, `${gesendet.length} ${gesendet.length === 1 ? "Eintrag" : "Einträge"}`, liste.length ? `seit ${datumDE(liste[0].zeit)}` : ""].filter(Boolean).join(" · "))}

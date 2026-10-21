@@ -3,7 +3,7 @@
 // Der Verlauf gibt es auch für Mietparteien (in der Akte); dort kann die Notiz zusätzlich als PDF in die Ablage.
 import * as db from "./daten.js";
 import { datumDE, mieterName } from "./dokumente.js";
-import { $, $$, esc, melde, dialogFormular, frage, heuteISO, zustand, objektVon, wohnungVon } from "./helfer.js";
+import { $, $$, esc, melde, dialogFormular, frage, heuteISO, zustand, objektVon, wohnungVon, brotkrumen, KRUMEN } from "./helfer.js";
 import { ICON_MIKRO, geheZu, kurz, mieterListe, mikroKnopf, norm, verbindeDiktat, wartehinweis, suchauswahlHtml, verbindeSuchauswahl } from "./ui.js";
 import * as ablage from "./ablage.js";
 import * as start from "./start.js";
@@ -157,7 +157,7 @@ export async function zeigeKontakt(id) {
   const tel = String(k.telefon || "").replace(/[^\d+]/g, "");
 
   inhalt().innerHTML = `
-    <a class="zurueck" href="#/kontakte">Sonstige Kontakte</a>
+    ${brotkrumen([...KRUMEN.sonstige, { text: kontaktName(k) }])}
     <div class="kopf">
       <div class="kontaktkopf">
         <span class="kontaktzeile__bild kontaktzeile__bild--gross" aria-hidden="true">${esc(initialen(k))}</span>

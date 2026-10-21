@@ -2,7 +2,7 @@
 // Grundsatz: Die KI schlägt nur vor (Antwort, Datum). Gespeichert wird erst per Klick.
 import * as db from "./daten.js";
 import { euro, datumDE, mieterName } from "./dokumente.js";
-import { $, $$, esc, melde, dialogFormular, frage, heuteISO, zustand, objektVon, wohnungVon } from "./helfer.js";
+import { $, $$, esc, melde, dialogFormular, frage, heuteISO, zustand, objektVon, wohnungVon, brotkrumen, KRUMEN } from "./helfer.js";
 import {
   ICON_KI, ICON_KAMERA, ICON_MIKRO, kurz, norm, geheZu, mieterListe, mieterOptionen, mikroKnopf, verbindeDiktat, wartehinweis,
   ortVon, suchauswahlHtml, verbindeSuchauswahl,
@@ -424,7 +424,7 @@ export async function zeigeObjekt(id) {
   const neuLaden = () => zeigeObjekt(id);
 
   inhalt().innerHTML = `
-    <a class="zurueck" href="#/objekte">Alle Objekte</a>
+    ${brotkrumen([...KRUMEN.objekte, { text: titel }])}
     <div class="kopf">
       <div><h1>${esc(titel)}</h1>
         <p>${allgemein ? "Unterlagen, Wissen und Notizen, die zu keinem bestimmten Haus gehören." : esc([o.strasse, [o.plz, o.ort].filter(Boolean).join(" ")].filter(Boolean).join(", "))}</p></div>

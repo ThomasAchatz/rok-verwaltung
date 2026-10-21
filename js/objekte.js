@@ -2,7 +2,7 @@
 // Dateien lassen sich direkt hineinziehen; die KI benennt sie nach dem Ablage-Schema.
 import * as db from "./daten.js";
 import * as ablage from "./ablage.js";
-import { $, $$, esc, zustand, objektVon } from "./helfer.js";
+import { $, $$, esc, zustand, objektVon, brotkrumen, KRUMEN } from "./helfer.js";
 import { ICON_KI, geheZu } from "./ui.js";
 import { erschliessen } from "./zipimport.js";
 
@@ -136,7 +136,7 @@ export async function zeigeOrdner(id) {
   const unerschlossen = dokumente.filter((d) => !d.zusammenfassung && /^(image\/|application\/pdf|application\/vnd\.openxmlformats)/.test(d.typ || ""));
 
   inhalt().innerHTML = `
-    <a class="zurueck" href="#/objekte">Alle Objekte</a>
+    ${brotkrumen([...KRUMEN.objekte, { text: titel, href: `#/objekt/${id}` }, { text: "Ablage" }])}
     <div class="kopf">
       <div><h1>${esc(titel)}</h1>
         <p>${allgemein ? "Unterlagen, die zu keinem bestimmten Haus gehören" : esc([o.strasse, [o.plz, o.ort].filter(Boolean).join(" ")].filter(Boolean).join(", "))} · ${anzahl(dokumente.length, "Dokument", "Dokumente")}</p></div>

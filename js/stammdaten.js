@@ -2,7 +2,7 @@
 // Details einer Mietpartei (Miete, Konto, Mieterhöhung) bleiben in der Akte („Stammdaten bearbeiten“).
 import * as db from "./daten.js";
 import { mieterName } from "./dokumente.js";
-import { $, $$, esc, melde, dialogFormular, frage, zustand, objektVon, wohnungVon } from "./helfer.js";
+import { $, $$, esc, melde, dialogFormular, frage, zustand, objektVon, wohnungVon, brotkrumen, KRUMEN } from "./helfer.js";
 import { geheZu } from "./ui.js";
 
 const inhalt = () => $("#inhalt");
@@ -38,6 +38,7 @@ export async function zeigeStammdaten() {
   const sortiert = (liste) => [...liste].sort((a, b) => a.bezeichnung.localeCompare(b.bezeichnung, "de", { numeric: true }));
 
   inhalt().innerHTML = `
+    ${brotkrumen([...KRUMEN.einstellungen, { text: "Häuser, Wohnungen & Mieter" }])}
     <div class="kopf">
       <div><h1>Häuser, Wohnungen &amp; Mieter</h1>
         <p>Hier legt ihr die Grunddaten an. Miete, Konto und Kostenträger einer Mietpartei stehen danach in ihrer Akte.</p></div>

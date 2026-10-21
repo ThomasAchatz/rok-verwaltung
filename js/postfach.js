@@ -5,7 +5,7 @@ import { antwortDaten, briefanrede, fuelleVorlage, vorlagenFehler, datumDE, miet
 import { zeigeDokument } from "./vorschau.js";
 import {
   $, $$, esc, melde, dialogFormular, frage, dateiTeil, heuteISO,
-  zustand, wohnungVon, objektVon, kostentraegerVon,
+  zustand, wohnungVon, objektVon, kostentraegerVon, brotkrumen, KRUMEN,
 } from "./helfer.js";
 
 import {
@@ -410,7 +410,7 @@ export async function zeigeNachricht(id) {
   const vorgangKasten = await vorgaenge.vorgangKastenHtml(n).catch(() => "");
 
   inhalt().innerHTML = `
-    <a class="zurueck" href="#/postfach">Zum Postfach</a>
+    ${brotkrumen([...KRUMEN.postfach, { text: n.betreff || "(ohne Betreff)" }])}
     <div class="akte__kopf">
       <h1>${esc(n.betreff || "(ohne Betreff)")}</h1>
       <div class="unter">
@@ -1199,7 +1199,12 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
   const o = w && objektVon(w.objekt_id);
   const kt = mieter && kostentraegerVon(mieter.kostentraeger_id);
   const zurueck = kontakt ? `#/kontakt/${kontakt.id}` : mieter ? `#/mieter/${mieter.id}` : dienstleister?.objekt_id ? `#/objekt/${dienstleister.objekt_id}` : "#/postfach";
-  const zurueckText = kontakt ? "Zum Kontakt" : mieter ? "Zur Akte" : dienstleister?.objekt_id ? "Zum Haus" : "Zum Postfach";
+  // Brotkrumen: das Schreiben hängt am Empfänger (Kostenträger: an der Mietpartei, falls gewählt)
+  const seite = antwort ? "Entwurf" : kostentraeger ? `Schreiben an ${kostentraeger.name}` : dienstleister ? `Schreiben an ${dienstleister.name}` : "Neues Schreiben";
+  const krumen = kontakt ? [...KRUMEN.sonstige, { text: kontaktName(kontakt), href: `#/kontakt/${kontakt.id}` }]
+    : mieter ? [...KRUMEN.mieter, { text: mieterName(mieter), href: `#/mieter/${mieter.id}` }]
+    : dienstleister ? KRUMEN.handwerker
+    : KRUMEN.postfach;
 
   // Eine Suche über alle, an die man schreiben kann (Roberts Wunsch: ein Feld statt mehrerer Listen)
   const eintraege = [
@@ -1257,7 +1262,7 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
   }
 
   inhalt().innerHTML = `
-    <a class="zurueck" href="${esc(zurueck)}">${zurueckText}</a>
+    ${brotkrumen([...krumen, { text: seite }])}
     <div class="kopf"><div><h1>${antwort ? "Entwurf" : "Neues Schreiben"}</h1>
       <p>Sagen oder tippen Sie, was drinstehen soll. Die KI entwirft das Schreiben ${dienstleister ? "an den Handwerker mit dem Wissen zum Haus"
         : kontakt ? "mit dem Verlauf der bisherigen Gespräche" : kostentraeger ? "an das Amt" : "mit den Daten der Mietpartei und dem Wissen"}.</p></div></div>

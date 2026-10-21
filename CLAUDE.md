@@ -106,6 +106,8 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Übersicht-Filter (`zeigeStart`): Alle | Eilig | Wiedervorlagen (auch spätere) | Erledigt, gemerkt in `zustand.startFilter`, Liste in
   `#todo-inhalt`. Erledigt = `sammleErledigt()` (erledigte Aufgaben mit „Wieder öffnen“ `data-wieder`, beantwortete/erledigte Nachrichten,
   Gratulationen dieses Jahr). Links in der Kachel oben (`.lage__link[data-filter]`).
+- Brotkrumen: `brotkrumen([...KRUMEN.mieter, { text }])` aus `js/helfer.js` statt Zurück-Links, nur auf Unterseiten, nach Struktur
+  (Vorgang/Schreiben hängen am Empfänger), am Handy nur „‹ Eltern“. Das Menü folgt dem ersten Glied (`route()` in app.js).
 - Stammdaten-Maske: `js/stammdaten.js` (Route `#/stammdaten`, Links in Einstellungen und Mieterliste). Löschen nur,
   wenn leer (Haus ohne Wohnungen, Wohnung ohne Mietpartei); Haus löschen kaskadiert auf Wissen/Handwerker des Hauses.
 - Vorgänge (`js/vorgaenge.js`, Route `#/thema/<id>`, Migration `20261020210000_themen_verlauf.sql`): Posteingang ordnet über

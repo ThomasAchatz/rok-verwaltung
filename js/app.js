@@ -7,7 +7,7 @@ import {
 import { zeigeDokument } from "./vorschau.js";
 import {
   $, $$, esc, melde, herunterladen, dateiTeil, dialogFormular, heuteISO,
-  zustand, wohnungVon, objektVon, kostentraegerVon,
+  zustand, wohnungVon, objektVon, kostentraegerVon, brotkrumen, KRUMEN,
 } from "./helfer.js";
 import * as postfach from "./postfach.js";
 import * as start from "./start.js";
@@ -175,6 +175,12 @@ async function route() {
     else if (teil === "stammdaten") await stamm.zeigeStammdaten();
     else if (teil === "einstellungen" || teil === "briefkopf") await postfach.zeigeEinstellungen();
     else await start.zeigeStart();
+    // Menü folgt den Brotkrumen (z. B. Vorgang einer Mietpartei → „Kontakte“, nicht „Postfach“)
+    const wurzel = { "#/mieter": "mieter", "#/objekte": "objekte", "#/postfach": "postfach", "#/einstellungen": "einstellungen" }[$(".brotkrumen li a")?.getAttribute("href")];
+    if (wurzel) for (const a of $$("[data-nav]")) {
+      if (a.dataset.nav === wurzel) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    }
     window.scrollTo(0, 0);
   } catch (err) {
     console.error(err);
@@ -264,7 +270,7 @@ async function zeigeAkte(id) {
   const hatMahnung1 = vorgaenge.some((v) => v.typ === "mahnung_1");
 
   inhalt.innerHTML = `
-    <a class="zurueck" href="#/mieter">Zurück zur Mieterliste</a>
+    ${brotkrumen([...KRUMEN.mieter, { text: mieterName(mieter) }])}
     <div class="akte__kopf">
       <h1>${esc(mieterName(mieter))}</h1>
       <div class="unter">
@@ -787,7 +793,7 @@ function beispielDaten(typ) {
 async function zeigeVorlagen() {
   zustand.vorlagen = await db.ladeVorlagen();
   inhalt.innerHTML = `
-    <a class="zurueck" href="#/einstellungen">Zu den Einstellungen</a>
+    ${brotkrumen([...KRUMEN.einstellungen, { text: "Vorlagen" }])}
     <div class="kopf"><div><h1>Vorlagen</h1>
       <p>Briefvorlagen als Word-Dateien. Eine hochgeladene eigene Vorlage ersetzt den Standard, bis Sie ihn wiederherstellen.</p></div></div>
     <section class="flaeche">

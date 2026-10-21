@@ -62,6 +62,29 @@ export function dialogFormular(html, { breit = false, vorbereiten = null } = {})
   });
 }
 
+/**
+ * Brotkrumen: „Wo bin ich?“ nach der Struktur der App (nicht nach dem Klickverlauf).
+ * teile: [{ text, href }, …, { text }] – das letzte Glied ist die Seite selbst.
+ * Am Handy steht nur „‹ Eltern“ (ersetzt den Zurück-Link).
+ */
+export function brotkrumen(teile) {
+  const liste = teile.filter((t) => t && String(t.text || "").trim());
+  if (liste.length < 2) return "";
+  const n = liste.length;
+  return `<nav class="brotkrumen" aria-label="Brotkrumen"><ol>${liste.map((t, i) => i === n - 1
+    ? `<li aria-current="page"><span title="${esc(t.text)}">${esc(t.text)}</span></li>`
+    : `<li${i === n - 2 ? ' class="brotkrumen__eltern"' : ""}><a href="${esc(t.href)}" title="${esc(t.text)}">${esc(t.text)}</a></li>`).join("")}</ol></nav>`;
+}
+/** Häufige Anfänge */
+export const KRUMEN = {
+  mieter: [{ text: "Kontakte", href: "#/mieter" }, { text: "Mieter", href: "#/mieter" }],
+  sonstige: [{ text: "Kontakte", href: "#/mieter" }, { text: "Sonstige", href: "#/kontakte" }],
+  handwerker: [{ text: "Kontakte", href: "#/mieter" }, { text: "Handwerker", href: "#/handwerker" }],
+  objekte: [{ text: "Objekte", href: "#/objekte" }],
+  postfach: [{ text: "Postfach", href: "#/postfach" }],
+  einstellungen: [{ text: "Einstellungen", href: "#/einstellungen" }],
+};
+
 // Einfache Rückfrage mit eigenem Text (statt confirm(), das auf iOS in der App unschön aussieht)
 export async function frage(titel, html, jaText = "OK", { gefahr = false } = {}) {
   const daten = await dialogFormular(`

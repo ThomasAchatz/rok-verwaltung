@@ -1078,3 +1078,19 @@ a.reiter__knopf { text-decoration: none; display: inline-block; }
 .todo__haken--zurueck { color: var(--tinte-hell); }
 .todo__haken--zurueck svg { opacity: 0.55; }
 .todo__haken--zurueck:hover { border-color: var(--tinte-hell); background: var(--tinte-zart); }
+
+/* Brotkrumen: Wo bin ich? Am Handy nur „‹ Eltern“ */
+.brotkrumen { margin: 0 0 0.9rem; font-size: 0.86rem; color: var(--text-leise); min-width: 0; }
+.brotkrumen ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; row-gap: 0.15rem; min-width: 0; }
+.brotkrumen li { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
+.brotkrumen li + li::before { content: "›"; margin: 0 0.45rem; color: #a3acb9; }
+.brotkrumen a, .brotkrumen span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30ch; }
+.brotkrumen a { color: var(--text-leise); text-decoration: none; }
+.brotkrumen a:hover { color: var(--tinte); text-decoration: underline; text-underline-offset: 2px; }
+.brotkrumen [aria-current] span { color: var(--text); font-weight: 500; }
+@media (max-width: 600px) {
+  .brotkrumen li { display: none; }
+  .brotkrumen li.brotkrumen__eltern { display: inline-flex; }
+  .brotkrumen li.brotkrumen__eltern::before { content: "‹"; margin: 0 0.4rem 0 0; font-size: 1.1rem; line-height: 1; }
+  .brotkrumen a { max-width: calc(100vw - 4rem); padding: 0.3rem 0; }
+}
