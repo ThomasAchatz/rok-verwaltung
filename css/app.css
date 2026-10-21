@@ -598,10 +598,24 @@ details.ausklapp[open] > summary { border-bottom: 1px solid var(--linie); }
 
 /* --- Übersicht: Zu erledigen, Häuser ------------------------------------- */
 .lage--kompakt { margin-bottom: 1.25rem; }
-.lage--kompakt > div, .lage--kompakt > a { padding: 0.8rem 1.1rem; }
-.lage--kompakt > a { text-decoration: none; color: inherit; }
-.lage--kompakt > * + * { border-left: 1px solid var(--linie); }
-.lage--kompakt > a:hover { background: #f6f8fb; }
+.lage.lage--kompakt > * { padding: 0.8rem 1.1rem; }
+.lage.lage--kompakt > * + * { border-left: 1px solid var(--linie); }
+/* Kachel: Zahl, Bezeichnung, Zusatz – immer gleich aufgebaut, links ausgerichtet */
+.lage__kachel {
+  display: flex; flex-direction: column; align-items: flex-start; min-width: 0; text-align: left;
+  font: inherit; color: inherit; background: none; border: none; border-radius: 0; text-decoration: none; margin: 0;
+}
+a.lage__kachel, button.lage__kachel { cursor: pointer; }
+a.lage__kachel:hover, button.lage__kachel:hover:not(:disabled) { background: #f6f8fb; }
+button.lage__kachel:disabled { cursor: default; }
+.lage--kompakt > :first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.lage--kompakt > :last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.lage__zusatz {
+  font: inherit; font-size: 0.8rem; color: var(--text-leise); background: none; border: none; padding: 0; margin-top: 0.15rem;
+  text-align: left; line-height: 1.3;
+}
+button.lage__zusatz { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+.lage__zusatz--offen { color: var(--offen); font-weight: 600; }
 .lage--kompakt .lage__wert { font-size: 1.5rem; }
 .start { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
 .todos { display: flex; flex-direction: column; }
@@ -779,11 +793,13 @@ details.ausklapp--innen > div { padding: 0.9rem 0.9rem 0; }
 @media (max-width: 900px) {
   .start { grid-template-columns: minmax(0, 1fr); }
   .lage--kompakt { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .lage--kompakt > div + div, .lage--kompakt > a { border-top: none; border-left: 1px solid var(--linie); }
+  .lage.lage--kompakt > * + * { border-top: none; border-left: 1px solid var(--linie); }
 }
 @media (max-width: 720px) {
   .wahl { grid-template-columns: 1fr; }
-  .lage--kompakt > div, .lage--kompakt > a { padding: 0.6rem 0.7rem; }
+  .lage.lage--kompakt > * { padding: 0.65rem 0.7rem; }
+  .lage--kompakt .lage__zusatz { font-size: 0.72rem; }
+  .lage--kompakt .lage__mehr { display: none; }
   .lage--kompakt .lage__wert { font-size: 1.15rem; }
   .lage--kompakt .lage__text { font-size: 0.75rem; line-height: 1.3; }
   .chat { width: 100vw; }
@@ -1072,7 +1088,8 @@ a.reiter__knopf { text-decoration: none; display: inline-block; }
   text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px;
 }
 .lage__link:hover { color: var(--tinte); text-decoration-color: currentColor; }
-.lage__mehr { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; margin-top: 0.3rem; font-size: 0.84rem; }
+.lage__mehr { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; margin-top: 0.45rem; padding-top: 0.45rem; border-top: 1px dashed var(--linie); font-size: 0.82rem; align-self: stretch; }
+.lage__link { text-align: left; }
 .todo--erledigt { border-left-color: var(--bezahlt-zart); }
 .todo--erledigt .todo__titel { font-weight: 500; color: var(--text-leise); }
 .todo__haken--zurueck { color: var(--tinte-hell); }
@@ -1093,4 +1110,15 @@ a.reiter__knopf { text-decoration: none; display: inline-block; }
   .brotkrumen li.brotkrumen__eltern { display: inline-flex; }
   .brotkrumen li.brotkrumen__eltern::before { content: "‹"; margin: 0 0.4rem 0 0; font-size: 1.1rem; line-height: 1; }
   .brotkrumen a { max-width: calc(100vw - 4rem); padding: 0.3rem 0; }
+}
+
+/* Filter am Handy: eine Zeile, notfalls wischen (die Seite selbst scrollt nicht seitlich) */
+@media (max-width: 600px) {
+  .reiter--filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 0.65rem 0.75rem 0.15rem; gap: 0.25rem; margin-bottom: 0.4rem; }
+  .reiter--filter::-webkit-scrollbar { display: none; }
+  .reiter--filter .reiter__knopf { flex: none; font-size: 0.82rem; padding: 0.32rem 0.55rem; }
+}
+@media (max-width: 380px) {
+  .reiter--filter { padding-left: 0.6rem; padding-right: 0.6rem; gap: 0.2rem; }
+  .reiter--filter .reiter__knopf { font-size: 0.78rem; padding: 0.3rem 0.45rem; }
 }

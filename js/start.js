@@ -281,15 +281,25 @@ export async function zeigeStart() {
       </div>
     </div>
     <div class="lage lage--kompakt">
-      <div><div class="lage__wert ${dringend ? "lage__wert--offen" : ""}">${todos.jetzt.length}</div>
-        <div class="lage__text">zu erledigen${dringend ? `, <button type="button" class="lage__link" data-filter="eilig">${dringend} davon eilig</button>` : ""}</div>
+      <div class="lage__kachel">
+        <div class="lage__wert ${dringend ? "lage__wert--offen" : ""}">${todos.jetzt.length}</div>
+        <div class="lage__text">zu erledigen</div>
+        ${dringend ? `<button type="button" class="lage__zusatz lage__zusatz--offen" data-filter="eilig">${dringend} davon eilig</button>` : `<span class="lage__zusatz">nichts Eiliges</span>`}
         <div class="lage__mehr">
           ${wiedervorlagen.length ? `<button type="button" class="lage__link" data-filter="wiedervorlage">${wiedervorlagen.length} ${wiedervorlagen.length === 1 ? "Wiedervorlage" : "Wiedervorlagen"}</button>` : ""}
           <button type="button" class="lage__link" data-filter="erledigt">Erledigtes ansehen</button>
-        </div></div>
-      <a href="#/postfach"><div class="lage__wert">${neu}</div><div class="lage__text">neue Nachrichten</div></a>
-      <div><div class="lage__wert ${gesamt > 0 ? "lage__wert--offen" : ""}">${euro(gesamt)}</div>
-        <div class="lage__text">Mietrückstand, ${rueckstand.length} von ${liste.length} Mietparteien</div></div>
+        </div>
+      </div>
+      <a class="lage__kachel" href="#/postfach">
+        <div class="lage__wert">${neu}</div>
+        <div class="lage__text">${neu === 1 ? "neue Nachricht" : "neue Nachrichten"}</div>
+        <span class="lage__zusatz">im Postfach</span>
+      </a>
+      <button type="button" class="lage__kachel" id="zu-rueckstand" ${rueckstand.length ? "" : "disabled"}>
+        <div class="lage__wert ${gesamt > 0 ? "lage__wert--offen" : ""}">${euro(gesamt)}</div>
+        <div class="lage__text">Mietrückstand</div>
+        <span class="lage__zusatz">${rueckstand.length ? `${rueckstand.length} von ${liste.length} Mietparteien` : "alles bezahlt"}</span>
+      </button>
     </div>
 
     <div class="start">
@@ -323,7 +333,7 @@ export async function zeigeStart() {
           </div>
         </section>
 
-        <details class="flaeche ausklapp">
+        <details class="flaeche ausklapp" id="rueckstaende">
           <summary>Mietrückstände (${rueckstand.length})</summary>
           ${LEGENDE.replace('class="mietbuch-legende"', 'class="mietbuch-legende mietbuch-legende--innen"')}
           ${rueckstand.length
@@ -373,6 +383,11 @@ export async function zeigeStart() {
     b.addEventListener("click", () => zeigeFilter(b.dataset.filter, { scrollen: !!b.closest(".lage") }));
   }
   await zeigeFilter(filter);
+  $("#zu-rueckstand").addEventListener("click", () => {
+    const d = $("#rueckstaende");
+    d.open = true;
+    d.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   $("#notiz-neu").addEventListener("click", () => aufgabeDialog(null, { nachher: zeigeStart }));
   $("#einsprechen").addEventListener("click", () => kontakte.notizEinsprechen());
   $("#erfassen").addEventListener("change", (e) => { const d = [...e.target.files]; e.target.value = ""; ablage.erfasseAlle(d); });
