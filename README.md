@@ -137,7 +137,8 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   Kontakt oder Mietpartei (oder schlägt einen neuen Kontakt vor), Notiz, Datum, Geburtstag, feste Infos und To-dos;
   Robert prüft im Dialog und speichert. Bei Mietparteien optional zusätzlich als PDF in die Ablage (Name sichtbar).
   **Geburtstage** stehen jedes Jahr ab 7 Tagen vorher in „Zu erledigen“ (abhaken = für dieses Jahr erledigt).
-  Der Chat kennt Kontakte und Verlauf („Was weiß ich über …?“). Testdaten: `supabase/seed_kontakte.sql` (erfunden).
+  Der Chat kennt Kontakte und Verlauf („Was weiß ich über …?“). Testdaten: `supabase/seed_kontakte.sql` (erfunden),
+  ein Vorgang mit 6 E-Mails (Versicherung, Wasserschaden) zum Testen von „Erledigt“: `supabase/seed_vorgang.sql`.
 - **Ordner bearbeiten** (gilt für alle Häuser): oben „Neuen Ordner anlegen“ mit Name und „Einsortieren in“
   (Oberste Ebene oder unter einem Ordner, wie im Mail-Programm), bei jedem Ordner „+ Unterordner“. Die Liste ist ein
   eingerückter Baum; Verschieben und Umbenennen nehmen Unterordner und Dokumente mit, Löschen ebenfalls (Dokumente
