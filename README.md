@@ -199,6 +199,11 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   Signatur anlegen. Beim Schreiben oben „Absender“ wählen: Signatur, Fußzeile der Mail, Briefkopf (ohne „Immobilienverwaltung“),
   Absendername und der Ton der KI (Ich-Form, ohne Firma) folgen der Wahl. Technisch geht die Mail weiter über die bestätigte
   Versand-Adresse; Antworten landen bei der hinterlegten E-Mail des Absenders (Reply-To).
+- **Unterschrift in Briefen:** Unter Einstellungen › Unterschrift ein Foto oder einen Scan hochladen (Hintergrund wird entfernt,
+  das Bild liegt privat im Speicher). In der Brief-Vorschau gibt es das Häkchen „Unterschrift einsetzen“: vorbelegt bei Mahnungen,
+  Nachweisen ans Jobcenter/Amt und bei Vertraglichem (Mieterhöhung, Kündigung, Vereinbarung, Kaution …), nicht bei Aushängen,
+  Rundschreiben und z. B. Hausordnung. Umschalten zeigt den Brief sofort neu; nach dem Speichern bleibt die Fassung fest.
+  E-Mails bekommen nie eine Unterschrift.
 
 ## Sicherheit
 

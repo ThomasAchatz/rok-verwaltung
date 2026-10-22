@@ -31,12 +31,15 @@ const RAHMEN_CSS = `
  * @param {{vorschlag?: Promise<{titel: string, ordner?: string}>}} [o.name]  Dateiname sichtbar und änderbar, Vorschlag kommt später
  * @param {{an?: string, betreff?: string, text?: string}} [o.email]
  * @param {function} [o.melde]           Meldungsfunktion (text, art)
+ * @param {{vorhanden: boolean, an: boolean, erzeuge: function}} [o.unterschrift]
+ *        Häkchen „Unterschrift einsetzen“; erzeuge(an) liefert die neuen Bytes (der Aufrufer merkt sie sich)
  * @returns {Promise<boolean>}           true, wenn eine Aktion ausgeführt wurde
  */
 export function zeigeDokument(o) {
   const dlg = document.getElementById("dialog");
-  const blob = new Blob([o.bytes], { type: DOCX_TYP });
-  const url = URL.createObjectURL(blob);
+  let blob = new Blob([o.bytes], { type: DOCX_TYP });
+  let url = URL.createObjectURL(blob);
+  const alteUrls = [];
   const melde = o.melde || (() => {});
   let abgeschlossen = !o.vorAbschluss;
   const basis = o.dateiname.replace(/\.docx$/i, "");
@@ -60,6 +63,9 @@ export function zeigeDokument(o) {
       </div>
       <footer class="vorschau__fuss">
         <p class="vorschau__hinweis leise" data-v="hinweis">${esc(o.hinweis || "")}</p>
+        ${o.unterschrift ? (o.unterschrift.vorhanden
+          ? `<label class="checkfeld vorschau__unterschrift"><input type="checkbox" data-unterschrift ${o.unterschrift.an ? "checked" : ""}> Unterschrift einsetzen</label>`
+          : `<p class="leise vorschau__unterschrift">Keine Unterschrift hinterlegt (Einstellungen › Unterschrift).</p>`) : ""}
         <label class="feld vorschau__name"><span>Dateiname</span>
           <span class="vorschau__namezeile"><input data-name value="${esc(basis)}" maxlength="160" spellcheck="false" autocomplete="off"><span class="leise">.docx</span></span>
           <span class="feldhinweis feldhinweis--leise" data-name-info>${o.name?.vorschlag ? "Die KI schlägt den Namen nach eurem Schema vor …" : ""}</span></label>
@@ -97,18 +103,21 @@ export function zeigeDokument(o) {
     const info = dlg.querySelector("[data-name-info]");
     if (info) info.textContent = "";
   });
-  const ladeHinweis = dlg.querySelector(".vorschau__laden");
 
   async function abschliessen() {
     if (abgeschlossen) return;
     abgeschlossen = true;
     try {
       nameFeld.readOnly = true; // nach dem ersten Speichern bleibt der Name
+      const haken = dlg.querySelector("[data-unterschrift]");
+      if (haken) haken.disabled = true; // gespeicherte Fassung bleibt, wie sie ist
       await o.vorAbschluss({ titel: titelJetzt() });
       aktion = true;
     } catch (err) {
       abgeschlossen = false;
       nameFeld.readOnly = false;
+      const haken = dlg.querySelector("[data-unterschrift]");
+      if (haken) haken.disabled = false;
       melde(err.message, "fehler");
       throw err;
     }
@@ -171,45 +180,76 @@ export function zeigeDokument(o) {
     abschliessen().catch(() => {});
   });
 
-  // Vorschau rendern
-  iframe.srcdoc = `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${RAHMEN_CSS}</style></head><body></body></html>`;
-  iframe.addEventListener("load", async () => {
-    const idoc = iframe.contentDocument;
-    try {
-      await window.docx.renderAsync(blob, idoc.body, idoc.head, {
-        className: "docx",
-        inWrapper: true,
-        breakPages: true,
-        ignoreLastRenderedPageBreak: true,
-        renderHeaders: true,
-        renderFooters: true,
-        useBase64URL: true,
-      });
-      // docx-preview leert den Style-Container: eigene Rahmen-Styles danach wieder anhängen
-      const stil = idoc.createElement("style");
-      stil.textContent = RAHMEN_CSS;
-      idoc.head.append(stil);
-      const passeAn = () => {
-        const seite = idoc.querySelector("section.docx");
-        if (!seite) return;
-        // offsetWidth ist unabhängig vom Zoom und liefert die echte Seitenbreite
-        const verfuegbar = iframe.clientWidth - 24;
-        idoc.body.style.zoom = String(Math.min(1, verfuegbar / seite.offsetWidth));
-      };
-      passeAn();
-      new ResizeObserver(passeAn).observe(iframe);
-      ladeHinweis.remove();
-    } catch (err) {
-      ladeHinweis.textContent = "Die Vorschau konnte nicht erstellt werden: " + err.message + ". Das Herunterladen funktioniert trotzdem.";
+  // Vorschau rendern (auch erneut, wenn die Unterschrift umgeschaltet wird)
+  let ladeHinweis = dlg.querySelector(".vorschau__laden");
+  let beobachter = null;
+  function zeichne() {
+    if (!ladeHinweis) {
+      ladeHinweis = Object.assign(document.createElement("div"), { className: "vorschau__laden", textContent: "Vorschau wird erstellt …" });
+      iframe.after(ladeHinweis);
     }
-  }, { once: true });
+    iframe.addEventListener("load", async () => {
+      const idoc = iframe.contentDocument;
+      try {
+        await window.docx.renderAsync(blob, idoc.body, idoc.head, {
+          className: "docx",
+          inWrapper: true,
+          breakPages: true,
+          ignoreLastRenderedPageBreak: true,
+          renderHeaders: true,
+          renderFooters: true,
+          useBase64URL: true,
+        });
+        // docx-preview leert den Style-Container: eigene Rahmen-Styles danach wieder anhängen
+        const stil = idoc.createElement("style");
+        stil.textContent = RAHMEN_CSS;
+        idoc.head.append(stil);
+        const passeAn = () => {
+          const seite = idoc.querySelector("section.docx");
+          if (!seite) return;
+          // offsetWidth ist unabhängig vom Zoom und liefert die echte Seitenbreite
+          const verfuegbar = iframe.clientWidth - 24;
+          idoc.body.style.zoom = String(Math.min(1, verfuegbar / seite.offsetWidth));
+        };
+        passeAn();
+        beobachter?.disconnect();
+        beobachter = new ResizeObserver(passeAn);
+        beobachter.observe(iframe);
+        ladeHinweis?.remove();
+        ladeHinweis = null;
+      } catch (err) {
+        ladeHinweis.textContent = "Die Vorschau konnte nicht erstellt werden: " + err.message + ". Das Herunterladen funktioniert trotzdem.";
+      }
+    }, { once: true });
+    iframe.srcdoc = `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${RAHMEN_CSS}</style></head><body></body></html>`;
+  }
+  zeichne();
+
+  dlg.querySelector("[data-unterschrift]")?.addEventListener("change", async (e) => {
+    const haken = e.target;
+    haken.disabled = true;
+    try {
+      const neu = await o.unterschrift.erzeuge(haken.checked);
+      alteUrls.push(url);
+      blob = new Blob([neu], { type: DOCX_TYP });
+      url = URL.createObjectURL(blob);
+      dlg.querySelector('[data-v="ziehen"]').setAttribute("href", url);
+      zeichne();
+    } catch (err) {
+      haken.checked = !haken.checked;
+      melde("Unterschrift konnte nicht eingesetzt werden: " + err.message, "fehler");
+    } finally {
+      if (!abgeschlossen) haken.disabled = false;
+    }
+  }, { signal: aufraeumen.signal });
 
   dlg.showModal();
   return new Promise((fertig) => {
     dlg.addEventListener("close", () => {
       aufraeumen.abort();
       dlg.classList.remove("dialog--vorschau");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      beobachter?.disconnect();
+      setTimeout(() => { URL.revokeObjectURL(url); alteUrls.forEach((u) => URL.revokeObjectURL(u)); }, 60000);
       dlg.innerHTML = "";
       fertig(aktion);
     }, { once: true });

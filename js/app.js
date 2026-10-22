@@ -5,6 +5,7 @@ import {
   euro, datumDE, monatDE, ibanFormat, mieterName,
 } from "./dokumente.js";
 import { zeigeDokument } from "./vorschau.js";
+import * as unterschrift from "./unterschrift.js";
 import {
   $, $$, esc, melde, herunterladen, dateiTeil, dialogFormular, heuteISO,
   zustand, wohnungVon, objektVon, kostentraegerVon, brotkrumen, KRUMEN,
@@ -478,7 +479,7 @@ async function erstelleBrief(typ, knopf) {
   const text = knopf.textContent;
   knopf.disabled = true;
   knopf.textContent = "Wird vorbereitet …";
-  let bytes, daten;
+  let bytes, daten, uOption;
   try {
     const datei = await db.ladeVorlagenDatei(vorlage);
     daten = briefDaten(typ, {
@@ -486,7 +487,12 @@ async function erstelleBrief(typ, knopf) {
       kostentraeger: a.kostentraeger, posten, vorgaenge: a.vorgaenge,
     });
     try {
-      bytes = fuelleVorlage(datei, daten);
+      // Mahnungen und Nachweise ans Amt sind vertraglich: mit Unterschrift (in der Vorschau abschaltbar)
+      uOption = await unterschrift.vorschauOption(unterschrift.sollUnterschreiben({ typ }), (u) => {
+        bytes = fuelleVorlage(datei, daten, { unterschrift: u });
+        return bytes;
+      });
+      uOption.erzeuge(uOption.an);
     } catch (err) {
       throw new Error("Die Vorlage enthält einen Fehler: " + vorlagenFehler(err));
     }
@@ -527,6 +533,7 @@ async function erstelleBrief(typ, knopf) {
     dateiname,
     name: { vorschlag: namensVorschlag },
     hinweis: "Noch nicht gespeichert. Beim Herunterladen, Drucken oder Versenden wird das Schreiben im Verlauf abgelegt.",
+    unterschrift: uOption,
     email: emailDaten(typ, a.mieter, a.kostentraeger, titel),
     melde,
     vorAbschluss: async ({ titel: dateiTitel }) => {
@@ -756,6 +763,7 @@ const BEKANNTE = new Set([
   "wohnung", "mietbeginn", "kostentraeger_name", "aktenzeichen", "konto_inhaber", "konto_iban",
   "konto_bic", "konto_bank", "verwendungszweck", "posten", "monat", "bezeichnung", "betrag", "summe",
   "hat_nebenleistungen", "letzte_mahnung_datum", "mahnung_datum", "betreff", "absaetze", "absatz",
+  "v_untertitel", "v_fusszeile", "v_gruss_firma", "v_unterschrift",
 ]);
 
 // Beispieldaten für die Vorschau einer Vorlage (erfunden)
@@ -819,13 +827,17 @@ async function zeigeVorlagen() {
     const v = zustand.vorlagen.find((x) => x.schluessel === b.dataset.ansehen);
     try {
       const datei = await db.ladeVorlagenDatei(v);
-      let bytes;
-      try { bytes = fuelleVorlage(datei, beispielDaten(v.schluessel)); }
-      catch (err) { return melde("Die Vorlage enthält einen Fehler: " + vorlagenFehler(err), "fehler"); }
+      let bytes, uOption;
+      try {
+        const daten = beispielDaten(v.schluessel);
+        uOption = await unterschrift.vorschauOption(true, (u) => (bytes = fuelleVorlage(datei, daten, { unterschrift: u })));
+        uOption.erzeuge(uOption.an);
+      } catch (err) { return melde("Die Vorlage enthält einen Fehler: " + vorlagenFehler(err), "fehler"); }
       await zeigeDokument({
         titel: `Vorlage: ${v.name}`,
         untertitel: "Mit erfundenen Beispieldaten befüllt",
         bytes,
+        unterschrift: uOption,
         dateiname: `Beispiel_${dateiTeil(v.name)}.docx`,
         hinweis: "So sieht das Schreiben aus. Die eingesetzten Daten sind Beispiele.",
         melde,

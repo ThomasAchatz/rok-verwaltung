@@ -45,6 +45,7 @@ export async function zeigeStammdaten() {
       <div class="knopfreihe">
         <button type="button" class="knopf knopf--primaer" id="mieter-neu">${ICON_PLUS} Neue Mietpartei</button>
         <button type="button" class="knopf" id="haus-neu">${ICON_PLUS} Neues Haus</button>
+        <a class="knopf" href="#/einstellungen" title="Briefkopf und Unterschrift für Briefe">Briefkopf &amp; Unterschrift</a>
       </div>
     </div>
     ${objekte.length ? "" : `<section class="flaeche leer"><p>Noch kein Haus angelegt. Fangt mit „Neues Haus“ an.</p></section>`}

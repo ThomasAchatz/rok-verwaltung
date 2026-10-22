@@ -135,3 +135,9 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   name, strasse, plz, ort, telefon, email, signatur }], Kopie am Schreiben in `antworten.absender`; Briefe über `profilFuer()`
   (js/dokumente.js, Vorlagenfelder `v_untertitel`/`v_fusszeile`/`v_gruss_firma`), Versand über `absenderProfil()`/`absenderZeile()`
   (Name im From, Adresse bleibt VERSAND_ABSENDER, reply_to = E-Mail des Absenders), KI `absender` → Ich-Form ohne Firma.
+- Unterschrift (Migration `20261022110000_unterschrift.sql`): `vermieter_profil.unterschrift` { pfad, breite, hoehe, stand }, Bild als PNG im
+  Bucket `vorlagen` unter `unterschrift/<uuid>.png`. `js/unterschrift.js`: `bereiteBildAuf()` (Hintergrund weg, Zuschnitt, max. 900 px),
+  Einstellungs-Bereich, `sollUnterschreiben()` (Vorschlag), `vorschauOption(an, erzeuge)` → Option `unterschrift` von `zeigeDokument`
+  (Häkchen, rendert neu, nach dem Speichern gesperrt). `fuelleVorlage(buf, daten, { unterschrift: { png } })` ersetzt `{v_unterschrift}`
+  (Marke `[[UNTERSCHRIFT]]` aus briefDaten) durch ein Inline-Bild (5 cm, max. 1,8 cm hoch), sonst Rückfall unter „Grüßen“; ohne Bild
+  wird die Marke entfernt. Nie in E-Mails. Echte Unterschrift NICHT ins Testsystem legen (lädt Robert selbst hoch).

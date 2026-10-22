@@ -210,7 +210,9 @@ function kontoBox(einleitung) {
 
 function gruss() {
   return [
-    p("Mit freundlichen Grüßen", { spacing: { before: 160, after: 480 }, keepNext: true, keepLines: true }),
+    p("Mit freundlichen Grüßen", { spacing: { before: 160, after: 120 }, keepNext: true, keepLines: true }),
+    // Stelle für die Unterschrift: wird durch das Bild ersetzt oder bleibt leer (Platz zum Unterschreiben von Hand)
+    p("{v_unterschrift}", { spacing: { before: 0, after: 120 }, keepNext: true, keepLines: true }),
     new Paragraph({ spacing: { after: 0 }, keepNext: true, children: [t("{v_inhaber}")] }),
     new Paragraph({ spacing: { after: 0 }, children: [t("{v_gruss_firma}", { color: GRAU, size: 19 })] }),
   ];

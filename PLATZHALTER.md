@@ -19,6 +19,7 @@ eventuell nicht als zusammenhängenden Text.
 | `{v_untertitel}` | „Immobilienverwaltung“, bei privatem Absender leer |
 | `{v_fusszeile}` | Fußzeile (Firma/Name · Anschrift · Kontakt), passt sich dem gewählten Absender an |
 | `{v_gruss_firma}` | Firmenname unter dem Gruß, bei privatem Absender leer |
+| `{v_unterschrift}` | Stelle für die Unterschrift (eigener Absatz zwischen Gruß und Name). Wird durch das Bild ersetzt oder bleibt leer. Fehlt sie in einer eigenen Vorlage, kommt das Bild unter den Absatz mit „Grüßen“. |
 
 Wählt Robert beim Schreiben einen anderen Absender (z. B. „Privat“), stehen in allen `v_…`-Feldern dessen Angaben.
 

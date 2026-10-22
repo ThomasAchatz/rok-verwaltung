@@ -3,6 +3,7 @@
 import * as db from "./daten.js";
 import { antwortDaten, briefanrede, fuelleVorlage, vorlagenFehler, datumDE, mieterName, profilFuer } from "./dokumente.js";
 import { zeigeDokument } from "./vorschau.js";
+import * as unterschrift from "./unterschrift.js";
 import {
   $, $$, esc, melde, dialogFormular, frage, dateiTeil, heuteISO,
   zustand, wohnungVon, objektVon, kostentraegerVon, brotkrumen, KRUMEN,
@@ -124,7 +125,7 @@ function eintragAntwort(a, { nachricht = null, mieter = null, objektId = null, k
   const voll = `${String(a.text || "").trim()}\n\nMit freundlichen Grüßen\n${signaturFuer(a.absender || null)}`;
   const p = zustand.profil || {};
   const datei = bytes
-    ? async () => ({ blob: new Blob([bytes], { type: ablage.DOCX_TYP }), typ: ablage.DOCX_TYP })
+    ? async () => ({ blob: new Blob([typeof bytes === "function" ? bytes() : bytes], { type: ablage.DOCX_TYP }), typ: ablage.DOCX_TYP })
     : ablage.pdfEintrag({
       kopf: briefkopfZeilen(),
       titel: a.betreff || (art === "Auftrag" ? "Auftrag" : "Schreiben"),
@@ -1093,7 +1094,7 @@ function baueEntwurf(el, k) {
       try { await speichere(); } catch (err) { return melde(err.message, "fehler"); }
       const empf = await empfaengerDialog(k);
       if (!empf) return;
-      let bytes, dateiname;
+      let bytes, dateiname, uOption;
       const ergebnis = await beschaeftigt(el, knopf, "Wird vorbereitet …", async () => {
         try {
           if (!zustand.vorlagen?.some((x) => x.schluessel === "antwort")) zustand.vorlagen = await db.ladeVorlagen();
@@ -1103,10 +1104,14 @@ function baueEntwurf(el, k) {
           const o = w && objektVon(w.objekt_id);
           const datei = await db.ladeVorlagenDatei(vorlage);
           try {
-            bytes = fuelleVorlage(datei, antwortDaten({
+            const daten = antwortDaten({
               profil: profilFuer(zustand.profil || {}, gewaehlterAbsender()), mieter: k.mieter, wohnung: w || {}, objekt: o || {},
               empfaenger: empf, betreff: v.betreff, text: v.text,
-            }));
+            });
+            // Unterschrift: bei Ämtern und Vertraglichem vorbelegt, bei Aushängen nicht (in der Vorschau umschaltbar)
+            const soll = unterschrift.sollUnterschreiben({ kostentraeger: !!k.kostentraeger, haus: !!k.haus, betreff: v.betreff, text: v.text });
+            uOption = await unterschrift.vorschauOption(soll, (u) => (bytes = fuelleVorlage(datei, daten, { unterschrift: u })));
+            uOption.erzeuge(uOption.an);
           } catch (err) {
             throw new Error("Die Vorlage enthält einen Fehler: " + vorlagenFehler(err));
           }
@@ -1122,7 +1127,7 @@ function baueEntwurf(el, k) {
       const anrede = v.text.split(/\n/)[0] || "Guten Tag,";
       let ablageLaeuft = null;
       // Dateiname nach eurem Schema: sichtbar in der Vorschau, die KI schlägt ihn vor
-      const briefEintrag = eintragJetzt("brief", null, { bytes, vorgangId: k.mieter ? vorgangId : null });
+      const briefEintrag = eintragJetzt("brief", null, { bytes: () => bytes, vorgangId: k.mieter ? vorgangId : null });
       const namensVorschlag = ablage.nameVorschlag(briefEintrag);
       const gespeichert = await zeigeDokument({
         titel: v.betreff || "Schreiben",
@@ -1133,6 +1138,7 @@ function baueEntwurf(el, k) {
         hinweis: k.mieter
           ? "Noch nicht gespeichert. Beim Herunterladen, Drucken oder Versenden wird der Brief in der Akte abgelegt."
           : "Beim Herunterladen, Drucken oder Versenden wird das Schreiben als erledigt vermerkt.",
+        unterschrift: uOption,
         email: { an: v.an, betreff: v.betreff, text: `${anrede}\n\nim Anhang erhalten Sie unser Schreiben.\n\nMit freundlichen Grüßen\n${aktSignatur()}` },
         melde,
         vorAbschluss: async ({ titel }) => {
@@ -1572,6 +1578,8 @@ export async function zeigeEinstellungen() {
         </form>
       </section>
 
+      ${unterschrift.unterschriftBereichHtml()}
+
       <section class="flaeche">
         <div class="flaeche__kopf"><h2>Antworten und E-Mails</h2></div>
         <form class="flaeche__inhalt" id="antwortformular">
@@ -1662,6 +1670,11 @@ export async function zeigeEinstellungen() {
     });
   };
   $("#ordner-bearbeiten").addEventListener("click", () => ablage.ordnerBearbeiten());
+  const unterschriftNeu = () => {
+    $("#unterschrift-bereich").outerHTML = unterschrift.unterschriftBereichHtml();
+    unterschrift.verbindeUnterschrift(unterschriftNeu);
+  };
+  unterschrift.verbindeUnterschrift(unterschriftNeu);
   const absenderNeuZeichnen = () => {
     $("#absender-liste").innerHTML = absenderZeilenHtml();
     for (const b of $$("[data-absender]")) b.addEventListener("click", () => absenderDialog(absenderListe().find((a) => a.id === b.dataset.absender), absenderNeuZeichnen));

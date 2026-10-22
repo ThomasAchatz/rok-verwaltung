@@ -1140,3 +1140,11 @@ a.reiter__knopf { text-decoration: none; display: inline-block; }
 }
 .zeile--knopf > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .zeile--knopf:hover { background: #f6f8fb; }
+
+/* Unterschrift (Einstellungen, Vorschau) */
+.unterschrift-feld { min-height: 4.5rem; max-width: 22rem; padding: 0.6rem 0.9rem; border: 1px dashed var(--linie); border-radius: 8px;
+  background: #fff; display: flex; align-items: center; justify-content: flex-start; margin-bottom: 0.6rem; }
+.unterschrift-feld img { display: block; max-width: 100%; max-height: 5rem; height: auto; }
+.unterschrift-feld--gross { max-width: 100%; }
+.unterschrift-feld--gross img { max-height: 8rem; }
+.vorschau__unterschrift { margin: 0; }
