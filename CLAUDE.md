@@ -141,3 +141,7 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   (Häkchen, rendert neu, nach dem Speichern gesperrt). `fuelleVorlage(buf, daten, { unterschrift: { png } })` ersetzt `{v_unterschrift}`
   (Marke `[[UNTERSCHRIFT]]` aus briefDaten) durch ein Inline-Bild (5 cm, max. 1,8 cm hoch), sonst Rückfall unter „Grüßen“; ohne Bild
   wird die Marke entfernt. Nie in E-Mails. Echte Unterschrift NICHT ins Testsystem legen (lädt Robert selbst hoch).
+- „An alle im Haus“ in `baueEntwurf`: Knopf `[data-anhaus]` am Feld An (`anHausMoeglich`: nicht bei Haus/Auftrag) und Hinweis
+  `[data-teil=rundtipp]` bei Rundschreiben-Anrede (`RUND_ANREDE`, `pruefeRundtipp()` bei Eingabe und in `zeigeEditor`, „Nein“ merkt sich
+  `rundtippWeg`). `zumHaus()` → `hausFuerRund()` (Mietpartei/Nachricht/gewähltes Haus, sonst Dialog) → `zustand.vorbelegung.uebernahme`
+  mit `rund: true` → `#/schreiben/h-<id>`; Antworten auf Nachrichten nehmen den Text mit, der Vorgang bleibt (`themaVorgabe`).

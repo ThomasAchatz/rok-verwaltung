@@ -690,6 +690,8 @@ function baueEntwurf(el, k) {
   // Absender: Firma (Standard) oder ein weiterer aus den Einstellungen (z. B. „Privat“)
   const absenderL = k.auftrag ? [] : absenderListe();
   const absenderStart = absenderL.some((a) => a.id === antwort?.absender?.id) ? antwort.absender.id : "";
+  // „An alle im Haus“: aus einem Schreiben an eine Person ein Rundschreiben machen (nicht bei Aufträgen)
+  const anHausMoeglich = !k.haus && !k.auftrag && (zustand.stamm?.objekte?.length || 0) > 0;
   // Beim Einsprechen „als Brief“ gewünscht: Brief ist der Hauptknopf
   const briefZuerst = !k.auftrag && !!antwort && !!zustand.briefWunsch?.has(antwort.id);
   const platzhalter = k.nachricht
@@ -723,10 +725,15 @@ function baueEntwurf(el, k) {
             <option value="">${esc(zustand.profil?.firma || "Firma")}</option>
             ${absenderL.map((a) => `<option value="${esc(a.id)}" ${a.id === absenderStart ? "selected" : ""}>${esc(a.bezeichnung || a.name)}${a.bezeichnung ? ` (${esc(a.name)})` : ""}</option>`).join("")}
           </select></label>` : ""}
+          <p class="hinweisbox rundtipp" data-teil="rundtipp" hidden>Das klingt nach einem Schreiben an alle Mietparteien.
+            <button type="button" class="knopf knopf--klein knopf--primaer" data-anhaus>An alle im Haus senden</button>
+            <button type="button" class="knopf knopf--klein knopf--leise" data-rundtipp-weg>Nein, nur an diesen Empfänger</button></p>
           <div class="formraster formraster--zwei">
             ${k.haus
               ? `<div class="feld"><span>An</span><p class="rundan" data-teil="rundan">Die Mietparteien rechts (jede bekommt eine eigene E-Mail)</p><input type="hidden" name="an" value=""></div>`
-              : `<label class="feld"><span>An (E-Mail)</span><input type="email" name="an" value="${esc((umzug ? "" : antwort?.empfaenger_email) || standardAn)}" placeholder="name@beispiel.de" autocomplete="off"></label>`}
+              : `<div class="feld">
+                  <span class="feld__zeile"><span>An (E-Mail)</span>${anHausMoeglich ? `<button type="button" class="textknopf" data-anhaus>An alle im Haus</button>` : ""}</span>
+                  <input type="email" name="an" aria-label="An (E-Mail)" value="${esc((umzug ? "" : antwort?.empfaenger_email) || standardAn)}" placeholder="name@beispiel.de" autocomplete="off"></div>`}
             <label class="feld"><span>Betreff</span><input name="betreff" value="${esc(antwort?.betreff || "")}"></label>
           </div>
           <label class="feld"><span>Text</span><textarea name="text" rows="10" class="entwurf__text">${esc(antwort?.text || "")}</textarea></label>
@@ -778,6 +785,7 @@ function baueEntwurf(el, k) {
     }
     editor.hidden = false;
     textGroesse();
+    pruefeRundtipp();
   }
   function zeigeHinweise(liste) {
     hinweisBox.hidden = !liste?.length;
@@ -785,6 +793,51 @@ function baueEntwurf(el, k) {
       ? `<strong>Bitte vor dem Senden prüfen:</strong><ul>${liste.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>`
       : "";
   }
+
+  // Klingt der Text nach „an alle“? Dann Hinweis über dem Feld „An“ (nur Vorschlag, umgestellt wird nichts)
+  const RUND_ANREDE = /^\s*(sehr geehrte|liebe|hallo|guten tag)?,?\s*(an\s+)?(alle\s+)?(mieterinnen\s+und\s+mieter|mieter\s*innen|mieter\*innen|mietparteien|hausbewohner(innen)?|bewohnerinnen\s+und\s+bewohner|liebe\s+nachbarn|nachbarinnen\s+und\s+nachbarn)\b/i;
+  const rundtipp = el.querySelector('[data-teil="rundtipp"]');
+  let rundtippWeg = false;
+  function pruefeRundtipp() {
+    if (!rundtipp || !anHausMoeglich) return;
+    rundtipp.hidden = rundtippWeg || !RUND_ANREDE.test(feld("text").value);
+  }
+  el.querySelector("[data-rundtipp-weg]")?.addEventListener("click", () => { rundtippWeg = true; pruefeRundtipp(); });
+  feld("text").addEventListener("input", pruefeRundtipp);
+
+  // Haus für das Rundschreiben: aus Mietpartei, Nachricht oder gewähltem Haus; sonst kurz fragen
+  async function hausFuerRund() {
+    const bekannt = hausId() || k.nachricht?.objekt_id || null;
+    if (bekannt) return bekannt;
+    const objekte = zustand.stamm?.objekte || [];
+    if (objekte.length === 1) return objekte[0].id;
+    const fd = await dialogFormular(`
+      <h2>An alle Mietparteien welches Hauses?</h2>
+      <label class="feld"><span>Haus</span><select name="haus" required>
+        ${objekte.map((o) => `<option value="${esc(o.id)}">${esc(o.bezeichnung)}</option>`).join("")}</select></label>
+      <div class="knopfreihe"><button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+        <button class="knopf knopf--primaer" value="ok">Weiter</button></div>`);
+    return fd ? String(fd.get("haus") || "") || null : null;
+  }
+  // Umziehen ins Rundschreiben: Anweisung, Betreff, Text und ein gespeicherter Entwurf wandern mit (kein zweiter Entwurf)
+  async function zumHaus() {
+    const haus = await hausFuerRund();
+    if (!haus) return;
+    const alt = el.mitnehmen();
+    zustand.vorbelegung = {
+      nachricht_id: null,
+      anweisung: alt.anweisung || (k.nachricht ? `Rundschreiben an alle Mietparteien wegen: ${k.nachricht.betreff || "Nachricht"}` : ""),
+      uebernahme: {
+        betreff: String(alt.betreff || "").replace(/^(aw|re|wg):\s*/i, ""), text: alt.text, editor: alt.editor || !!alt.text?.trim(),
+        antwortId: alt.antwortId, eigenesThema: alt.eigenesThema, rund: true,
+      },
+    };
+    zustand.themaVorgabe = k.nachricht?.thema_id || (alt.eigenesThema ? null : k.themaId) || null;
+    geheZu(`#/schreiben/h-${haus}`);
+  }
+  el.addEventListener("click", (e) => {
+    if (e.target.closest("[data-anhaus]")) zumHaus().catch((err) => melde(err.message, "fehler"));
+  });
 
   // Vorgang: der der Nachricht, ein vorgegebener (aus der Vorgangsseite) oder ein neuer
   let eigenesThema = umzug ? !!umzug.eigenesThema : !k.nachricht && !k.themaId;
@@ -1182,7 +1235,10 @@ function baueEntwurf(el, k) {
     // Die Felder der vorigen Seite sind neuer als der gespeicherte Entwurf (ungespeicherte Änderungen)
     zeigeEditor(umzug.editor ? { betreff: umzug.betreff, text: umzug.text } : null);
     el.querySelector('[data-k="selbst"]')?.remove();
-    zeigeHinweise(["Der Text wurde für den vorigen Empfänger geschrieben: Anrede und Inhalt prüfen oder „Neu entwerfen“."]);
+    const passt = k.haus && umzug.rund && RUND_ANREDE.test(umzug.text || "");
+    zeigeHinweise([passt
+      ? "Aus dem Schreiben an eine Person ist ein Rundschreiben geworden: rechts prüfen, wer es bekommt."
+      : "Der Text wurde für den vorigen Empfänger geschrieben: Anrede und Inhalt prüfen oder „Neu entwerfen“."]);
     if (umzug.antwort) {
       // Den Entwurf auf den neuen Empfänger umschreiben (alte Zuordnung löschen), den eigenen Vorgang mitnehmen
       const ziel = {

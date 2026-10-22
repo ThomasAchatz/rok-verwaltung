@@ -204,6 +204,9 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
   Nachweisen ans Jobcenter/Amt und bei Vertraglichem (Mieterhöhung, Kündigung, Vereinbarung, Kaution …), nicht bei Aushängen,
   Rundschreiben und z. B. Hausordnung. Umschalten zeigt den Brief sofort neu; nach dem Speichern bleibt die Fassung fest.
   E-Mails bekommen nie eine Unterschrift.
+- **Vom Einzel-Schreiben zum Rundschreiben:** Am Feld „An (E-Mail)“ steht „An alle im Haus“. Fängt der Text mit „Sehr geehrte
+  Mieterinnen und Mieter“ o. Ä. an, erscheint zusätzlich ein Hinweis mit demselben Knopf (oder „Nein, nur an diesen Empfänger“).
+  Betreff, Text und ein gespeicherter Entwurf ziehen ins Rundschreiben um (kein zweiter Entwurf); ohne bekanntes Haus wird kurz gefragt.
 
 ## Sicherheit
 

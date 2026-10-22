@@ -1148,3 +1148,10 @@ a.reiter__knopf { text-decoration: none; display: inline-block; }
 .unterschrift-feld--gross { max-width: 100%; }
 .unterschrift-feld--gross img { max-height: 8rem; }
 .vorschau__unterschrift { margin: 0; }
+
+/* „An alle im Haus“ am Feld „An“ und Hinweis bei Rundschreiben-Anrede */
+.feld__zeile { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; font-weight: 500; }
+.textknopf { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--tinte); text-decoration: underline;
+  text-underline-offset: 2px; cursor: pointer; }
+.textknopf:hover, .textknopf:focus-visible { color: var(--tinte-hell); }
+.rundtipp { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem 0.6rem; margin: 0 0 0.8rem; color: var(--text); }
