@@ -43,6 +43,20 @@ export function ortVon(m) {
   const o = w && objektVon(w.objekt_id);
   return o ? `${o.strasse || o.bezeichnung}, ${w.bezeichnung}` : "";
 }
+/** „Betrifft“: eine Mietpartei ODER ein ganzes Haus (Wert „h:<objekt_id>“) */
+export function betrifftOptionen(liste, gewaehlt, leer = "Keine Mietpartei") {
+  const haeuser = zustand.stamm?.objekte || [];
+  return `<option value="">${esc(leer)}</option>` +
+    (haeuser.length ? `<optgroup label="Ganzes Haus">${haeuser.map((o) =>
+      `<option value="h:${esc(o.id)}" ${gewaehlt === `h:${o.id}` ? "selected" : ""}>Ganzes Haus: ${esc(o.bezeichnung)}</option>`).join("")}</optgroup>` : "") +
+    `<optgroup label="Mietparteien">${mieterOptionen(liste, gewaehlt, leer).replace(/^<option value="">[^<]*<\/option>/, "")}</optgroup>`;
+}
+/** Wert aus betrifftOptionen → { mieter_id, objekt_id } */
+export const betrifftAus = (wert) => {
+  const w = String(wert || "");
+  return w.startsWith("h:") ? { mieter_id: null, objekt_id: w.slice(2) || null } : { mieter_id: w || null, objekt_id: null };
+};
+
 export function mieterOptionen(liste, gewaehlt, leer = "Keine Mietpartei") {
   return `<option value="">${esc(leer)}</option>` + liste.map((m) => {
     const ort = ortVon(m);

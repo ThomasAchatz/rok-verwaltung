@@ -16,6 +16,11 @@ eventuell nicht als zusammenhängenden Text.
 | `{v_inhaber}` | Inhaber / Unterzeichner |
 | `{v_strasse}`, `{v_plz}`, `{v_ort}` | Absenderadresse |
 | `{v_telefon}`, `{v_email}`, `{v_web}` | Kontakt |
+| `{v_untertitel}` | „Immobilienverwaltung“, bei privatem Absender leer |
+| `{v_fusszeile}` | Fußzeile (Firma/Name · Anschrift · Kontakt), passt sich dem gewählten Absender an |
+| `{v_gruss_firma}` | Firmenname unter dem Gruß, bei privatem Absender leer |
+
+Wählt Robert beim Schreiben einen anderen Absender (z. B. „Privat“), stehen in allen `v_…`-Feldern dessen Angaben.
 
 ## Datum und Fristen
 

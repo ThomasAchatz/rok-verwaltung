@@ -4,7 +4,7 @@ import * as db from "./daten.js";
 import { datumDE, mieterName } from "./dokumente.js";
 import { $, $$, esc, melde, dialogFormular, frage, heuteISO, dateiTeil, herunterladen, zustand, objektVon, wohnungVon } from "./helfer.js";
 import {
-  ICON_KI, istEmail, norm, geheZu, mieterListe, mieterOptionen, mikroKnopf, verbindeDiktat, wartehinweis, verkleinere, alsBase64,
+  ICON_KI, istEmail, norm, geheZu, mieterListe, mieterOptionen, betrifftOptionen, betrifftAus, mikroKnopf, verbindeDiktat, wartehinweis, verkleinere, alsBase64,
 } from "./ui.js";
 import { textPdf } from "./pdf.js";
 import { officeText } from "./officetext.js";
@@ -318,6 +318,8 @@ export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von 
   const name = norm(erkannt.absender_name);
   const mieterVermutet = erkannt.mieter_id ||
     (name ? mieterL.find((m) => name.includes(norm(m.nachname)) && (!m.vorname || name.includes(norm(m.vorname))))?.id : null) || null;
+  // Fürs Postfach: Mietpartei – oder das ganze Haus, wenn die KI nur das Haus erkennt
+  const betrifftStart = mieterVermutet || (erkannt.objekt_id ? `h:${erkannt.objekt_id}` : null);
 
   const daten = await dialogFormular(`
     <h2>${office ? "Datei ablegen" : pdf ? "PDF erfassen" : "Foto erfassen"}${von > 1 ? ` <span class="leise">(${nr} von ${von})</span>` : ""}</h2>
@@ -346,7 +348,8 @@ export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von 
     ${nurAblage ? "" : `
     <fieldset class="gruppe" data-ziel="anfrage">
       <label class="feld"><span>Absender</span><input name="absender_voll" value="${esc(erkannt.absender_name || "")}"></label>
-      <label class="feld"><span>Mietpartei</span><select name="mieter_id">${mieterOptionen(mieterL, mieterVermutet)}</select></label>
+      <label class="feld"><span>Betrifft</span><select name="betrifft">${betrifftOptionen(mieterL, betrifftStart)}</select>
+        <span class="feldhinweis feldhinweis--leise">Eine Mietpartei oder das ganze Haus (z. B. wenn unklar ist, wer es war)</span></label>
       <label class="feld"><span>Betreff</span><input name="betreff" required value="${esc(erkannt.betreff || "")}"></label>
       <label class="feld"><span>Text</span>
         <span class="diktat"><textarea name="text" rows="7">${esc(erkannt.text || "")}</textarea>${mikroKnopf()}</span></label>
@@ -407,7 +410,8 @@ export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von 
   }
 
   // Ins Postfach
-  const m = mieterL.find((x) => x.id === daten.get("mieter_id"));
+  const betrifft = betrifftAus(daten.get("betrifft"));
+  const m = mieterL.find((x) => x.id === betrifft.mieter_id);
   try {
     const n = await db.neueNachricht({
       quelle: "brief",
@@ -415,6 +419,7 @@ export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von 
       absender_name: String(daten.get("absender_voll") || "").trim() || (m ? mieterName(m) : null),
       absender_email: istEmail(erkannt.absender_email) ? erkannt.absender_email : m?.email || null,
       mieter_id: m?.id || null,
+      objekt_id: betrifft.objekt_id,
       zuordnung: m ? "manuell" : null,
       betreff: String(daten.get("betreff") || "").trim(),
       text: String(daten.get("text") || "").trim(),

@@ -74,6 +74,10 @@ export function briefDaten(typ, ctx) {
     v_telefon: profil.telefon || "",
     v_email: profil.email || "",
     v_web: profil.web || "",
+    // Briefkopf-Zusatz, Fußzeile und Zeile unter dem Gruß (bei privatem Absender ohne Firma)
+    v_untertitel: profil.privat ? "" : profil.untertitel ?? "Immobilienverwaltung",
+    v_fusszeile: fusszeileVon(profil),
+    v_gruss_firma: profil.privat ? "" : profil.firma || "",
     // Daten
     datum: datumDE(heute),
     frist: datumDE(plusTage(typ === "mahnung_2" ? 7 : 14, heute)),
@@ -129,6 +133,29 @@ export function briefDaten(typ, ctx) {
  * @param {object} ctx { profil, mieter?, wohnung?, objekt?, empfaenger: {name, zusatz, strasse, plz_ort}, betreff, text }
  *   text: Anrede und Absätze (durch Leerzeilen getrennt), ohne Gruß und Unterschrift
  */
+/** Fußzeile im Brief: Firma · Inhaber · Anschrift · Telefon · E-Mail (privat ohne Firma/Inhaber) */
+function fusszeileVon(p) {
+  const teile = p.privat
+    ? [p.inhaber || p.firma, p.strasse, [p.plz, p.ort].filter(Boolean).join(" "), p.telefon, p.email]
+    : [p.firma, p.inhaber ? `Inhaber: ${p.inhaber}` : "", p.strasse, [p.plz, p.ort].filter(Boolean).join(" "), p.telefon, p.email];
+  return teile.map((x) => String(x || "").trim()).filter(Boolean).join(" · ");
+}
+
+/**
+ * Profil für Briefe und Signatur mit gewähltem Absender (z. B. „Privat“).
+ * absender: { bezeichnung, name, strasse, plz, ort, telefon, email, signatur } oder null (= Firma)
+ */
+export function profilFuer(profil, absender) {
+  if (!absender) return profil || {};
+  return {
+    ...profil, privat: true,
+    firma: absender.name || "", inhaber: absender.name || "",
+    strasse: absender.strasse || "", plz: absender.plz || "", ort: absender.ort || "",
+    telefon: absender.telefon || "", email: absender.email || "", web: "",
+    email_signatur: absender.signatur || absender.name || "",
+  };
+}
+
 export function antwortDaten(ctx) {
   const { profil, mieter = null, wohnung = {}, objekt = {}, empfaenger = {}, betreff = "", text = "" } = ctx;
   const basis = briefDaten("antwort", {

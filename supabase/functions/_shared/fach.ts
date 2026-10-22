@@ -167,8 +167,8 @@ export async function ordneEin(nachrichtId: string, zugriff: Zugriff): Promise<a
     aenderung.ki_frist = frist;
     aenderung.ki_frist_zitat = frist && imText ? zitat!.slice(0, 300) : null;
   }
-  // Eine Zuordnung von Hand oder über die E-Mail-Adresse wird nicht überschrieben
-  if (!nachricht.mieter_id && gueltigeId) {
+  // Eine Zuordnung von Hand oder über die E-Mail-Adresse wird nicht überschrieben (auch nicht „ganzes Haus“)
+  if (!nachricht.mieter_id && !nachricht.objekt_id && gueltigeId) {
     aenderung.mieter_id = gueltigeId;
     aenderung.zuordnung = "ki";
   }
@@ -208,6 +208,8 @@ type EntwurfAuftrag = {
   objektId?: string | null;        // betroffenes Haus (nur bei Schreiben an Handwerker oder Kontakte)
   kontaktId?: string | null;       // Schreiben an einen Kontakt (Makler, Bank, Behörde …): keine Mieterdaten
   kostentraegerId?: string | null; // Schreiben an einen Kostenträger (z. B. Jobcenter), optional zu einer Mietpartei
+  rundschreiben?: boolean;         // an alle/mehrere Mietparteien des Hauses objektId (keine Daten einzelner Mieter)
+  absender?: { name?: string | null; bezeichnung?: string | null } | null; // anderer Absender als die Firma (z. B. privat)
 };
 
 // deno-lint-ignore no-explicit-any
@@ -321,6 +323,23 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
       }
     }
   }
+  // Rundschreiben an die Mietparteien eines Hauses: nur Haus und Wissen, keine Daten einzelner Mieter
+  const rund = !!o.rundschreiben && !nachricht && !dienstleister && !kontakt && !kostentraeger && !!o.objektId;
+  if (rund) {
+    const [haus] = await rest(`objekte?id=eq.${enc(o.objektId!)}&select=id,bezeichnung,strasse,plz,ort`, zugriff);
+    if (!haus) throw new Fehler(404, "Haus nicht gefunden.", "nicht_gefunden");
+    objektId = haus.id;
+    teile.push(`<empfaenger>Rundschreiben an alle Mieterinnen und Mieter des Hauses</empfaenger>`);
+    teile.push(`<haus>${haus.bezeichnung}: ${haus.strasse}, ${haus.plz} ${haus.ort}</haus>`);
+  }
+  // Nachricht, die das ganze Haus betrifft: Wissen zu diesem Haus
+  if (nachricht && !nachricht.mieter_id && nachricht.objekt_id) {
+    const [haus] = await rest(`objekte?id=eq.${enc(nachricht.objekt_id)}&select=id,bezeichnung,strasse,plz,ort`, zugriff).catch(() => []);
+    if (haus) {
+      objektId = haus.id;
+      teile.push(`<haus>Die Nachricht betrifft das ganze Haus ${haus.bezeichnung}: ${haus.strasse}, ${haus.plz} ${haus.ort}</haus>`);
+    }
+  }
   if (kontakt && o.objektId) {
     const [haus] = await rest(`objekte?id=eq.${enc(o.objektId)}&select=id,bezeichnung,strasse,plz,ort`, zugriff);
     if (haus) {
@@ -329,7 +348,7 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
     }
   }
   // An Handwerker und Kontakte gehen keine Mieterdaten (Miete, Rückstände, Kostenträger)
-  const mieterId = dienstleister || kontakt ? null : o.mieterId ?? nachricht?.mieter_id ?? null;
+  const mieterId = dienstleister || kontakt || rund ? null : o.mieterId ?? nachricht?.mieter_id ?? null;
   if (mieterId) {
     const b = await mieterBlock(mieterId, zugriff, o.nachrichtId ?? null, !!kostentraeger);
     if (b.text) teile.push(b.text);
@@ -369,9 +388,14 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
     ? "Entwirf ein Schreiben an den Kontakt nach der Anweisung von Robert."
     : kostentraeger
     ? "Entwirf ein Schreiben an den Kostenträger nach der Anweisung von Robert."
+    : rund
+    ? "Entwirf ein Rundschreiben an alle Mieterinnen und Mieter des Hauses nach der Anweisung von Robert."
     : "Entwirf ein Schreiben nach der Anweisung von Robert.";
+  const privat = o.absender?.name ? String(o.absender.name).slice(0, 80) : null;
   const system =
-    `Du schreibst im Namen von ${profil?.inhaber ?? "der Verwaltung"} (${profil?.firma ?? "Hausverwaltung"}) an Mieter, Ämter, Interessenten und Handwerker.\n` +
+    (privat
+      ? `Du schreibst im Namen von ${privat} als Privatperson (nicht als Firma oder Hausverwaltung; die Firma ${profil?.firma ?? ""} nicht erwähnen). Ich-Form statt „wir“.\n`
+      : `Du schreibst im Namen von ${profil?.inhaber ?? "der Verwaltung"} (${profil?.firma ?? "Hausverwaltung"}) an Mieter, Ämter, Interessenten und Handwerker.\n`) +
     `Tonfall: ${profil?.ki_tonfall || "Sie-Form, freundlich, klar und kurz."}\n\nRegeln:\n` + REGELN_ENTWURF +
     (dienstleister
       ? "\n- Dieses Schreiben geht an einen Handwerker/Dienstleister: sachlich und geschäftlich, Anrede „Sehr geehrte Damen und Herren,“. " +
@@ -382,6 +406,9 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
       : kostentraeger
       ? "\n- Dieses Schreiben geht an einen Kostenträger (Amt, z. B. Jobcenter): sachlich, Anrede „Sehr geehrte Damen und Herren,“. " +
         "Geht es um eine Mietpartei, im ersten Satz Name der Mietpartei, Wohnung und Aktenzeichen nennen. Nur Beträge aus <mieter> verwenden, keine Bankdaten."
+      : rund
+      ? "\n- Dies ist ein Rundschreiben an alle Mietparteien des Hauses (geht an jede einzeln bzw. als Aushang): Anrede „Sehr geehrte Mieterinnen und Mieter,“. " +
+        "Niemanden namentlich beschuldigen, keine Namen, Wohnungen oder Beträge einzelner Mietparteien. Klar sagen, was bis wann zu tun ist."
       : "");
   // deno-lint-ignore no-explicit-any
   return { system, text: `${teile.join("\n\n")}\n\nAufgabe: ${aufgabe}`, mieterId, bilder: bilder as any[], hinweise };

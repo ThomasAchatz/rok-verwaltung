@@ -37,6 +37,29 @@ export function emailHtml(volltext: string, profil: Record<string, string | null
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1d2430">${absaetze.join("")}${fuss}</div>`;
 }
 
+/** Profil mit gewähltem Absender (antworten.absender); ohne: das Firmenprofil */
+// deno-lint-ignore no-explicit-any
+export function absenderProfil(profil: Record<string, any>, abs: any): Record<string, any> {
+  if (!abs || typeof abs !== "object" || !String(abs.name ?? "").trim()) return profil;
+  const t = (x: unknown) => String(x ?? "").replace(/[\r\n]+/g, " ").trim().slice(0, 120) || null;
+  return {
+    ...profil,
+    firma: t(abs.name), inhaber: t(abs.name), web: null,
+    strasse: t(abs.strasse), plz: t(abs.plz), ort: t(abs.ort), telefon: t(abs.telefon),
+    email: istEmail(String(abs.email ?? "").trim()) ? String(abs.email).trim() : null,
+    email_signatur: String(abs.signatur ?? "").trim().slice(0, 600) || t(abs.name),
+    antwort_email: istEmail(String(abs.email ?? "").trim()) ? String(abs.email).trim() : profil.antwort_email,
+  };
+}
+/** Absenderzeile: technische Adresse bleibt, der Name kommt vom gewählten Absender */
+// deno-lint-ignore no-explicit-any
+export function absenderZeile(technisch: string, abs: any): string {
+  const name = String(abs?.name ?? "").replace(/[<>"@\r\n,;:()\\]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!name) return technisch;
+  const adresse = (technisch.match(/<([^>]+)>/) || [])[1] || technisch.trim();
+  return `${name} <${adresse}>`;
+}
+
 export async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ fehler: "Nur POST" }, 405);
@@ -56,7 +79,9 @@ export async function handler(req: Request): Promise<Response> {
     if (!istEmail(an)) throw new Fehler(400, "Bitte eine gültige Empfänger-Adresse angeben.", "eingabe");
     if (!antwort.text?.trim()) throw new Fehler(400, "Die Antwort ist leer.", "eingabe");
 
-    const [profil] = await rest("vermieter_profil?id=eq.1&select=firma,inhaber,email_signatur,antwort_email,strasse,plz,ort,telefon,email,web", zugriff);
+    const [firmaProfil] = await rest("vermieter_profil?id=eq.1&select=firma,inhaber,email_signatur,antwort_email,strasse,plz,ort,telefon,email,web", zugriff);
+    // Anderer Absender (z. B. privat): eigene Signatur, Anschrift unter der Mail, Name als Absender, Antworten an seine Adresse
+    const profil = absenderProfil(firmaProfil ?? {}, antwort.absender);
     let nachricht = null;
     if (antwort.nachricht_id) {
       [nachricht] = await rest(`nachrichten?id=eq.${enc(antwort.nachricht_id)}&select=id,extern_message_id`, zugriff);
@@ -65,7 +90,7 @@ export async function handler(req: Request): Promise<Response> {
     const volltext = emailText(antwort.text, profil ?? {});
     const kopf = briefkopfZeilen(profil ?? {});
     const nutzlast: Record<string, unknown> = {
-      from: absender,
+      from: absenderZeile(absender, antwort.absender),
       to: [an],
       subject: String(antwort.betreff || "Ihre Nachricht").replace(/[\r\n]+/g, " ").slice(0, 200),
       text: kopf.length ? `${volltext}\n\n--\n${kopf.join("\n")}` : volltext,

@@ -127,3 +127,11 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Assistent beim Einsprechen: `notiz_lesen` liefert zusätzlich `schreiben` [{ an, id, mieter_id, kanal, anweisung }]
   (höchstens 3, IDs geprüft); `notizPruefen` zeigt sie als änderbare Zeilen, `bereiteSchreibenVor()` erzeugt die Entwürfe
   und öffnet den ersten (`zustand.briefWunsch`, `zustand.entwurfHinweise`). Nie automatisch senden.
+- Ganzes Haus / Rundschreiben / Absender (Migration `20261022090000_rundschreiben_absender.sql`): `nachrichten.objekt_id` (Betrifft
+  ganzes Haus, `betrifftOptionen()`/`betrifftAus()` in `js/ui.js`, Werte `h:<id>`; `ordneEin` überschreibt das nicht).
+  Rundschreiben = `antworten.objekt_id` ohne mieter_id, Route `#/schreiben/h-<objekt>`, Häkchen `[data-rund]`; `rundSenden()` legt je
+  Mietpartei mit E-Mail eine Kopie (mieter_id+objekt_id, ohne thema) an und sendet sie einzeln, Rest als Aushang/Brief.
+  KI `entwurf` mit `rundschreiben: true` (keine Mieterdaten). Weitere Absender in `vermieter_profil.absender` [{ id, bezeichnung,
+  name, strasse, plz, ort, telefon, email, signatur }], Kopie am Schreiben in `antworten.absender`; Briefe über `profilFuer()`
+  (js/dokumente.js, Vorlagenfelder `v_untertitel`/`v_fusszeile`/`v_gruss_firma`), Versand über `absenderProfil()`/`absenderZeile()`
+  (Name im From, Adresse bleibt VERSAND_ABSENDER, reply_to = E-Mail des Absenders), KI `absender` → Ich-Form ohne Firma.

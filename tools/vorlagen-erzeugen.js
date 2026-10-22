@@ -61,7 +61,7 @@ function briefkopf() {
         rows: [new TableRow({ children: [
           zelle([
             new Paragraph({ spacing: { after: 0 }, children: [t("{v_firma}", { bold: true, size: 36, color: FARBE })] }),
-            new Paragraph({ spacing: { after: 0 }, children: [t("Immobilienverwaltung", { size: 16, color: GRAU, characterSpacing: 20 })] }),
+            new Paragraph({ spacing: { after: 0 }, children: [t("{v_untertitel}", { size: 16, color: GRAU, characterSpacing: 20 })] }),
           ], 4354),
           zelle([
             new Paragraph({ spacing: { after: 0 }, children: [t("")] }),
@@ -86,7 +86,7 @@ function fusszeile() {
         alignment: AlignmentType.CENTER,
         border: { top: { style: BorderStyle.SINGLE, size: 4, color: "C9CED6", space: 4 } },
         children: [
-          t("{v_firma} · Inhaber: {v_inhaber} · {v_strasse} · {v_plz} {v_ort} · {v_telefon} · {v_email}", {
+          t("{v_fusszeile}", {
             size: 14, color: GRAU,
           }),
         ],
@@ -212,7 +212,7 @@ function gruss() {
   return [
     p("Mit freundlichen Grüßen", { spacing: { before: 160, after: 480 }, keepNext: true, keepLines: true }),
     new Paragraph({ spacing: { after: 0 }, keepNext: true, children: [t("{v_inhaber}")] }),
-    new Paragraph({ spacing: { after: 0 }, children: [t("{v_firma}", { color: GRAU, size: 19 })] }),
+    new Paragraph({ spacing: { after: 0 }, children: [t("{v_gruss_firma}", { color: GRAU, size: 19 })] }),
   ];
 }
 

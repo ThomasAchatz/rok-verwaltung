@@ -188,6 +188,17 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
 - **Assistent beim Einsprechen:** „Mieter kommt, will etwas“ – einsprechen, die KI erkennt neben Notiz und To-dos auch,
   welche Schreiben nötig sind (E-Mail oder Brief, an wen, was hinein soll). Robert prüft die Zeilen, ändert sie bei Bedarf,
   dann bereitet die KI die Entwürfe vor und öffnet den ersten. Senden bleibt ein eigener Klick.
+- **Ganzes Haus statt Mietpartei:** Bei „Erfassen“ und auf der Nachrichtenseite kann unter „Betrifft“ auch ein ganzes Haus
+  stehen (z. B. Gerümpel im Keller, Verursacher unbekannt). Die Nachricht erscheint dann auf der Hausseite (`nachrichten.objekt_id`),
+  die KI ordnet sie keiner einzelnen Mietpartei mehr zu.
+- **Rundschreiben:** „An alle Mietparteien schreiben“ (Hausseite, Nachricht mit Haus, Empfängersuche „Häuser“) öffnet ein
+  Schreiben an das Haus mit Häkchenliste der Mietparteien („Mehrere“ = einzelne abwählen). Anrede „Sehr geehrte Mieterinnen und
+  Mieter“, keine Namen. „Per E-Mail an alle senden“ schickt jeder Mietpartei eine eigene Mail (niemand sieht die anderen
+  Adressen, jede Akte bekommt einen Eintrag). Wer keine E-Mail hat, bekommt das Schreiben als **Aushang/Brief** (Vorschau, dann drucken).
+- **Absender wählbar:** Unter Einstellungen › „Weitere Absender“ lassen sich z. B. „Privat“ mit Name, Anschrift, Kontakt und
+  Signatur anlegen. Beim Schreiben oben „Absender“ wählen: Signatur, Fußzeile der Mail, Briefkopf (ohne „Immobilienverwaltung“),
+  Absendername und der Ton der KI (Ich-Form, ohne Firma) folgen der Wahl. Technisch geht die Mail weiter über die bestätigte
+  Versand-Adresse; Antworten landen bei der hinterlegten E-Mail des Absenders (Reply-To).
 
 ## Sicherheit
 

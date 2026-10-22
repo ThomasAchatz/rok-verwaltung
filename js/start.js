@@ -267,7 +267,7 @@ export async function zeigeStart() {
     const punkte = todos.jetzt.filter((t) =>
       (t.aufgabe && (t.aufgabe.objekt_id === o.id || ids.has(t.aufgabe.mieter_id))) ||
       (t.href && [...ids].some((id) => t.href === `#/mieter/${id}`)) ||
-      nachrichten.some((n) => ids.has(n.mieter_id) && t.href === `#/postfach/${n.id}`)).length;
+      nachrichten.some((n) => (ids.has(n.mieter_id) || n.objekt_id === o.id) && t.href === `#/postfach/${n.id}`)).length;
     return { o, leute: leute.length, offen, punkte };
   });
 
@@ -426,7 +426,7 @@ export async function zeigeObjekt(id) {
   const ids = new Set(leute.map((m) => m.id));
   const gehoertHierher = (x) => (allgemein ? !x.mieter_id && !x.objekt_id : x.objekt_id === o.id || ids.has(x.mieter_id));
   const todos = sammle({
-    nachrichten: nachrichten.filter((n) => (allgemein ? !n.mieter_id : ids.has(n.mieter_id))),
+    nachrichten: nachrichten.filter((n) => (allgemein ? !n.mieter_id && !n.objekt_id : ids.has(n.mieter_id) || n.objekt_id === o.id)),
     aufgaben: aufgaben.filter(gehoertHierher),
     rueckstand: leute.filter((m) => Number(m.offen_summe) > 0),
     vorgaenge,
@@ -447,6 +447,7 @@ export async function zeigeObjekt(id) {
         <button type="button" class="knopf knopf--primaer" id="notiz-neu">${ICON_PLUS} Notiz</button>
         <label class="knopf">${ICON_KAMERA} Dokument ablegen<input type="file" accept="image/*,application/pdf,.docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="erfassen" multiple hidden></label>
         <button type="button" class="knopf" id="wissen-sprechen">${ICON_KI} Wissen einsprechen</button>
+        ${allgemein ? "" : `<a class="knopf" href="#/schreiben/h-${esc(o.id)}">An alle Mietparteien schreiben</a>`}
       </div>
     </div>
     <div class="stapel">
