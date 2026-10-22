@@ -207,6 +207,11 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
 - **Vom Einzel-Schreiben zum Rundschreiben:** Am Feld „An (E-Mail)“ steht „An alle im Haus“. Fängt der Text mit „Sehr geehrte
   Mieterinnen und Mieter“ o. Ä. an, erscheint zusätzlich ein Hinweis mit demselben Knopf (oder „Nein, nur an diesen Empfänger“).
   Betreff, Text und ein gespeicherter Entwurf ziehen ins Rundschreiben um (kein zweiter Entwurf); ohne bekanntes Haus wird kurz gefragt.
+- **To-dos ohne Zuordnung:** Im Notiz-Dialog „Nur To-do (keiner Person und keinem Haus zuordnen)“ – erscheint in der Übersicht als
+  „To-do · Allgemein“ zum Fälligkeitsdatum (leer = heute). Beim Einsprechen heißt die Wahl „Nur To-do / Schreiben“.
+- **Ort an jedem To-do:** Haus und Wohnung (bzw. „ganzes Haus“, „Allgemein“, „nicht zugeordnet“; von der KI zugeordnet: „KI-Vorschlag“).
+- **Rückstände** stehen nicht mehr unter „Zu erledigen“, sondern im Filter „Rückstände“ (Mahnung fällig zuerst).
+- **Rundschreiben:** Eine Kopie geht zusätzlich an die eigene Adresse (Absender-E-Mail, sonst „Antworten gehen an“, sonst Briefkopf).
 
 ## Sicherheit
 

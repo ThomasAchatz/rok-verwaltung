@@ -428,7 +428,7 @@ async function notizPruefen(v, original) {
   // Suche statt langer Auswahlliste: neuer Kontakt, Mietparteien, Sonstige
   const zielListe = [
     { wert: "neu", name: "+ Neuer Kontakt", gruppe: "" },
-    { wert: "ohne", name: "Keine Gesprächsnotiz (nur Schreiben / To-dos)", gruppe: "" },
+    { wert: "ohne", name: "Nur To-do / Schreiben (keine Zuordnung, keine Gesprächsnotiz)", gruppe: "" },
     ...mieterL.map((m) => ({ wert: `m:${m.id}`, name: mieterName(m), zusatz: [wohnungVon(m.wohnung_id)?.bezeichnung, objektVon(wohnungVon(m.wohnung_id)?.objekt_id)?.bezeichnung].filter(Boolean).join(", "), gruppe: "Mietparteien" })),
     ...[...kontakteL].sort(sortName).map((k) => ({ wert: `k:${k.id}`, name: kontaktName(k), zusatz: [k.vorname || k.nachname ? k.firma : "", k.rolle].filter(Boolean).join(" · "), gruppe: "Sonstige" })),
   ];

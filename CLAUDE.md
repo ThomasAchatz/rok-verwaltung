@@ -145,3 +145,7 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   `[data-teil=rundtipp]` bei Rundschreiben-Anrede (`RUND_ANREDE`, `pruefeRundtipp()` bei Eingabe und in `zeigeEditor`, „Nein“ merkt sich
   `rundtippWeg`). `zumHaus()` → `hausFuerRund()` (Mietpartei/Nachricht/gewähltes Haus, sonst Dialog) → `zustand.vorbelegung.uebernahme`
   mit `rund: true` → `#/schreiben/h-<id>`; Antworten auf Nachrichten nehmen den Text mit, der Vorgang bleibt (`themaVorgabe`).
+- Übersicht: `sammle()` liefert zusätzlich `rueck` (Rückstände nur im Filter `rueckstand`) und je Eintrag `ort` (`ortVon()` mit Map `orte`
+  aus mieter_uebersicht); Aufgaben ohne jede Zuordnung mit Datum heißen „To-do“ (zählen bei Wiedervorlagen mit). Notiz-Dialog: Häkchen
+  `nur_todo` blendet `[data-zuordnung]` (auch „Mit KI prüfen“) aus. `rundSenden()` schickt eine Kopie an die eigene Adresse
+  (eigene antworten-Zeile mit objekt_id, ohne mieter_id, empfaenger_name „Kopie an die eigene Adresse“).

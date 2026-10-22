@@ -41,9 +41,14 @@ export const fristVon = (n) => (n.frist_bestaetigt ? n.frist : n.frist || n.ki_f
 // Was ist zu tun? Alles aus Nachrichten, Notizen, Rückständen und Entwürfen, nach Dringlichkeit
 // ---------------------------------------------------------------------------
 // stufe 0 = überfällig/sehr knapp, 1 = bald/dringend, 2 = normal, 3 = wenn Zeit ist
-function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = [], entwuerfe = [], namen = {}, kontaktListe = [] }) {
+function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = [], entwuerfe = [], namen = {}, kontaktListe = [], orte = {} }) {
   const heute = heuteISO();
-  const jetzt = [], spaeter = [];
+  const jetzt = [], spaeter = [], rueck = [];
+  // Wo spielt es? Haus und Wohnung der Mietpartei, sonst das Haus, sonst „Allgemein“
+  const hausName = (id) => objektVon(id)?.bezeichnung || "";
+  const ortVon = ({ mieterId = null, objektId = null, ki = false, leer = "Allgemein" } = {}) =>
+    mieterId && orte[mieterId] ? `${orte[mieterId]}${ki ? " (KI-Vorschlag)" : ""}`
+      : objektId && hausName(objektId) ? `${hausName(objektId)}, ganzes Haus` : leer;
   const stufeFuer = (iso) => { const t = tageBis(iso); return t <= 3 ? 0 : t <= 7 ? 1 : 2; };
 
   for (const n of nachrichten) {
@@ -57,6 +62,7 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
     ].join("");
     if (frist) {
       jetzt.push({
+        ort: ortVon({ mieterId: n.mieter_id, objektId: n.objekt_id, ki: n.zuordnung === "ki", leer: "nicht zugeordnet" }),
         art: "Frist", stufe: stufeFuer(frist), datum: frist, href: `#/postfach/${n.id}`,
         titel: n.betreff || "(ohne Betreff)", unter: wer, marken,
         wann: `Frist ${kurzDatum(frist)}`, wannNot: tageBis(frist) <= 3,
@@ -64,6 +70,7 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
       });
     } else {
       jetzt.push({
+        ort: ortVon({ mieterId: n.mieter_id, objektId: n.objekt_id, ki: n.zuordnung === "ki", leer: "nicht zugeordnet" }),
         art: "Nachricht", stufe: n.ki_dringlichkeit === "hoch" ? 1 : n.status === "neu" ? 2 : 3,
         datum: String(n.eingang_am).slice(0, 10), href: `#/postfach/${n.id}`,
         titel: n.betreff || "(ohne Betreff)", unter: [wer, n.ki_zusammenfassung ? kurz(n.ki_zusammenfassung, 110) : ""].filter(Boolean).join(" · "),
@@ -75,7 +82,8 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
   for (const a of aufgaben) {
     const bezug = a.mieter_id ? namen[a.mieter_id] : a.kontakt_id ? kontakte.kontaktName(kontakte.kontaktVon(a.kontakt_id)) : a.dienstleister?.name ? a.dienstleister.name : a.objekt_id ? objektVon(a.objekt_id)?.bezeichnung : "";
     const eintrag = {
-      art: a.faellig_am ? "Wiedervorlage" : "Notiz", aufgabe: a, titel: a.titel,
+      art: a.faellig_am ? (a.mieter_id || a.objekt_id || a.kontakt_id || a.dienstleister_id ? "Wiedervorlage" : "To-do") : "Notiz", aufgabe: a, titel: a.titel,
+      ort: ortVon({ mieterId: a.mieter_id, objektId: a.objekt_id }),
       unter: [bezug, a.antwort ? "KI-Antwort liegt vor" : ""].filter(Boolean).join(" · "),
       marken: "",
     };
@@ -93,17 +101,21 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
   const mahnTypen = ["mahnung_1", "mahnung_2", "nachweis_jobcenter"];
   for (const m of rueckstand) {
     const letzte = vorgaenge.filter((v) => v.mieter_id === m.id && mahnTypen.includes(v.typ)).map((v) => v.erstellt_am).sort().pop();
-    if (letzte && tageBis(String(letzte).slice(0, 10)) > -14) continue;
-    jetzt.push({
-      art: "Rückstand", stufe: 2, datum: m.aeltester_offener_monat || heute, href: `#/mieter/${m.id}`,
+    const mahnen = !(letzte && tageBis(String(letzte).slice(0, 10)) > -14);
+    // Rückstände stehen im eigenen Filter „Rückstände“, nicht mehr in „Zu erledigen“
+    rueck.push({
+      ort: [m.objekt, m.wohnung].filter(Boolean).join(", "),
+      art: mahnen ? "Rückstand · Mahnung fällig" : "Rückstand", stufe: mahnen ? 2 : 3, datum: m.aeltester_offener_monat || heute, href: `#/mieter/${m.id}`,
       titel: `${mieterName(m)}: ${euro(m.offen_summe)} offen`,
       unter: `Als Nächstes: ${naechsterSchritt(m, vorgaenge)}`,
-      marken: m.kostentraeger ? `<span class="marker marker--messing">${esc(m.kostentraeger)}</span>` : "", wann: "",
+      marken: m.kostentraeger ? `<span class="marker marker--messing">${esc(m.kostentraeger)}</span>` : "",
+      wann: letzte ? `zuletzt ${kurzDatum(String(letzte).slice(0, 10))}` : "",
     });
   }
 
   for (const a of entwuerfe) {
     jetzt.push({
+      ort: a.mieter_id ? ortVon({ mieterId: a.mieter_id }) : a.objekt_id ? `${hausName(a.objekt_id)}, alle Mietparteien` : "",
       art: a.art === "auftrag" ? "Auftrag" : "Entwurf", stufe: 3, datum: String(a.aktualisiert_am || a.erstellt_am).slice(0, 10),
       href: a.nachricht_id ? `#/postfach/${a.nachricht_id}` : `#/entwurf/${a.id}`,
       titel: a.betreff || "(ohne Betreff)", unter: a.art === "auftrag" ? `an ${a.empfaenger_name || "Handwerker"}, noch nicht gesendet` : "liegt bereit, noch nicht gesendet",
@@ -115,12 +127,12 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
   jetzt.push(...kontakte.geburtstagTodos(kontaktListe, heute));
 
   const ordnen = (x, y) => x.stufe - y.stufe || String(x.datum).localeCompare(String(y.datum));
-  return { jetzt: jetzt.sort(ordnen), spaeter: spaeter.sort(ordnen) };
+  return { jetzt: jetzt.sort(ordnen), spaeter: spaeter.sort(ordnen), rueck: rueck.sort((x, y) => x.stufe - y.stufe) };
 }
 
 function todoZeile(t) {
   const kopf = `
-      <span class="todo__art">${esc(t.art)}</span>
+      <span class="todo__art">${esc(t.art)}${t.ort ? `<span class="todo__ort"> · ${esc(t.ort)}</span>` : ""}</span>
       <span class="todo__titel">${esc(t.titel)}</span>
       ${t.unter || t.marken || t.hinweis ? `<span class="todo__unter">${t.marken}${t.unter ? `<span>${esc(t.unter)}</span>` : ""}${t.hinweis ? `<em>${esc(t.hinweis)}</em>` : ""}</span>` : ""}`;
   const haupt = t.aufgabe
@@ -140,7 +152,7 @@ function todoZeile(t) {
 const ICON_ZURUECK = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05 1-6.9 2.6L2 7v9h9l-3.62-3.62A7.95 7.95 0 0 1 20.1 16l2.37-.78A10.5 10.5 0 0 0 12.5 8z"/></svg>`;
 function erledigtZeile(t) {
   const kopf = `
-      <span class="todo__art">${esc(t.art)}</span>
+      <span class="todo__art">${esc(t.art)}${t.ort ? `<span class="todo__ort"> · ${esc(t.ort)}</span>` : ""}</span>
       <span class="todo__titel">${esc(t.titel)}</span>
       ${t.unter ? `<span class="todo__unter"><span>${esc(t.unter)}</span></span>` : ""}`;
   return `
@@ -251,11 +263,12 @@ export async function zeigeStart() {
   const rueckstand = liste.filter((m) => Number(m.offen_summe) > 0).sort((a, b) => b.offen_summe - a.offen_summe);
   const gesamt = rueckstand.reduce((s, m) => s + Number(m.offen_summe), 0);
   const entwuerfe = antworten.filter((a) => a.status === "entwurf");
-  const todos = sammle({ nachrichten, aufgaben, rueckstand, vorgaenge, entwuerfe, namen, kontaktListe });
+  const orte = Object.fromEntries(liste.map((m) => [m.id, [m.objekt, m.wohnung].filter(Boolean).join(", ")]));
+  const todos = sammle({ nachrichten, aufgaben, rueckstand, vorgaenge, entwuerfe, namen, kontaktListe, orte });
   const dringend = todos.jetzt.filter((t) => t.stufe <= 1).length;
-  const wiedervorlagen = [...todos.jetzt.filter((t) => t.art === "Wiedervorlage"), ...todos.spaeter]
+  const wiedervorlagen = [...todos.jetzt.filter((t) => t.art === "Wiedervorlage" || t.art === "To-do"), ...todos.spaeter]
     .sort((x, y) => String(x.datum).localeCompare(String(y.datum)));
-  const filter = ["alle", "eilig", "wiedervorlage", "erledigt"].includes(zustand.startFilter) ? zustand.startFilter : "alle";
+  const filter = ["alle", "eilig", "wiedervorlage", "rueckstand", "erledigt"].includes(zustand.startFilter) ? zustand.startFilter : "alle";
   const neu = nachrichten.filter((n) => n.status === "neu").length;
   const nachName = Object.fromEntries(liste.map((m) => [m.id, m]));
 
@@ -306,7 +319,7 @@ export async function zeigeStart() {
       <section class="flaeche start__liste" id="zu-erledigen">
         <div class="flaeche__kopf"><h2>Zu erledigen</h2><span class="leise" id="todo-sortierung">das Dringendste zuerst</span></div>
         <div class="reiter reiter--filter" role="group" aria-label="Anzeigen">
-          ${[["alle", "Alle", todos.jetzt.length], ["eilig", "Eilig", dringend], ["wiedervorlage", "Wiedervorlagen", wiedervorlagen.length], ["erledigt", "Erledigt", null]]
+          ${[["alle", "Alle", todos.jetzt.length], ["eilig", "Eilig", dringend], ["wiedervorlage", "Wiedervorlagen", wiedervorlagen.length], ["rueckstand", "Rückstände", todos.rueck.length], ["erledigt", "Erledigt", null]]
             .map(([w, t, n]) => `<button type="button" class="reiter__knopf" data-filter="${w}" aria-pressed="${w === filter}">${t}${n != null ? ` <span class="reiter__zahl">${n}</span>` : ""}</button>`).join("")}
         </div>
         <div id="todo-inhalt"></div>
@@ -357,7 +370,7 @@ export async function zeigeStart() {
     zustand.startFilter = f;
     for (const b of $$(".reiter--filter [data-filter]", inhalt())) b.setAttribute("aria-pressed", String(b.dataset.filter === f));
     const ziel = $("#todo-inhalt");
-    $("#todo-sortierung").textContent = f === "wiedervorlage" ? "nach Datum" : f === "erledigt" ? "das Neueste zuerst" : "das Dringendste zuerst";
+    $("#todo-sortierung").textContent = f === "wiedervorlage" ? "nach Datum" : f === "rueckstand" ? "Mahnung fällig zuerst" : f === "erledigt" ? "das Neueste zuerst" : "das Dringendste zuerst";
     if (f === "erledigt") {
       ziel.innerHTML = `<div class="leer">Lädt …</div>`;
       erledigtCache ||= await sammleErledigt({ namen, kontaktListe });
@@ -374,6 +387,8 @@ export async function zeigeStart() {
         ? todoListe({ jetzt: todos.jetzt.filter((t) => t.stufe <= 1), spaeter: [] }, { leer: "Nichts Eiliges. Gut so!" })
         : f === "wiedervorlage"
         ? todoListe({ jetzt: wiedervorlagen, spaeter: [] }, { leer: "Keine Wiedervorlagen." })
+        : f === "rueckstand"
+        ? todoListe({ jetzt: todos.rueck, spaeter: [] }, { leer: "Keine Rückstände. Alles bezahlt." })
         : todoListe(todos);
       verbindeTodos(ziel, { aufgaben, nachher: zeigeStart });
     }
@@ -549,6 +564,8 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
   const bezugStart = a.mieter_id ? `m:${a.mieter_id}` : a.dienstleister_id ? `d:${a.dienstleister_id}` : a.kontakt_id ? `k:${a.kontakt_id}` : "";
   const bezugName = bezugListe.find((x) => x.wert === bezugStart && x.wert)?.name || "";
   const kiDa = !!zustand.ki?.ki;
+  // Bestehendes To-do ohne jede Zuordnung: Häkchen „Nur To-do“ gesetzt
+  const nurTodoStart = vorhanden && !!a.faellig_am && !a.mieter_id && !a.objekt_id && !a.kontakt_id && !a.dienstleister_id;
   const faellig = vorschlag?.wiedervorlage || a.faellig_am || "";
   const abgelegt = vorhanden ? await db.ladeAbgelegte("aufgabe_id", [a.id]).catch(() => []) : [];
   const daten = await dialogFormular(`
@@ -558,13 +575,17 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
       <span class="diktat"><input name="titel" required maxlength="200" value="${esc(a.titel || "")}" placeholder="z. B. Check Möglichkeit Mieterhöhung Huber" autocomplete="off">${mikroKnopf()}</span></label>
     <label class="feld"><span>Notiz (optional)</span>
       <span class="diktat"><textarea name="notiz" rows="3">${esc(a.notiz || "")}</textarea>${mikroKnopf()}</span></label>
+    <label class="checkfeld"><input type="checkbox" name="nur_todo" ${nurTodoStart ? "checked" : ""}>
+      Nur To-do (keiner Person und keinem Haus zuordnen) – erscheint in der Übersicht zum Fälligkeitsdatum</label>
+    <div data-zuordnung ${nurTodoStart ? "hidden" : ""}>
     ${suchauswahlHtml({ label: "Betrifft (Mieter, Handwerker, Sonstige)", placeholder: "Name suchen …", wert: bezugName, name: "bezug", versteckt: bezugStart, inline: true })}
+    </div>
     <div class="formraster formraster--zwei">
-      <label class="feld"><span>Haus</span><select name="objekt_id">
+      <label class="feld" data-zuordnung ${nurTodoStart ? "hidden" : ""}><span>Haus</span><select name="objekt_id">
         <option value="">–</option>
         ${zustand.stamm.objekte.map((o) => `<option value="${esc(o.id)}" ${o.id === a.objekt_id ? "selected" : ""}>${esc(o.bezeichnung)}</option>`).join("")}
       </select></label>
-      <label class="feld"><span>Wiedervorlage am</span><input type="date" name="faellig_am" value="${esc(faellig)}" min="2020-01-01" max="2099-12-31">
+      <label class="feld"><span data-datum-titel>${nurTodoStart ? "Fällig am" : "Wiedervorlage am"}</span><input type="date" name="faellig_am" value="${esc(faellig)}" min="2020-01-01" max="2099-12-31">
         ${vorschlag?.wiedervorlage && vorschlag.wiedervorlage !== a.faellig_am ? `<span class="feldhinweis">Vorschlag der KI – mit „Speichern“ übernehmen.</span>` : ""}</label>
       <label class="feld"><span>In der Liste zeigen ab … Tage vorher</span><input type="number" name="vorlauf_tage" min="0" max="60" value="${esc(a.vorlauf_tage ?? 7)}"></label>
     </div>
@@ -575,7 +596,7 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
     <div class="knopfreihe">
       ${vorhanden ? `<button class="knopf knopf--gefahr knopf--links" value="loeschen" formnovalidate>Löschen</button>` : ""}
       <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
-      ${kiDa ? `<button class="knopf knopf--ki" value="pruefen">${ICON_KI} Mit KI prüfen</button>` : ""}
+      ${kiDa ? `<button class="knopf knopf--ki" value="pruefen" data-zuordnung ${nurTodoStart ? "hidden" : ""}>${ICON_KI} Mit KI prüfen</button>` : ""}
       <button class="knopf" value="ablage" title="Notiz speichern und als PDF in die Ablage legen">In Ablage</button>
       ${vorhanden && a.status !== "erledigt" ? `<button class="knopf" value="erledigt">Erledigt</button>` : ""}
       <button class="knopf knopf--primaer" value="ok">Speichern</button>
@@ -583,6 +604,13 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
     breit: true,
     vorbereiten: (form) => {
       verbindeDiktat(form);
+      // „Nur To-do“: Zuordnung ausblenden, Datum heißt „Fällig am“ (leer = heute)
+      form.nur_todo.addEventListener("change", () => {
+        const an = form.nur_todo.checked;
+        for (const el of $$("[data-zuordnung]", form)) el.hidden = an;
+        $("[data-datum-titel]", form).textContent = an ? "Fällig am" : "Wiedervorlage am";
+        if (an && !form.faellig_am.value) form.faellig_am.value = heuteISO();
+      });
       // „In der Ablage“ öffnet das Dokument (der Notiz-Dialog schließt sich dabei)
       for (const b of $$("[data-abgelegt]", form)) {
         b.addEventListener("click", () => {
@@ -622,12 +650,13 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
     const titel = String(daten.get("titel") || "").trim();
     if (!titel) return melde("Bitte kurz eintragen, worum es geht.", "fehler");
     const vorlauf = Math.min(60, Math.max(0, Number(daten.get("vorlauf_tage")) || 0));
+    const nurTodo = daten.get("nur_todo") === "on";
     const felder = {
       titel,
       notiz: String(daten.get("notiz") || "").trim() || null,
-      ...bezugFelder(daten.get("bezug")),
-      objekt_id: daten.get("objekt_id") || null,
-      faellig_am: daten.get("faellig_am") || null,
+      ...bezugFelder(nurTodo ? "" : daten.get("bezug")),
+      objekt_id: nurTodo ? null : daten.get("objekt_id") || null,
+      faellig_am: daten.get("faellig_am") || (nurTodo ? heuteISO() : null),
       vorlauf_tage: vorlauf,
     };
     if (!vorhanden && a.nachricht_id) felder.nachricht_id = a.nachricht_id;

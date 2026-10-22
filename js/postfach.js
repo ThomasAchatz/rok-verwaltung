@@ -937,9 +937,13 @@ function baueEntwurf(el, k) {
     if (!zustand.ki?.versand) return melde("Der E-Mail-Versand aus der App ist noch nicht eingerichtet. Bitte „Als Aushang/Brief“ nutzen.", "fehler");
     if (!mitMail.length) return melde("Keine der gewählten Mietparteien hat eine E-Mail-Adresse. Bitte „Als Aushang/Brief“ nutzen.", "info");
     const voll = `${v.text.trim()}\n\nMit freundlichen Grüßen\n${aktSignatur()}`;
+    // Kopie an die eigene Adresse (Absender-E-Mail, sonst „Antworten gehen an“, sonst Briefkopf-E-Mail)
+    const p = zustand.profil || {};
+    const eigene = [gewaehlterAbsender()?.email, p.antwort_email, p.email].find((x) => istEmail(x)) || null;
     const ok = await frage("Rundschreiben senden?", `
       <p><strong>${mitMail.length} ${mitMail.length === 1 ? "E-Mail" : "E-Mails"}</strong>, jede einzeln – keiner sieht die Adressen der anderen:</p>
       <ul class="rundliste">${mitMail.map((m) => `<li>${esc(mieterName(m))} <span class="leise">${esc(m.email)}</span></li>`).join("")}</ul>
+      ${eigene ? `<p>Eine Kopie geht an <strong>${esc(eigene)}</strong> (für euren Posteingang).</p>` : ""}
       ${ohne.length ? `<p class="hinweisbox">Ohne E-Mail (${ohne.length}): ${ohne.map((m) => esc(mieterName(m))).join(", ")}. Für sie danach „Als Aushang/Brief“.</p>` : ""}
       <p>Betreff: ${esc(v.betreff)}</p>
       <div class="mailvorschau">${esc(voll)}</div>
@@ -959,6 +963,19 @@ function baueEntwurf(el, k) {
         } catch (err) {
           if (kopie) await db.loescheAntwort(kopie.id).catch(() => null);
           fehler.push(`${mieterName(m)}: ${err.message}`);
+        }
+      }
+      if (eigene && gesendet.length) {
+        let kopie = null;
+        try {
+          kopie = await db.speichereAntwort(null, {
+            objekt_id: k.haus.id, empfaenger_email: eigene, empfaenger_name: "Kopie an die eigene Adresse",
+            betreff: v.betreff, text: v.text, anweisung: `Rundschreiben ${k.haus.bezeichnung} (Kopie)`, absender: gewaehlterAbsender(),
+          });
+          await db.funktion("versand", { antwort_id: kopie.id, an: eigene });
+        } catch (err) {
+          if (kopie) await db.loescheAntwort(kopie.id).catch(() => null);
+          fehler.push(`Kopie an ${eigene}: ${err.message}`);
         }
       }
     });
