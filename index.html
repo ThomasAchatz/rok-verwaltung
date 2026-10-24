@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1f3a5f">
+  <script src="js/thema.js"></script>
   <link rel="manifest" href="manifest.webmanifest">
   <!-- iOS: als App vom Home-Bildschirm, Statusleiste über dem dunklen Kopf -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -77,6 +78,10 @@
         <button type="button" class="knopf knopf--klein installieren" data-aktion="installieren" hidden>Installieren</button>
         <button type="button" class="knopf knopf--klein knopf--ki" data-aktion="chat" title="Fragen an die App"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11 2l1.9 5.6L18.5 9.5l-5.6 1.9L11 17l-1.9-5.6L3.5 9.5l5.6-1.9zM18.5 13.5l.95 2.55 2.55.95-2.55.95-.95 2.55-.95-2.55L15 17l2.55-.95z"/></svg> Fragen</button>
         <span id="nutzer-email" class="leiste__email"></span>
+        <button type="button" class="themaschalter" data-aktion="thema" aria-pressed="false" title="Dunkler Modus" aria-label="Dunkler Modus an/aus">
+          <svg class="ts-mond" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.5 14.4A8.5 8.5 0 0 1 9.6 3.5a8.5 8.5 0 1 0 10.9 10.9z"/></svg>
+          <svg class="ts-sonne" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="currentColor"/><path stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
+        </button>
         <button type="button" class="knopf knopf--leise" data-aktion="abmelden">Abmelden</button>
       </div>
     </header>

@@ -212,6 +212,7 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
 - **Ort an jedem To-do:** Haus und Wohnung (bzw. „ganzes Haus“, „Allgemein“, „nicht zugeordnet“; von der KI zugeordnet: „KI-Vorschlag“).
 - **Rückstände** stehen nicht mehr unter „Zu erledigen“, sondern im Filter „Rückstände“ (Mahnung fällig zuerst).
 - **Rundschreiben:** Eine Kopie geht zusätzlich an die eigene Adresse (Absender-E-Mail, sonst „Antworten gehen an“, sonst Briefkopf).
+- **Dunkler Modus:** Schalter (Mond/Sonne) oben rechts. Nachtblau statt Schwarz, gemerkt pro Gerät; ohne Wahl folgt die App dem Gerät. Gedruckt wird immer hell.
 
 ## Sicherheit
 
