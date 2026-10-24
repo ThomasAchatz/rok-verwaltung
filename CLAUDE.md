@@ -149,7 +149,3 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   aus mieter_uebersicht); Aufgaben ohne jede Zuordnung mit Datum heißen „To-do“ (zählen bei Wiedervorlagen mit). Notiz-Dialog: Häkchen
   `nur_todo` blendet `[data-zuordnung]` (auch „Mit KI prüfen“) aus. `rundSenden()` schickt eine Kopie an die eigene Adresse
   (eigene antworten-Zeile mit objekt_id, ohne mieter_id, empfaenger_name „Kopie an die eigene Adresse“).
-- Dunkler Modus: `js/thema.js` (klassisches Skript im <head>, setzt `html[data-thema=hell|dunkel]` vor dem Zeichnen, gemerkt in
-  localStorage `rok-thema`, sonst Geräte-Einstellung; Drucken immer hell), Schalter `[data-aktion=thema]` oben rechts. Farben NUR über
-  Variablen: Text in Tintenblau = `--tinte-text` (nicht `--tinte`, das ist Hintergrund), dazu `--flaeche-zart`, `--grau-zart`, `--rand`,
-  `--messing-rand/-text`, `--hinweis-grund` … Dunkle Werte in `:root[data-thema="dunkel"]` am Ende von app.css. Keine neuen festen Hex-Farben.
