@@ -267,21 +267,68 @@ const handwerkerFelder = (d) => ({
   objekt_id: d.objekt_id || null, notiz: d.notiz || null, aktiv: true,
 });
 const gleich = (x, y) => !!x && !!y && String(x).trim().toLowerCase() === String(y).trim().toLowerCase();
-/** Gibt es den schon? Dann nachfragen, statt doppelt anzulegen */
-async function keinDoppelter(a) {
+/** Gibt es den schon? Dann den vorhandenen Eintrag liefern (Kontakt bzw. Handwerker) */
+async function vorhandener(a) {
   const d = a.daten || {};
-  let treffer = null;
   if (a.art === "kontakt") {
     const liste = await kontakteListe(true);
-    treffer = liste.find((k) => gleich(k.email, d.email) || (d.nachname && gleich(k.nachname, d.nachname) && (!d.vorname || gleich(k.vorname, d.vorname)))
-      || (!d.nachname && d.firma && !k.nachname && gleich(k.firma, d.firma)));
-    treffer = treffer && kontaktName(treffer);
-  } else {
-    const liste = await db.ladeDienstleister().catch(() => []);
-    treffer = liste.find((x) => gleich(x.name, d.name) || gleich(x.email, d.email))?.name || null;
+    const name = kontaktName(d);
+    return liste.find((k) => gleich(k.email, d.email) || (d.nachname && gleich(k.nachname, d.nachname) && (!d.vorname || gleich(k.vorname, d.vorname)))
+      || (d.firma && gleich(k.firma, d.firma) && (!d.nachname || !k.nachname)) || (name && gleich(kontaktName(k), name))) || null;
   }
-  if (!treffer) return true;
-  return frage("Gibt es vielleicht schon", `<p>„${esc(treffer)}“ ist bereits angelegt. Trotzdem einen neuen Eintrag anlegen?</p>`, "Trotzdem anlegen");
+  const liste = await db.ladeDienstleister().catch(() => []);
+  return liste.find((x) => gleich(x.name, d.name) || gleich(x.email, d.email)) || null;
+}
+// Felder, die beim Ergänzen eines vorhandenen Eintrags übernommen werden (nur neue, nicht leere Angaben)
+const ERGAENZ_FELDER = { kontakt: ["vorname", "nachname", "firma", "rolle", "telefon", "email", "adresse"], handwerker: ["name", "gewerk", "telefon", "email"] };
+function ergaenzung(a, x) {
+  const d = a.daten || {};
+  const felder = {}, vorher = {};
+  for (const k of ERGAENZ_FELDER[a.art]) {
+    const neu = String(d[k] ?? "").trim();
+    if (!neu || gleich(neu, x[k])) continue;
+    felder[k] = k === "email" ? neu.toLowerCase() : neu;
+    vorher[k] = x[k] ?? null;
+  }
+  return { felder, vorher };
+}
+/**
+ * Neuer Kontakt/Handwerker aus dem Chat, den es schon gibt: fragen, ob ergänzt oder neu angelegt werden soll.
+ * Liefert "neu" (anlegen), "fertig" (vorhandener ergänzt oder nichts zu tun) oder null (abgebrochen).
+ */
+async function doppeltFragen(a) {
+  const x = await vorhandener(a);
+  if (!x) return "neu";
+  const name = a.art === "kontakt" ? kontaktName(x) : x.name;
+  const { felder, vorher } = ergaenzung(a, x);
+  const zeilen = Object.entries(felder).map(([k, neu]) => `<li><span class="leise">${esc(FELD_NAME[k] || k)}:</span> ${vorher[k] ? `<s>${esc(vorher[k])}</s> → ` : ""}<strong>${esc(neu)}</strong></li>`);
+  const daten = await dialogFormular(`
+    <h2>„${esc(name)}“ gibt es schon</h2>
+    ${zeilen.length
+      ? `<p>Soll der vorhandene Eintrag ergänzt werden?</p><ul class="chatvorschlag__aenderung">${zeilen.join("")}</ul>`
+      : `<p class="leise">Die Angaben stehen dort schon so. Es gibt nichts zu ergänzen.</p>`}
+    <div class="knopfreihe">
+      <button class="knopf knopf--links" value="neu">Trotzdem neu anlegen</button>
+      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      <button class="knopf knopf--primaer" value="ergaenzen">${zeilen.length ? "Vorhandenen ergänzen" : "Vorhandenen öffnen"}</button>
+    </div>`, { breit: true });
+  const wahl = daten?.get("_aktion");
+  if (wahl === "neu") return "neu";
+  if (wahl !== "ergaenzen") return null;
+  // Karte wird zur „Stammdaten ändern“-Karte des vorhandenen Eintrags (mit Rückgängig)
+  const ziel = a.art === "kontakt" ? "kontakt" : "handwerker";
+  const link = ziel === "kontakt" ? `#/kontakt/${x.id}` : "#/handwerker";
+  if (!zeilen.length) {
+    a.href = link;
+    setze(a, "gespeichert", "Schon vorhanden, nichts geändert");
+    return "fertig";
+  }
+  a.art = "stammdaten";
+  a.beschriftung = `${name} ergänzen`;
+  a.daten = { ziel, id: x.id, felder, vorher, name, link, bewohner_neu: null };
+  await stammdatenSpeichern(a, felder, null);
+  setze(a, "gespeichert_rueck", "Vorhandenen Eintrag ergänzt");
+  return "fertig";
 }
 
 // ---------------------------------------------------------------------------
@@ -393,13 +440,15 @@ async function behandle(a, op, knopf) {
           await db.speichereWissen(null, { titel: d.titel, inhalt: d.inhalt, ordner: d.ordner || "Sonstiges", objekt_id: d.objekt_id || null, aktiv: true });
           setze(a, "gespeichert", "Im Wissen gespeichert");
         } else if (a.art === "kontakt") {
-          if (!(await keinDoppelter(a))) { knopf.disabled = false; return; }
+          const weiter = await doppeltFragen(a);
+          if (weiter !== "neu") { knopf.disabled = false; if (weiter) neuLaden(); return; }
           const k = await db.speichereKontakt(null, kontaktFelder(d));
           await kontakteListe(true);
           a.href = `#/kontakt/${k.id}`;
           setze(a, "gespeichert", "Kontakt angelegt");
         } else if (a.art === "handwerker") {
-          if (!(await keinDoppelter(a))) { knopf.disabled = false; return; }
+          const weiter = await doppeltFragen(a);
+          if (weiter !== "neu") { knopf.disabled = false; if (weiter) neuLaden(); return; }
           await db.speichereDienstleister(null, handwerkerFelder(d));
           a.href = "#/handwerker";
           setze(a, "gespeichert", "Handwerker angelegt");

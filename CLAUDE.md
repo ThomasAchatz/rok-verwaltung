@@ -184,3 +184,6 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   Vertrag, Kostenträger, Aktenzeichen, Bank), `pruefeAktion` prüft Format, `ergaenzeStammdaten()` lädt die Person (muss es geben) und hängt
   `vorher`, `name`, `link` an. App (`js/chat.js`): Karte Alt → Neu, „Übernehmen“ speichert sofort + Verlaufseintrag, danach „Rückgängig“
   (alte Werte, Verlaufseintrag weg); „Ändern“ = `stammdatenDialog()`. Akte zeigt „Mit im Haushalt“, Stammdaten-Formular hat das Feld.
+- Doppelte Kontakte: Chat-Aktion `kontakt`/`handwerker` prüft im Server `vorhandenePerson()` (chat.ts, E-Mail/Name/Firma) und verlangt dann
+  `stammdaten` statt Neuanlage. In der App fragt `doppeltFragen(a)` (js/chat.js, über `vorhandener(a)`) vor dem Anlegen: „Vorhandenen ergänzen“
+  (nur neue/abweichende Felder aus `ERGAENZ_FELDER`, Karte wird zur Stammdaten-Karte mit Rückgängig) | „Trotzdem neu anlegen“ | Abbrechen.

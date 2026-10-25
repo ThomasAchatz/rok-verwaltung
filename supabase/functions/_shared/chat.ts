@@ -225,6 +225,13 @@ async function fuehreAus(werkzeug: string, e: any, zugriff: Zugriff, aktionen: u
         const fehler = await ergaenzeStammdaten(a, zugriff);
         if (fehler) return { fehler };
       }
+      // Neuer Kontakt/Handwerker, den es schon gibt: nicht doppelt anlegen, sondern den vorhandenen ergänzen
+      if (a.art === "kontakt" || a.art === "handwerker") {
+        const da = await vorhandenePerson(a.art, a.daten as Record<string, string | null>, zugriff);
+        if (da) {
+          return { fehler: `${da.name} gibt es schon (id ${da.id}). Nicht neu anlegen: schlage stattdessen 'stammdaten' mit ziel '${a.art}', id '${da.id}' und nur den neuen oder geänderten Angaben vor.` };
+        }
+      }
       if (aktionen.length >= 4) return { fehler: "Höchstens 4 Vorschläge pro Antwort." };
       aktionen.push(a);
       return { ok: true, hinweis: "Der Vorschlag wird Robert als Knopf angezeigt. Er entscheidet selbst." };
@@ -363,6 +370,25 @@ async function ergaenzeStammdaten(a: any, zugriff: Zugriff): Promise<string | nu
   return null;
 }
 
+/** Gibt es den Kontakt bzw. Handwerker schon (gleiche E-Mail, gleicher Name oder gleiche Firma)? */
+// deno-lint-ignore no-explicit-any
+export async function vorhandenePerson(art: string, d: Record<string, string | null>, zugriff: Zugriff): Promise<{ id: string; name: string } | null> {
+  const w = (s: unknown) => enc(suchwort(s));
+  const teile: string[] = [];
+  if (d.email) teile.push(`email.ilike.${enc(String(d.email).replace(/[,()]/g, ""))}`);
+  if (art === "kontakt") {
+    if (d.nachname) teile.push(d.vorname ? `and(nachname.ilike.${w(d.nachname)},vorname.ilike.${w(d.vorname)})` : `nachname.ilike.${w(d.nachname)}`);
+    if (d.firma && !d.nachname) teile.push(`firma.ilike.${w(d.firma)}`);
+  } else if (d.name) {
+    teile.push(`name.ilike.${w(d.name)}`);
+  }
+  if (!teile.length) return null;
+  const tabelle = art === "kontakt" ? "kontakte?select=id,vorname,nachname,firma" : "dienstleister?select=id,name";
+  // deno-lint-ignore no-explicit-any
+  const [x]: any[] = await rest(`${tabelle}&or=(${teile.join(",")})&limit=1`, zugriff).catch(() => []);
+  return x ? { id: x.id, name: art === "kontakt" ? name(x) || x.firma : x.name } : null;
+}
+
 type Beitrag = { rolle: "robert" | "ki"; text: string };
 
 export async function chat(verlauf: Beitrag[], zugriff: Zugriff): Promise<{ text: string; aktionen: unknown[] }> {
@@ -388,6 +414,7 @@ export async function chat(verlauf: Beitrag[], zugriff: Zugriff): Promise<{ text
     "- Neue Kontakte und Handwerker: Will Robert jemanden anlegen, prüfe erst mit 'suche', ob es ihn schon gibt (dann sag das und verlinke ihn). " +
     "Sonst schlage 'kontakt' bzw. 'handwerker' vor, nur mit den Angaben, die Robert genannt hat (nichts dazuerfinden, keine Bankdaten). " +
     "Mietparteien legt Robert selbst an (Kontakte › Mieter › Neue Mietpartei), weil Wohnung, Miete und Mietbeginn dazugehören.\n" +
+    "- Gibt es die Person schon (Treffer bei 'suche'), schlage nie 'kontakt' oder 'handwerker' vor, sondern 'stammdaten' für den vorhandenen Eintrag.\n" +
     "- Ändert sich eine Telefonnummer, E-Mail, Anrede, ein Name (Kontakte auch Firma/Rolle/Adresse, Handwerker Gewerk) oder zieht jemand mit ein (weitere Bewohner), " +
     "hole die Person mit 'suche' und schlage 'stammdaten' vor (nur die geänderten Felder). Robert bestätigt per Klick, dann ist es gespeichert. Keine Notiz dafür anlegen. " +
     "Miete, Wohnung, Mietbeginn/-ende, Kostenträger, Aktenzeichen und Bankdaten änderst du nie: dafür auf die Akte verweisen (Link aus 'suche'), Robert ändert sie dort unter Stammdaten.\n" +
