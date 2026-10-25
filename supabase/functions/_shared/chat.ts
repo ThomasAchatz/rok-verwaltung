@@ -68,11 +68,15 @@ const WERKZEUGE = [
       "Robert kann sie ansehen, herunterladen oder in der Ablage speichern. Inhalt nur aus Werkzeug-Ergebnissen, je Eintrag ein Abschnitt, " +
       "kontakt (daten: vorname?, nachname?, firma?, rolle?, telefon?, email?, adresse?, geburtstag_tag?, geburtstag_monat?, geburtsjahr?, notiz?): " +
       "neuer Kontakt (Makler, Bank, Behörde, Versicherung, Steuerberater …); nachname oder firma ist Pflicht, " +
-      "handwerker (daten: name, gewerk?, telefon?, email?, objekt_id? (nur für ein Haus, sonst für alle), notiz?): neuer Handwerker/Dienstleister.",
+      "handwerker (daten: name, gewerk?, telefon?, email?, objekt_id? (nur für ein Haus, sonst für alle), notiz?): neuer Handwerker/Dienstleister, " +
+      "stammdaten (daten: ziel aus [mieter, kontakt, handwerker], id, felder: { nur geänderte Felder }, bewohner_neu?): Kontaktdaten einer vorhandenen Person ändern. " +
+      "Erlaubte Felder: mieter: anrede (Herr|Frau|Divers|Firma), vorname, nachname, telefon, email; kontakt: vorname, nachname, firma, rolle, telefon, email, adresse; " +
+      "handwerker: name, gewerk, telefon, email. Leerer Text löscht telefon/email. bewohner_neu (nur mieter): weitere Person im Haushalt, die nicht im Vertrag steht, " +
+      "als eine Zeile 'Name · Telefon · E-Mail' (nur genannte Angaben). Robert sieht Alt und Neu und bestätigt per Klick.",
     input_schema: {
       type: "object",
       properties: {
-        art: { type: "string", enum: ["notiz", "entwurf", "wissen", "oeffnen", "pdf", "kontakt", "handwerker"] },
+        art: { type: "string", enum: ["notiz", "entwurf", "wissen", "oeffnen", "pdf", "kontakt", "handwerker", "stammdaten"] },
         beschriftung: { type: "string", description: "Kurzer Text für den Knopf, z. B. 'Wiedervorlage am 01.03.2027 anlegen'." },
         daten: { type: "object" },
       },
@@ -217,6 +221,10 @@ async function fuehreAus(werkzeug: string, e: any, zugriff: Zugriff, aktionen: u
     case "aktion_vorschlagen": {
       const a = pruefeAktion(e);
       if (!a) return { fehler: "Aktion unvollständig oder ungültig – bitte korrekt ausfüllen." };
+      if (a.art === "stammdaten") {
+        const fehler = await ergaenzeStammdaten(a, zugriff);
+        if (fehler) return { fehler };
+      }
       if (aktionen.length >= 4) return { fehler: "Höchstens 4 Vorschläge pro Antwort." };
       aktionen.push(a);
       return { ok: true, hinweis: "Der Vorschlag wird Robert als Knopf angezeigt. Er entscheidet selbst." };
@@ -288,6 +296,34 @@ export function pruefeAktion(e: any): Record<string, unknown> | null {
         objekt_id: opt(d.objekt_id), notiz: d.notiz ? ohneIban(d.notiz).trim().slice(0, 1000) || null : null,
       } };
     }
+    case "stammdaten": {
+      const ziel = STAMM_FELDER[d.ziel as string] ? d.ziel as string : null;
+      const id = opt(d.id);
+      if (!ziel || !id) return null;
+      const felder: Record<string, string | null> = {};
+      for (const [k, roh] of Object.entries((d.felder && typeof d.felder === "object") ? d.felder : {})) {
+        if (!STAMM_FELDER[ziel].includes(k)) continue;
+        const wert = ohneIban(roh).replace(/\s+/g, " ").trim();
+        if (k === "email") {
+          if (wert && !istEmail(wert)) return null;
+          felder.email = wert ? wert.toLowerCase().slice(0, 120) : null;
+        } else if (k === "telefon") {
+          if (wert && !/^[+0-9 ()/.-]{4,40}$/.test(wert)) return null;
+          felder.telefon = wert || null;
+        } else if (k === "anrede") {
+          if (!["Herr", "Frau", "Divers", "Firma"].includes(wert)) return null;
+          felder.anrede = wert;
+        } else if (k === "nachname" || k === "name") {
+          if (!wert) return null; // Pflichtfeld nie leeren
+          felder[k] = wert.slice(0, 120);
+        } else {
+          felder[k] = wert ? wert.slice(0, k === "adresse" ? 200 : 120) : null;
+        }
+      }
+      const bewohner = ziel === "mieter" ? ohneIban(d.bewohner_neu).replace(/\s+/g, " ").trim().slice(0, 200) : "";
+      if (!Object.keys(felder).length && !bewohner) return null;
+      return { art: "stammdaten", beschriftung, daten: { ziel, id, felder, bewohner_neu: bewohner || null } };
+    }
     case "oeffnen": {
       const ziel = ["mieter", "kontakt", "objekt", "nachricht", "postfach", "wissen"].includes(d.ziel) ? d.ziel : null;
       if (!ziel) return null;
@@ -295,6 +331,35 @@ export function pruefeAktion(e: any): Record<string, unknown> | null {
       return { art: "oeffnen", beschriftung, daten: { ziel, id: opt(d.id) } };
     }
   }
+  return null;
+}
+
+// Felder, die der Chat (mit Bestätigung) ändern darf. Nie: Miete, Wohnung, Vertragsdaten, Kostenträger, Aktenzeichen, Bankdaten.
+export const STAMM_FELDER: Record<string, string[]> = {
+  mieter: ["anrede", "vorname", "nachname", "telefon", "email"],
+  kontakt: ["vorname", "nachname", "firma", "rolle", "telefon", "email", "adresse"],
+  handwerker: ["name", "gewerk", "telefon", "email"],
+};
+const STAMM_TABELLE: Record<string, string> = { mieter: "mieter", kontakt: "kontakte", handwerker: "dienstleister" };
+
+/** Person laden (muss es geben), alte Werte für die Anzeige „Alt → Neu“ anhängen, unveränderte Felder weglassen */
+// deno-lint-ignore no-explicit-any
+async function ergaenzeStammdaten(a: any, zugriff: Zugriff): Promise<string | null> {
+  const d = a.daten;
+  const spalten = [...STAMM_FELDER[d.ziel], ...(d.ziel === "mieter" ? ["weitere_bewohner"] : []), ...(d.ziel === "handwerker" ? [] : ["vorname", "nachname"])];
+  const [x] = await rest(`${STAMM_TABELLE[d.ziel]}?id=eq.${d.id}&select=id,${[...new Set(spalten)].join(",")}`, zugriff).catch(() => []);
+  if (!x) return "Diese Person gibt es nicht. Bitte erst mit 'suche' die richtige ID holen.";
+  const vorher: Record<string, unknown> = {};
+  for (const k of Object.keys(d.felder)) {
+    if ((x[k] ?? null) === d.felder[k]) delete d.felder[k];
+    else vorher[k] = x[k] ?? null;
+  }
+  if (d.bewohner_neu && String(x.weitere_bewohner ?? "").toLowerCase().includes(d.bewohner_neu.toLowerCase())) d.bewohner_neu = null;
+  if (!Object.keys(d.felder).length && !d.bewohner_neu) return "Das ist schon so gespeichert, nichts zu ändern.";
+  d.vorher = vorher;
+  d.bewohner_vorher = d.ziel === "mieter" ? x.weitere_bewohner ?? null : undefined;
+  d.name = d.ziel === "handwerker" ? x.name : name(x) || x.firma || "";
+  d.link = d.ziel === "mieter" ? `#/mieter/${d.id}` : d.ziel === "kontakt" ? `#/kontakt/${d.id}` : "#/handwerker";
   return null;
 }
 
@@ -323,6 +388,9 @@ export async function chat(verlauf: Beitrag[], zugriff: Zugriff): Promise<{ text
     "- Neue Kontakte und Handwerker: Will Robert jemanden anlegen, prüfe erst mit 'suche', ob es ihn schon gibt (dann sag das und verlinke ihn). " +
     "Sonst schlage 'kontakt' bzw. 'handwerker' vor, nur mit den Angaben, die Robert genannt hat (nichts dazuerfinden, keine Bankdaten). " +
     "Mietparteien legt Robert selbst an (Kontakte › Mieter › Neue Mietpartei), weil Wohnung, Miete und Mietbeginn dazugehören.\n" +
+    "- Ändert sich eine Telefonnummer, E-Mail, Anrede, ein Name (Kontakte auch Firma/Rolle/Adresse, Handwerker Gewerk) oder zieht jemand mit ein (weitere Bewohner), " +
+    "hole die Person mit 'suche' und schlage 'stammdaten' vor (nur die geänderten Felder). Robert bestätigt per Klick, dann ist es gespeichert. Keine Notiz dafür anlegen. " +
+    "Miete, Wohnung, Mietbeginn/-ende, Kostenträger, Aktenzeichen und Bankdaten änderst du nie: dafür auf die Akte verweisen (Link aus 'suche'), Robert ändert sie dort unter Stammdaten.\n" +
     "- Kontakte (Makler, Bank, Behörden …) haben einen Gesprächsverlauf und persönliche Infos (z. B. Geburtstag). Bei Fragen wie 'Was weiß ich über …' kontakt_info nutzen und das Wichtigste kurz zusammenfassen.\n" +
     `- Dokument-Ordner (in jedem Haus gleich): ${ordnerListe.join(", ")}.\n` +
     `- Ordner unter „Allgemein“ (Unterlagen ohne Haus, frei angelegt): ${ordnerAllgemein.join(", ")}.`;

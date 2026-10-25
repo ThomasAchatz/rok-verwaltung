@@ -287,6 +287,7 @@ async function zeigeAkte(id) {
         <span>${objekt ? `<a href="#/objekt/${esc(objekt.id)}">${esc(objekt.bezeichnung)}</a>` : "Keine Wohnung zugeordnet"}${wohnung ? ", " + esc(wohnung.bezeichnung) : ""}</span>
         ${kostentraeger ? `<span class="marker marker--messing">${esc(kostentraeger.name)}${mieter.aktenzeichen ? ": " + esc(mieter.aktenzeichen) : ""}</span>` : ""}
         ${mieter.direktzahlung ? `<span class="marker">Direktzahlung Unterkunftskosten</span>` : ""}
+        ${mieter.weitere_bewohner ? `<span class="marker" title="${esc(mieter.weitere_bewohner)}">Mit im Haushalt: ${esc(mieter.weitere_bewohner.split("\n").map((z) => z.split("·")[0].trim()).filter(Boolean).join(", "))}</span>` : ""}
         ${summeOffen > 0 ? `<span class="marker marker--offen">${euro(summeOffen)} offen</span>` : `<span class="marker marker--ok">Keine offenen Posten</span>`}
       </div>
     </div>
@@ -667,7 +668,10 @@ function stammdatenFormular(m) {
       ${f("nachname", "Nachname", m.nachname, "required")}
       ${f("email", "E-Mail", m.email, `type="email"`)}
       ${f("telefon", "Telefon", m.telefon)}
-    </div></div>
+    </div>
+    <label class="feld"><span>Weitere Bewohner (nicht im Vertrag, eine Person je Zeile)</span>
+      <textarea name="weitere_bewohner" rows="2" maxlength="2000" placeholder="z. B. Christian Meier · 0151 2345678">${esc(m.weitere_bewohner || "")}</textarea></label>
+    </div>
     <div class="formgruppe"><h3>Mietverhältnis</h3><div class="formraster">
       <label class="feld breit"><span>Wohnung</span><select name="wohnung_id">
         <option value="">Keine</option>
@@ -727,7 +731,7 @@ function verknuepfeStammdaten() {
     if (!pruefeIban() && !confirm("Die IBAN scheint fehlerhaft zu sein. Trotzdem speichern?")) return;
     const fd = new FormData(form);
     const felder = {};
-    for (const k of ["anrede", "vorname", "nachname", "email", "telefon", "mietkonto_inhaber", "mietkonto_bank", "mietkonto_bic", "aktenzeichen", "notiz"]) {
+    for (const k of ["anrede", "vorname", "nachname", "email", "telefon", "mietkonto_inhaber", "mietkonto_bank", "mietkonto_bic", "aktenzeichen", "notiz", "weitere_bewohner"]) {
       felder[k] = (fd.get(k) || "").trim() || null;
     }
     felder.nachname = felder.nachname || zustand.akte.mieter.nachname;

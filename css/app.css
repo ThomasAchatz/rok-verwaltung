@@ -1193,3 +1193,5 @@ body.datei-ueber::after {
 .baum > .baum__leer { padding: 1.1rem 1.25rem; font-size: 0.92rem; }
 .oz-leer { padding: 0.75rem 0.25rem; margin: 0; }
 .notiz-vorgang { margin: 0 0 0.9rem; padding: 0.6rem 0.85rem; border-radius: 8px; background: var(--flaeche-zart); border: 1px solid var(--rand); font-size: 0.9rem; }
+.chatvorschlag__aenderung { list-style: none; margin: 0.3rem 0 0; padding: 0; display: grid; gap: 0.2rem; overflow-wrap: anywhere; }
+.chatvorschlag__aenderung s { color: var(--text-leise); }

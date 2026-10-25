@@ -62,7 +62,7 @@ function einrichten() {
       <span class="diktat"><textarea name="frage" rows="1" maxlength="2000" placeholder="Frage stellen oder diktieren …" aria-label="Frage"></textarea>${mikroKnopf()}</span>
       <button class="knopf knopf--primaer" type="submit">Senden</button>
     </form>
-    <p class="chat__hinweis">Die KI liest nur und ändert nichts. Vorschläge führen Sie selbst per Klick aus. Bankdaten sieht sie nicht.</p>`;
+    <p class="chat__hinweis">Die KI ändert nichts von selbst. Vorschläge (auch geänderte Telefonnummern oder E-Mails) führen Sie per Klick aus. Bankdaten sieht sie nicht.</p>`;
   const form = $("#chat-form");
   const feld = form.frage;
   verbindeDiktat(form);
@@ -149,7 +149,18 @@ async function sende(text) {
 // Vorschläge der KI als kleine Karten: Annehmen (speichert direkt), Ändern (vorbelegter Dialog), Ablehnen.
 // Nichts passiert ohne Klick. a.status: "gespeichert" | "abgelehnt" | undefined
 // ---------------------------------------------------------------------------
-const ART_NAME = { notiz: "To-do", wissen: "Wissen", entwurf: "Schreiben", oeffnen: "Öffnen", pdf: "PDF", kontakt: "Neuer Kontakt", handwerker: "Neuer Handwerker" };
+const ART_NAME = { notiz: "To-do", wissen: "Wissen", entwurf: "Schreiben", oeffnen: "Öffnen", pdf: "PDF", kontakt: "Neuer Kontakt", handwerker: "Neuer Handwerker", stammdaten: "Stammdaten ändern" };
+// Stammdaten-Karte: welche Felder heißen wie (der Server lässt nur diese zu)
+const FELD_NAME = { anrede: "Anrede", vorname: "Vorname", nachname: "Nachname", name: "Name", firma: "Firma", rolle: "Rolle", telefon: "Telefon", email: "E-Mail", adresse: "Adresse", gewerk: "Gewerk" };
+const ZIEL_TABELLE = { mieter: "mieter", kontakt: "kontakt", handwerker: "handwerker" };
+function aenderungHtml(d) {
+  const zeilen = Object.entries(d.felder || {}).map(([k, neu]) => {
+    const alt = d.vorher?.[k];
+    return `<li><span class="leise">${esc(FELD_NAME[k] || k)}:</span> ${alt ? `<s>${esc(alt)}</s> → ` : ""}<strong>${neu ? esc(neu) : "(leer)"}</strong></li>`;
+  });
+  if (d.bewohner_neu) zeilen.push(`<li><span class="leise">Weitere Bewohner:</span> <strong>+ ${esc(d.bewohner_neu)}</strong></li>`);
+  return `<ul class="chatvorschlag__aenderung">${zeilen.join("")}</ul>`;
+}
 const tag = (iso) => (iso ? datumDE(iso) : "");
 
 function pdfName(a) {
@@ -172,10 +183,16 @@ function vorschlagHtml(a, i, j) {
   let knoepfe = "";
   if (a.status === "gespeichert") {
     knoepfe = `<span class="chatvorschlag__status chatvorschlag__status--ok">${a.statusText || "Gespeichert"}</span>${a.href ? `<a class="knopf knopf--klein knopf--leise" href="${esc(a.href)}" data-chat-link>Öffnen</a>` : ""}`;
+  } else if (a.status === "gespeichert_rueck") {
+    knoepfe = `<span class="chatvorschlag__status chatvorschlag__status--ok">${a.statusText || "Gespeichert"}</span>${a.href ? `<a class="knopf knopf--klein knopf--leise" href="${esc(a.href)}" data-chat-link>Öffnen</a>` : ""}${k("rueck", "Rückgängig", "knopf--leise")}`;
+  } else if (a.status === "rueckgaengig") {
+    knoepfe = `<span class="chatvorschlag__status">Rückgängig gemacht, alte Werte wiederhergestellt</span>`;
   } else if (a.status === "abgelehnt") {
     knoepfe = `<span class="chatvorschlag__status">Abgelehnt</span>${k("zurueck", "Doch anzeigen", "knopf--leise")}`;
   } else if (a.art === "notiz" || a.art === "wissen" || a.art === "kontakt" || a.art === "handwerker") {
     knoepfe = k("annehmen", "Annehmen", "knopf--primaer") + k("aendern", "Ändern") + k("ablehnen", "Ablehnen", "knopf--leise");
+  } else if (a.art === "stammdaten") {
+    knoepfe = k("annehmen", "Übernehmen", "knopf--primaer") + k("aendern", "Ändern") + k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "entwurf") {
     knoepfe = k("oeffnen", "Schreiben öffnen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "pdf") {
@@ -194,7 +211,8 @@ function vorschlagHtml(a, i, j) {
   return `<div class="chatvorschlag" data-art="${esc(a.art)}" ${a.status ? `data-status="${esc(a.status)}"` : ""}>
     <div class="chatvorschlag__text"><span class="chatvorschlag__art">${ART_NAME[a.art] || "Vorschlag"}</span>
       ${a.art === "oeffnen" ? "" : `<strong>${esc(a.beschriftung)}</strong>`}
-      ${detail && detail !== a.beschriftung ? `<span class="leise">${esc(detail)}</span>` : ""}</div>
+      ${detail && detail !== a.beschriftung ? `<span class="leise">${esc(detail)}</span>` : ""}
+      ${a.art === "stammdaten" ? `<span class="leise">${esc(d.name || "")}</span>${aenderungHtml(d)}` : ""}</div>
     ${nameFeld}
     <div class="chatvorschlag__knoepfe">${knoepfe}</div>
   </div>`;
@@ -266,6 +284,82 @@ async function keinDoppelter(a) {
   return frage("Gibt es vielleicht schon", `<p>„${esc(treffer)}“ ist bereits angelegt. Trotzdem einen neuen Eintrag anlegen?</p>`, "Trotzdem anlegen");
 }
 
+// ---------------------------------------------------------------------------
+// Stammdaten ändern (nur nach Klick): speichern, im Verlauf festhalten, „Rückgängig“ stellt die alten Werte wieder her
+// ---------------------------------------------------------------------------
+const STAMM_SPEICHERN = {
+  mieter: (id, f) => db.speichereMieter(id, f),
+  kontakt: (id, f) => db.speichereKontakt(id, f),
+  handwerker: (id, f) => db.speichereDienstleister(id, f),
+};
+const verlaufZiel = (d) => (d.ziel === "mieter" ? { mieter_id: d.id } : d.ziel === "kontakt" ? { kontakt_id: d.id } : null);
+function bewohnerNeu(alt, plus) {
+  return [String(alt || "").trim(), String(plus || "").trim()].filter(Boolean).join("\n") || null;
+}
+async function stammdatenSpeichern(a, felder, bewohner) {
+  const d = a.daten;
+  const aenderung = { ...felder };
+  if (bewohner) aenderung.weitere_bewohner = bewohnerNeu(d.bewohner_vorher, bewohner);
+  if (!Object.keys(aenderung).length) throw new Error("Nichts zu ändern.");
+  await STAMM_SPEICHERN[ZIEL_TABELLE[d.ziel]](d.id, aenderung);
+  const text = [
+    ...Object.entries(felder).map(([k, neu]) => `${FELD_NAME[k] || k}: ${d.vorher?.[k] || "(leer)"} → ${neu || "(leer)"}`),
+    ...(bewohner ? [`Weitere Bewohner: + ${bewohner}`] : []),
+  ].join("; ");
+  const ziel = verlaufZiel(d);
+  a.verlaufId = ziel ? (await db.speichereVerlauf(null, { ...ziel, art: "notiz", datum: heuteISO(), text: `Stammdaten geändert (Chat): ${text}` }).catch(() => null))?.id || null : null;
+  a.gespeichert = { felder, bewohner };
+  a.href = d.link || null;
+  if (d.ziel === "mieter") await mieterListe().catch(() => null);
+  if (d.ziel === "kontakt") await kontakteListe(true).catch(() => null);
+}
+async function stammdatenZurueck(a) {
+  const d = a.daten;
+  const alt = {};
+  for (const k of Object.keys(a.gespeichert?.felder || {})) alt[k] = d.vorher?.[k] ?? null;
+  if (a.gespeichert?.bewohner) alt.weitere_bewohner = d.bewohner_vorher ?? null;
+  await STAMM_SPEICHERN[ZIEL_TABELLE[d.ziel]](d.id, alt);
+  if (a.verlaufId) await db.loescheVerlauf(a.verlaufId).catch(() => null);
+  if (d.ziel === "mieter") await mieterListe().catch(() => null);
+  if (d.ziel === "kontakt") await kontakteListe(true).catch(() => null);
+}
+// „Ändern“: neue Werte vor dem Speichern anpassen
+async function stammdatenDialog(a) {
+  const d = a.daten;
+  const felder = Object.keys(d.felder || {});
+  const daten = await dialogFormular(`
+    <h2>Stammdaten ändern</h2>
+    <p class="leise">${esc(d.name || "")}</p>
+    ${felder.map((k) => k === "anrede"
+      ? `<label class="feld"><span>Anrede</span><select name="f_anrede">${["Herr", "Frau", "Divers", "Firma"].map((x) => `<option ${x === d.felder.anrede ? "selected" : ""}>${x}</option>`).join("")}</select></label>`
+      : `<label class="feld"><span>${esc(FELD_NAME[k] || k)}${d.vorher?.[k] ? ` <span class="leise">(bisher: ${esc(d.vorher[k])})</span>` : ""}</span>
+          <input name="f_${esc(k)}" value="${esc(d.felder[k] || "")}" ${k === "email" ? `type="email"` : k === "telefon" ? `type="tel"` : ""} maxlength="200"></label>`).join("")}
+    ${d.bewohner_neu != null ? `<label class="feld"><span>Weitere Bewohner: hinzufügen</span><input name="bewohner" value="${esc(d.bewohner_neu || "")}" maxlength="200"></label>` : ""}
+    <p class="oz-fehler" data-fehler role="alert" hidden></p>
+    <div class="knopfreihe">
+      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      <button class="knopf knopf--primaer" value="ok">Speichern</button>
+    </div>`, {
+    vorbereiten: (form) => form.addEventListener("submit", (e) => {
+      if (e.submitter?.value !== "ok") return;
+      const mail = form.f_email?.value.trim();
+      const fehler = mail && !istEmail(mail) ? "Bitte eine gültige E-Mail-Adresse eingeben."
+        : (form.f_nachname && !form.f_nachname.value.trim()) || (form.f_name && !form.f_name.value.trim()) ? "Der Name darf nicht leer sein." : "";
+      const p = $("[data-fehler]", form);
+      p.textContent = fehler; p.hidden = !fehler;
+      if (fehler) e.preventDefault();
+    }),
+  });
+  if (!daten) return null;
+  const neu = {};
+  for (const k of felder) {
+    const w = String(daten.get(`f_${k}`) ?? "").trim();
+    const wert = k === "email" ? w.toLowerCase() || null : w || null;
+    if (wert !== (d.vorher?.[k] ?? null)) neu[k] = wert;
+  }
+  return { felder: neu, bewohner: String(daten.get("bewohner") || "").trim() || null };
+}
+
 async function behandle(a, op, knopf) {
   const d = a.daten || {};
   const dlg = $("#chat");
@@ -275,8 +369,20 @@ async function behandle(a, op, knopf) {
       case "neuladen": return location.reload();
       case "ablehnen": return setze(a, "abgelehnt");
       case "zurueck": return setze(a, undefined);
+      case "rueck":
+        knopf.disabled = true;
+        await stammdatenZurueck(a);
+        setze(a, "rueckgaengig");
+        neuLaden();
+        return;
       case "annehmen":
         knopf.disabled = true;
+        if (a.art === "stammdaten") {
+          await stammdatenSpeichern(a, d.felder || {}, d.bewohner_neu || null);
+          setze(a, "gespeichert_rueck", "Gespeichert");
+          neuLaden();
+          return;
+        }
         if (a.art === "notiz") {
           await db.speichereAufgabe(null, {
             titel: d.titel, notiz: d.notiz || null, faellig_am: d.faellig_am || null,
@@ -302,6 +408,14 @@ async function behandle(a, op, knopf) {
         return;
       case "aendern": {
         const fertig = (text) => () => { setze(a, "gespeichert", text); neuLaden(); };
+        if (a.art === "stammdaten") {
+          const neu = await stammdatenDialog(a);
+          if (!neu) return;
+          await stammdatenSpeichern(a, neu.felder, neu.bewohner);
+          setze(a, "gespeichert_rueck", "Geändert gespeichert");
+          neuLaden();
+          return;
+        }
         if (a.art === "notiz") {
           return aufgabeDialog({ titel: d.titel, notiz: d.notiz, faellig_am: d.faellig_am, mieter_id: d.mieter_id, objekt_id: d.objekt_id, kontakt_id: d.kontakt_id },
             { nachher: fertig("Geändert gespeichert") });

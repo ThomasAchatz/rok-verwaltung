@@ -46,6 +46,7 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   Postfach-Token). Beim Deploy über MCP alle importierten `_shared`-Dateien mitschicken (ki: alle fünf = 6 Dateien mit index,
   posteingang: gemeinsam + fach + mieterhoehung, versand: gemeinsam).
   service_role hat nur die Rechte aus `20261015010200_rechte_server.sql` (Projekt vergibt keine automatischen Grants).
+  Nach jedem Deploy prüfen: `get_edge_function` holen und jede Datei mit dem Repo vergleichen (nie Platzhalter mitschicken).
 - Secrets: ANTHROPIC_API_KEY, RESEND_API_KEY, VERSAND_ABSENDER, optional RESEND_WEBHOOK_SECRET, KI_MODELL.
 
 ## Stand / nächste Schritte
@@ -178,3 +179,8 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   Objekt, Wächter 8 s gegen stilles Hängen, Ende nach 45 s ohne Wörter), Text jeder Runde wird in `onend` übernommen (iOS liefert „final“
   nicht zuverlässig), kein `focus()`. Fehler „service-not-allowed“ → Hinweis auf Einstellungen › Allgemein › Tastatur › Diktierfunktion.
   Test mit nachgebauter Erkennung: `ui_diktat.py`.
+- Stammdaten per Chat (Migration `20261025160000_weitere_bewohner.sql`, `mieter.weitere_bewohner` Text, eine Person je Zeile): KI-Aktion
+  `stammdaten` { ziel mieter|kontakt|handwerker, id, felder, bewohner_neu } – erlaubte Felder in `STAMM_FELDER` (chat.ts; nie Miete, Wohnung,
+  Vertrag, Kostenträger, Aktenzeichen, Bank), `pruefeAktion` prüft Format, `ergaenzeStammdaten()` lädt die Person (muss es geben) und hängt
+  `vorher`, `name`, `link` an. App (`js/chat.js`): Karte Alt → Neu, „Übernehmen“ speichert sofort + Verlaufseintrag, danach „Rückgängig“
+  (alte Werte, Verlaufseintrag weg); „Ändern“ = `stammdatenDialog()`. Akte zeigt „Mit im Haushalt“, Stammdaten-Formular hat das Feld.
