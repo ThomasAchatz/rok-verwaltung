@@ -203,13 +203,18 @@ async function verteile(dateien, optionen = {}) {
 const hatDateien = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
 const aktiveFlaeche = () => $("[data-ablegeflaeche]");
 let ziehTiefe = 0;
-const markiere = (an) => aktiveFlaeche()?.classList.toggle("ablegeflaeche--aktiv", an);
+// Ohne Ablagefläche (z. B. Übersicht, Postfach): ganze Seite nimmt die Dateien an, die KI entscheidet Postfach oder Ablage
+const markiere = (an) => {
+  const el = aktiveFlaeche();
+  if (el) el.classList.toggle("ablegeflaeche--aktiv", an);
+  document.body.classList.toggle("datei-ueber", an && !el && !$("dialog[open]") && !$("#app")?.hidden);
+};
 document.addEventListener("dragenter", (e) => { if (hatDateien(e)) { ziehTiefe++; markiere(true); } });
 document.addEventListener("dragleave", (e) => { if (hatDateien(e) && --ziehTiefe <= 0) { ziehTiefe = 0; markiere(false); } });
 document.addEventListener("dragover", (e) => {
   if (!hatDateien(e)) return;
   e.preventDefault();
-  e.dataTransfer.dropEffect = aktiveFlaeche() && !$("dialog[open]") ? "copy" : "none";
+  e.dataTransfer.dropEffect = !$("dialog[open]") && !$("#app")?.hidden ? "copy" : "none";
 });
 document.addEventListener("drop", (e) => {
   if (!hatDateien(e)) return;
@@ -217,9 +222,9 @@ document.addEventListener("drop", (e) => {
   ziehTiefe = 0; markiere(false);
   const el = aktiveFlaeche();
   if ($("dialog[open]")) return;
-  if (!el) return melde("Zum Ablegen bitte unter „Objekte“ ein Haus öffnen und die Dateien dort hineinziehen.", "info");
+  if ($("#app")?.hidden) return; // nicht angemeldet
   const dateien = [...e.dataTransfer.files];
-  if (dateien.length) verteile(dateien, flaechenOptionen.get(el) || {});
+  if (dateien.length) verteile(dateien, (el && flaechenOptionen.get(el)) || {});
 });
 
 // ---------------------------------------------------------------------------

@@ -149,3 +149,12 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   aus mieter_uebersicht); Aufgaben ohne jede Zuordnung mit Datum heißen „To-do“ (zählen bei Wiedervorlagen mit). Notiz-Dialog: Häkchen
   `nur_todo` blendet `[data-zuordnung]` (auch „Mit KI prüfen“) aus. `rundSenden()` schickt eine Kopie an die eigene Adresse
   (eigene antworten-Zeile mit objekt_id, ohne mieter_id, empfaenger_name „Kopie an die eigene Adresse“).
+- „Ja und Ja“ (Migration `20261025090000_ki_schritte.sql`): `nachrichten.ki_schritte` { status laeuft|fertig|keine|verworfen|fehler, am,
+  antwort_id, auftrag_id, dienstleister, hinweise }. KI-Aktion `schritte` → `bereiteSchritteVor()` in fach.ts (nur Reparatur/Mangel, nur ohne
+  vorhandene Antworten; `passenderHandwerker()` nach Gewerk-Regeln; entwirf + auftrag parallel; legt beide antworten-Zeilen im Vorgang an).
+  Läuft mit dem Login des Nutzers: `postfach.bereiteImHintergrundVor()` aus Übersicht/Postfach (max. 3) und `verbindeSchritte()` beim Öffnen.
+  Kasten `#schritte` (`schritteHtml`): „Ja“ klickt den Senden-Knopf des jeweiligen Entwurfs (normaler Bestätigungsdialog). Nie Autoversand.
+- Chat-Links: `formatiere()` erlaubt auch `#/thema/` und `#/entwurf/`; im Browser `target=_blank` (Chat bleibt offen), als installierte App
+  im selben Fenster. chat.ts liefert `vorgaenge` (`themaKurz`) bei suche/mieter_info/objekt_info/offene_vorgaenge, notiz.ts bei kontakt_info.
+- Ablegen: der Dokument-weite Drop-Handler (ablage.js) nimmt ohne Ablagefläche alles an (`verteile(dateien, {})`, KI entscheidet),
+  Overlay über `body.datei-ueber`.

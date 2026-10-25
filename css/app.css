@@ -1158,3 +1158,27 @@ a.reiter__knopf { text-decoration: none; display: inline-block; }
 
 /* Ort am To-do (Haus, Wohnung) */
 .todo__ort { font-weight: 500; text-transform: none; letter-spacing: 0; }
+
+/* Dateien vom PC auf eine Seite ohne Ablagefläche ziehen (Übersicht, Postfach …) */
+body.datei-ueber::after {
+  content: "Loslassen – die KI liest die Datei und schlägt vor, ob sie ins Postfach oder in die Ablage gehört";
+  position: fixed; inset: 0.75rem; z-index: 60; pointer-events: none;
+  display: flex; align-items: center; justify-content: center; text-align: center; padding: 2rem;
+  font-size: 1.15rem; font-weight: 600; color: var(--tinte);
+  background: rgba(232, 238, 246, 0.86); border: 3px dashed var(--tinte-hell); border-radius: 12px;
+}
+
+/* „Ja und Ja“: nächste Schritte der KI auf der Nachrichtenseite */
+.schritte { border-color: var(--messing-rand); background: linear-gradient(var(--messing-zart), var(--flaeche) 70%); }
+.schritte .flaeche__kopf h2 { display: flex; align-items: center; gap: 0.4rem; }
+.schritte__laeuft { display: flex; align-items: center; gap: 0.6rem; margin: 0; color: var(--tinte); }
+.schritte__liste { list-style: none; margin: 0 0 0.6rem; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.schritt { display: grid; grid-template-columns: 1.7rem 1fr; gap: 0.2rem 0.6rem; align-items: start; }
+.schritt__nr { width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--tinte); color: #fff; font-weight: 700; font-size: 0.85rem;
+  display: flex; align-items: center; justify-content: center; }
+.schritt--fertig .schritt__nr { background: var(--bezahlt); }
+.schritt--fertig .schritt__text { color: var(--text-leise); }
+.schritt__text { padding-top: 0.2rem; }
+.schritt__aktion { grid-column: 2; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.schritte__fuss { margin: 0; }
+.marker--ki { background: var(--messing-zart); color: var(--messing-text); }

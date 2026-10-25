@@ -195,14 +195,16 @@ export async function liesNotiz(text: string, zugriff: Zugriff, o: { kontaktId?:
 export async function kontaktInfo(id: string, zugriff: Zugriff) {
   const [k] = await rest(`kontakte?id=eq.${enc(id)}&select=id,vorname,nachname,firma,rolle,telefon,email,adresse,geburtstag_tag,geburtstag_monat,geburtsjahr,notiz`, zugriff);
   if (!k) return { fehler: "nicht gefunden" };
-  const [verlauf, aufgaben] = await Promise.all([
+  const [verlauf, aufgaben, themen] = await Promise.all([
     rest(`verlauf?kontakt_id=eq.${enc(id)}&select=datum,art,text&order=datum.desc&limit=20`, zugriff),
     rest(`aufgaben?kontakt_id=eq.${enc(id)}&status=eq.offen&select=id,titel,faellig_am`, zugriff),
+    rest(`themen?kontakt_id=eq.${enc(id)}&select=id,titel,status&order=aktualisiert_am.desc&limit=10`, zugriff).catch(() => []),
   ]);
   return {
     ...k, name: name(k) || k.firma, link: `#/kontakt/${id}`,
     geburtstag: k.geburtstag_tag ? `${k.geburtstag_tag}.${k.geburtstag_monat}.${k.geburtsjahr ?? ""}` : null,
     verlauf: verlauf.map((v: { datum: string; art: string; text: string }) => ({ ...v, text: `<fremder_text>${kuerze(v.text, 1500)}</fremder_text>` })),
     offene_aufgaben: aufgaben,
+    vorgaenge: themen.map((t: { id: string; titel: string; status: string }) => ({ titel: t.titel, status: t.status, link: `#/thema/${t.id}` })),
   };
 }

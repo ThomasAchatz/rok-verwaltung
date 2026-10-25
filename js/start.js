@@ -10,6 +10,7 @@ import {
 import { letzteMonate, mieterZeile, LEGENDE, naechsterSchritt, schreibenKachel, oeffneSchreiben } from "./bausteine.js";
 import * as ablage from "./ablage.js";
 import * as kontakte from "./kontakte.js";
+import * as postfach from "./postfach.js"; // nur zur Laufzeit benutzt (Kreis start↔postfach)
 
 const inhalt = () => $("#inhalt");
 const ICON_PLUS = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>`;
@@ -59,6 +60,7 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
       amt ? `<span class="marker marker--messing">Amt/Jobcenter</span>` : "",
       n.ki_dringlichkeit === "hoch" ? `<span class="marker marker--offen">dringend</span>` : "",
       n.status === "neu" ? `<span class="marker marker--neu">neu</span>` : "",
+      n.ki_schritte?.status === "fertig" && n.status !== "beantwortet" ? `<span class="marker marker--ki">Antwort + Auftrag bereit</span>` : "",
     ].join("");
     if (frist) {
       jetzt.push({
@@ -264,6 +266,8 @@ export async function zeigeStart() {
   const gesamt = rueckstand.reduce((s, m) => s + Number(m.offen_summe), 0);
   const entwuerfe = antworten.filter((a) => a.status === "entwurf");
   const orte = Object.fromEntries(liste.map((m) => [m.id, [m.objekt, m.wohnung].filter(Boolean).join(", ")]));
+  // Neue Schadensmeldungen: Antwort und Handwerker-Auftrag im Hintergrund vorbereiten („Ja und Ja“)
+  postfach.bereiteImHintergrundVor(nachrichten).catch(() => null);
   const todos = sammle({ nachrichten, aufgaben, rueckstand, vorgaenge, entwuerfe, namen, kontaktListe, orte });
   const dringend = todos.jetzt.filter((t) => t.stufe <= 1).length;
   const wiedervorlagen = [...todos.jetzt.filter((t) => t.art === "Wiedervorlage" || t.art === "To-do"), ...todos.spaeter]

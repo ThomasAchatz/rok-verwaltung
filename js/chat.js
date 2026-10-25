@@ -22,13 +22,16 @@ const verlauf = []; // { rolle: "robert" | "ki" | "fehler", text, aktionen? }
 let laeuft = false;
 let eingerichtet = false;
 
+// Links aus dem Chat: im Browser in einem neuen Tab (der Chat bleibt offen), in der installierten App im selben Fenster
+const alsApp = () => window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
+const linkZiel = () => (alsApp() ? "" : ` target="_blank" rel="noopener"`);
 const ZIELE = { mieter: "#/mieter/", kontakt: "#/kontakt/", objekt: "#/objekt/", nachricht: "#/postfach/" };
 
 // Sichere Darstellung: erst alles maskieren, dann nur fett, Listen und App-interne Links erlauben
 function formatiere(text) {
   const zeile = (z) => esc(z)
-    .replace(/\[([^\]\n]{1,120})\]\((#\/(?:mieter|kontakt|kontakte|objekt|objekte|ablage|postfach|wissen|uebersicht|handwerker)(?:\/[A-Za-z0-9-]{1,60})?)\)/g,
-      (_, t, href) => `<a href="${href}" data-chat-link>${t}</a>`)
+    .replace(/\[([^\]\n]{1,120})\]\((#\/(?:mieter|kontakt|kontakte|objekt|objekte|ablage|postfach|wissen|uebersicht|handwerker|thema|entwurf)(?:\/[A-Za-z0-9-]{1,60})?)\)/g,
+      (_, t, href) => `<a href="${href}" data-chat-link${linkZiel()}>${t}</a>`)
     .replace(/\*\*([^*\n]{1,200})\*\*/g, "<strong>$1</strong>");
   const bloecke = [];
   let liste = null, absatz = [];
@@ -82,7 +85,8 @@ function einrichten() {
     if (knopf?.dataset.chat === "neu") { verlauf.length = 0; zeichne(); feld.focus(); }
     const frage = e.target.closest("[data-frage]");
     if (frage) sende(frage.dataset.frage);
-    if (e.target.closest("[data-chat-link]") && window.matchMedia("(max-width: 900px)").matches) dlg.close();
+    const l = e.target.closest("[data-chat-link]");
+    if (l && !l.target && window.matchMedia("(max-width: 900px)").matches) dlg.close();
     const akt = e.target.closest("[data-vorschlag]");
     if (akt) {
       const [i, j, op] = akt.dataset.vorschlag.split(":");

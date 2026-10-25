@@ -212,6 +212,15 @@ Entwurf prüfen ─► Klick „Per E-Mail senden“ ─► Edge Function versan
 - **Ort an jedem To-do:** Haus und Wohnung (bzw. „ganzes Haus“, „Allgemein“, „nicht zugeordnet“; von der KI zugeordnet: „KI-Vorschlag“).
 - **Rückstände** stehen nicht mehr unter „Zu erledigen“, sondern im Filter „Rückstände“ (Mahnung fällig zuerst).
 - **Rundschreiben:** Eine Kopie geht zusätzlich an die eigene Adresse (Absender-E-Mail, sonst „Antworten gehen an“, sonst Briefkopf).
+- **„Ja und Ja“ bei Schadensmeldungen:** Ordnet die KI eine Nachricht als Reparatur/Mangel ein, bereitet sie eine Antwort an die
+  Mietpartei und einen Auftrag an den passenden Handwerker (nach Gewerk, mit den Fotos) als Entwürfe vor. Oben auf der Nachricht steht
+  „Nächste Schritte“ mit „Ja, Antwort senden“ und „Ja, Auftrag senden“; jedes Ja zeigt die E-Mail vorher noch einmal. „Anderer Handwerker“
+  und „Vorschlag verwerfen“ sind möglich. Vorbereitet wird mit dem Login (im Hintergrund, sobald die App offen ist, spätestens beim
+  Öffnen der Nachricht) – der Server-Posteingang hat bewusst keine Rechte auf Entwürfe.
+- **Chat verlinkt Vorgänge:** Antworten des Chats enthalten Links zum Vorgang (E-Mail-Verlauf). Im Browser öffnen Links einen
+  neuen Tab, der Chat bleibt offen; in der installierten App öffnen sie im selben Fenster.
+- **Dateien vom PC hineinziehen:** auf jeder Seite. Wo es keine Ablagefläche gibt (Übersicht, Postfach …), entscheidet die KI wie
+  bei „Foto/Datei“, ob es ins Postfach oder in die Ablage gehört.
 
 ## Sicherheit
 
