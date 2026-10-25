@@ -1186,3 +1186,5 @@ body.datei-ueber::after {
 /* Teile, die nur im Design B (html.design-b, css/design-b.css) sichtbar sind */
 .nav-icon, .nur-design-b { display: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.baum > .baum__leer { padding: 1.1rem 1.25rem; font-size: 0.92rem; }
+.oz-leer { padding: 0.75rem 0.25rem; margin: 0; }

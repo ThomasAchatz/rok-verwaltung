@@ -403,7 +403,7 @@ export async function ladeAbgelegte(feld, ids) {
   return pruefe(await sb.from("dokumente").select("*").in(feld, liste).order("erstellt_am"));
 }
 
-// --- Ordner der Dokumentenablage (für alle Häuser) --------------------------
+// --- Ordner der Dokumentenablage (bereich „haus“ = für alle Häuser, „allgemein“ = nur unter Allgemein) ---
 export async function ladeDokumentOrdner() {
   return pruefe(await sb.from("dokument_ordner").select("*").order("reihenfolge").order("name"));
 }
@@ -415,10 +415,12 @@ export async function loescheDokumentOrdner(id) {
   pruefe(await sb.from("dokument_ordner").delete().eq("id", id));
 }
 /** Alle Dokumente eines Ordners in einen anderen verschieben (beim Umbenennen oder Löschen) */
-export async function verschiebeDokumente(alt, neu, { flach = false, ausser = [] } = {}) {
-  pruefe(await sb.from("dokumente").update({ ordner: neu }).eq("ordner", alt));
+// allgemein: true = nur Dokumente ohne Haus, false = nur Dokumente in Häusern (Ordnerlisten sind getrennt)
+export async function verschiebeDokumente(alt, neu, { flach = false, ausser = [], allgemein = false } = {}) {
+  const bereich = (q) => (allgemein ? q.is("objekt_id", null) : q.not("objekt_id", "is", null));
+  pruefe(await bereich(sb.from("dokumente").update({ ordner: neu }).eq("ordner", alt)));
   // Dokumente in Unterordnern (auch automatischen wie „/2026“) gehen mit; flach = alle direkt in „neu“
-  const unter = pruefe(await sb.from("dokumente").select("id,ordner").like("ordner", `${alt.replace(/[%_\\]/g, "\\$&")}/%`));
+  const unter = pruefe(await bereich(sb.from("dokumente").select("id,ordner").like("ordner", `${alt.replace(/[%_\\]/g, "\\$&")}/%`)));
   for (const d of unter) {
     // Unterordner, die es weiter gibt, bleiben, wo sie sind
     if (ausser.some((n) => n.length > alt.length && (d.ordner === n || d.ordner.startsWith(n + "/")))) continue;

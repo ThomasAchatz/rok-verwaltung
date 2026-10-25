@@ -37,19 +37,52 @@ const ordnerOptionen = (liste, gewaehlt) => {
   return alle.map((x) => `<option value="${esc(x)}" ${x === gewaehlt ? "selected" : ""}>${esc(ordnerAnzeige(x))}</option>`).join("");
 };
 
-/** Aktuelle Ordnerliste der Ablage (aus der Datenbank, „Sonstiges“ immer dabei) */
-export async function ordnerListe(neu = false) {
+/**
+ * Aktuelle Ordnerliste der Ablage (aus der Datenbank, „Sonstiges“ immer dabei).
+ * Zwei Bereiche: „haus“ = in jedem Haus gleich (Standard), „allgemein“ = frei angelegte Ordner unter Allgemein.
+ */
+export async function ordnerListe(neu = false, bereich = "haus") {
   if (!zustand.dokOrdner || neu) {
     try {
-      zustand.dokOrdnerZeilen = await db.ladeDokumentOrdner();
+      const alle = await db.ladeDokumentOrdner();
+      const vonBereich = (b) => alle.filter((o) => (o.bereich || "haus") === b);
+      zustand.dokOrdnerZeilen = vonBereich("haus");
+      zustand.dokOrdnerZeilenAllgemein = vonBereich("allgemein");
       zustand.dokOrdnerAuto = new Map(zustand.dokOrdnerZeilen.filter((o) => o.automatik).map((o) => [o.name, o.automatik]));
       const namen = zustand.dokOrdnerZeilen.map((o) => o.name);
       zustand.dokOrdner = namen.length ? (namen.includes("Sonstiges") ? namen : [...namen, "Sonstiges"]) : DOKUMENT_ORDNER;
+      zustand.dokOrdnerAllgemein = [...zustand.dokOrdnerZeilenAllgemein.map((o) => o.name).filter((n) => n !== "Sonstiges"), "Sonstiges"];
     } catch {
       zustand.dokOrdner = DOKUMENT_ORDNER;
+      zustand.dokOrdnerAllgemein = ["Sonstiges"];
     }
   }
-  return zustand.dokOrdner;
+  return bereich === "allgemein" ? zustand.dokOrdnerAllgemein : zustand.dokOrdner;
+}
+/** Ordnerliste passend zum Haus (null/leer = Allgemein); ordnerListe() muss vorher geladen sein */
+export const ordnerFuer = (objektId) => (objektId ? zustand.dokOrdner : zustand.dokOrdnerAllgemein) || ["Sonstiges"];
+/** Ordner, der zum Haus passt: sonst „Sonstiges“ (z. B. Hausordner der KI für eine Datei unter Allgemein) */
+export const passenderOrdner = (name, objektId) => {
+  const liste = ordnerFuer(objektId);
+  if (!name) return "Sonstiges";
+  if (liste.includes(name)) return name;
+  // Unterordner eines vorhandenen Ordners (z. B. „03_Vermietung/EG rechts - Wolf“) dürfen bleiben
+  return liste.some((n) => n !== "Sonstiges" && name.startsWith(n + "/")) ? name : "Sonstiges";
+};
+// Auswahl „Ordner“ im Dialog folgt dem gewählten Haus (Allgemein hat eigene Ordner)
+function verbindeOrdnerWahl(form) {
+  const haus = $("[name=objekt_id]", form), wahl = $("select[name=ordner]", form);
+  if (!haus || !wahl) return;
+  // Wunsch (KI-Vorschlag oder eigene Wahl) merken, damit er beim Hin- und Herwechseln des Hauses wiederkommt
+  let wunsch = wahl.dataset.wunsch || wahl.value;
+  wahl.addEventListener("change", (e) => { if (e.isTrusted) wunsch = wahl.value; });
+  const fuellen = () => {
+    const objektId = haus.value || null;
+    const neu = passenderOrdner(wunsch, objektId) !== "Sonstiges" || wunsch === "Sonstiges" ? passenderOrdner(wunsch, objektId) : passenderOrdner(wahl.value, objektId);
+    wahl.innerHTML = ordnerOptionen(ordnerFuer(objektId), neu);
+    wahl.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  haus.addEventListener("change", fuellen);
 }
 const endungVon = (d) => ENDUNG[d.typ] || "jpg";
 // Dateiname zum Speichern: Name aus der Ablage, nur Zeichen, die überall erlaubt sind
@@ -98,7 +131,8 @@ export function detailsVorschlag({ mieterId = null, art = null, ki = {}, objektI
 /** Automatische Unterordner: „je Jahr“ (Jahr des Dokuments) oder „je Wohnung“ (Wohnung - Nachname) */
 export const ordnerAutomatik = (name) => zustand.dokOrdnerAuto?.get(name) || null;
 export function zielOrdner(basis, { datum = null, mieterId = null, wohnungId = null, objektId = undefined } = {}) {
-  const art = ordnerAutomatik(basis);
+  // Unter „Allgemein“ (objektId null) gibt es keine automatischen Unterordner
+  const art = objektId === null ? null : ordnerAutomatik(basis);
   if (art === "jahr") {
     const jahr = String(datum || heuteISO()).slice(0, 4);
     return /^\d{4}$/.test(jahr) ? `${basis}/${jahr}` : basis;
@@ -120,6 +154,7 @@ function verbindeNamen(bereich, { ki = {} } = {}) {
   const titel = feld("titel"), details = feld("details");
   let titelVonHand = false, detailsVonHand = false;
   const hausWahl = () => feld("objekt_id").value || null;
+  verbindeOrdnerWahl(bereich);
   const pruefeHaus = () => {
     const hinweis = $("[data-mieter-hinweis]", bereich);
     if (!hinweis) return;
@@ -151,7 +186,11 @@ function verbindeNamen(bereich, { ki = {} } = {}) {
   // Mietpartei gewählt → Haus folgt
   feld("mieter_id")?.addEventListener("change", () => {
     const haus = hausVonMieter(mieterVon(feld("mieter_id").value || null));
-    if (haus && haus !== hausWahl()) feld("objekt_id").value = haus;
+    if (haus && haus !== hausWahl()) {
+      feld("objekt_id").value = haus;
+      feld("objekt_id").dispatchEvent(new Event("change", { bubbles: true })); // Ordnerliste folgt dem Haus
+      return;
+    }
     neueDetails();
   });
   feld("art").addEventListener("change", neueDetails);
@@ -340,7 +379,7 @@ export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von 
         <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(hausStart)}</select></label>
         <label class="feld"><span>Mietpartei (optional)</span><select name="mieter_id">${mieterOptionen(mieterL, erkannt.mieter_id || null)}</select>
           <span class="feldhinweis feldhinweis--warn" data-mieter-hinweis></span></label>
-        <label class="feld"><span>Ordner</span><select name="ordner">${ordnerOptionen(ordnerL, ordnerL.includes(erkannt.ordner) ? erkannt.ordner : "Sonstiges")}</select>
+        <label class="feld"><span>Ordner</span><select name="ordner" data-wunsch="${esc(erkannt.ordner || "")}">${ordnerOptionen(ordnerFuer(hausStart), passenderOrdner(erkannt.ordner, hausStart))}</select>
           <span class="feldhinweis feldhinweis--leise" data-zielordner></span></label>
         <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, artStart)}</select></label>
         <label class="feld"><span>Details (für den Namen)</span><input name="details" value="${esc(detailsVorschlag({ mieterId: erkannt.mieter_id || null, art: artStart, ki: kiTeile }))}" maxlength="80" placeholder="z. B. Wasserschaden_WHG 1_2430,31"></label>
@@ -543,7 +582,7 @@ export async function oeffneDokument(d, { nachher = () => {} } = {}) {
         <label class="feld breit"><span>Name</span><input name="titel" required maxlength="160" value="${esc(d.titel)}"></label>
         <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(d.objekt_id)}</select></label>
         <label class="feld"><span>Mietpartei</span><select name="mieter_id">${mieterOptionen(mieterL, d.mieter_id)}</select></label>
-        <label class="feld"><span>Ordner</span><select name="ordner">${ordnerOptionen(ordnerL, d.ordner)}</select></label>
+        <label class="feld"><span>Ordner</span><select name="ordner">${ordnerOptionen(ordnerFuer(d.objekt_id), d.ordner)}</select></label>
         <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, d.art || "Sonstiges")}</select></label>
         <label class="feld"><span>Datum</span><input type="date" name="datum" value="${esc(d.datum || "")}"></label>
         <label class="feld"><span>Absender</span><input name="absender" value="${esc(d.absender || "")}"></label>
@@ -556,6 +595,7 @@ export async function oeffneDokument(d, { nachher = () => {} } = {}) {
     </div>`, {
     breit: true,
     vorbereiten: async (form) => {
+      verbindeOrdnerWahl(form);
       try {
         const [ansehen, laden] = await Promise.all([db.dateiAdresse("dokumente", d.pfad), db.dateiAdresse("dokumente", d.pfad, { download: `${sichererDateiname(d.titel)}.${endungVon(d)}` })]);
         for (const a of $$("[data-ansehen]", form)) a.href = ansehen;
@@ -577,7 +617,7 @@ export async function oeffneDokument(d, { nachher = () => {} } = {}) {
         objekt_id: daten.get("objekt_id") || null,
         mieter_id: daten.get("mieter_id") || null,
         ordner: daten.get("ordner") === d.ordner ? d.ordner
-          : zielOrdner(daten.get("ordner"), { datum: daten.get("datum") || d.datum, mieterId: daten.get("mieter_id") || null }),
+          : zielOrdner(daten.get("ordner"), { datum: daten.get("datum") || d.datum, mieterId: daten.get("mieter_id") || null, objektId: daten.get("objekt_id") || null }),
         art: daten.get("art"),
         datum: daten.get("datum") || null,
         absender: String(daten.get("absender") || "").trim() || null,
@@ -768,13 +808,21 @@ const ordnerTeil = (s) => String(s || "").replace(/\//g, "-").replace(/\s+/g, " 
 export const wieWohnung = (s) => /^(wohnung|whg\.?|we)\s*\d+/i.test(String(s).trim()) || /^(eg|og|dg|\d+\.\s*og)\b/i.test(String(s).trim()) || /(dach|erd)geschoss/i.test(s);
 const ICON_ORDNER_KLEIN = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>`;
 
-export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
+/**
+ * Ordner bearbeiten. bereich „haus“: Ordner, die es in jedem Haus gleich gibt;
+ * „allgemein“: frei angelegte Ordner nur unter Allgemein (ohne Vorgabe, ohne automatische Unterordner).
+ */
+export async function ordnerBearbeiten({ nachher = () => {}, bereich = "haus" } = {}) {
+  const allgemein = bereich === "allgemein";
   await ordnerListe(true);
-  const roh = (zustand.dokOrdnerZeilen || []).filter((o) => o.name !== "Sonstiges");
-  const namenAlle = new Set((zustand.dokOrdnerZeilen || []).map((o) => o.name));
+  const zeilen = (allgemein ? zustand.dokOrdnerZeilenAllgemein : zustand.dokOrdnerZeilen) || [];
+  const roh = zeilen.filter((o) => o.name !== "Sonstiges");
+  const namenAlle = new Set(zeilen.map((o) => o.name));
   const anzahl = {};
+  // Nur Dokumente des Bereichs zählen (Allgemein = ohne Haus)
+  const doks = (await db.ladeDokumente(allgemein ? { objektId: null } : {}).catch(() => [])).filter((d) => allgemein || d.objekt_id);
   // Dokumente in automatischen Unterordnern (z. B. „04_Betriebskosten/2026“) zählen beim Ordner darüber mit
-  for (const d of await db.ladeDokumente({}).catch(() => [])) {
+  for (const d of doks) {
     let k = d.ordner;
     while (k && !namenAlle.has(k) && k.includes("/")) k = k.slice(0, k.lastIndexOf("/"));
     anzahl[k] = (anzahl[k] || 0) + 1;
@@ -802,7 +850,7 @@ export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
     kinder(k).filter((x) => !nurAktiv || !x.weg).flatMap((x) => [{ x, tiefe }, ...baum(x.key, tiefe + 1, nurAktiv)]);
   const wohnungsOrdner = () => liste.find((x) => !x.eltern && !x.weg && x.automatik === "wohnung");
 
-  const warnungVon = (x, wo = wohnungsOrdner()) => !x.weg && wieWohnung(x.teil) && !(x.eltern && nachKey(x.eltern)?.automatik === "wohnung")
+  const warnungVon = (x, wo = wohnungsOrdner()) => !allgemein && !x.weg && wieWohnung(x.teil) && !(x.eltern && nachKey(x.eltern)?.automatik === "wohnung")
     ? `Sieht aus wie ein Wohnungsordner. Die entstehen${wo ? ` unter „${esc(ordnerTeil(wo.teil))}“` : ""} automatisch aus den Mietparteien. Diesen Ordner am besten löschen.` : "";
   const zeileHtml = ({ x, tiefe }) => {
     const elternWeg = x.eltern && nachKey(x.eltern)?.weg;
@@ -828,7 +876,7 @@ export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
             <button type="button" class="knopf knopf--klein" data-schritt="1" aria-label="Nach unten">↓</button>
             <button type="button" class="knopf knopf--klein knopf--gefahr" data-weg aria-label="Ordner löschen">✕</button>`}
         </div>
-        ${!tiefe && !x.weg ? `
+        ${!tiefe && !x.weg && !allgemein ? `
         <select class="oz__auto" aria-label="Automatische Unterordner">
           <option value="">ohne automatische Unterordner</option>
           <option value="jahr" ${x.automatik === "jahr" ? "selected" : ""}>automatisch je Jahr (2025, 2026 …)</option>
@@ -842,11 +890,13 @@ export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
   let ergebnis = null, formular = null;
   const zeichne = (fokusKey = null) => {
     const form = formular;
-    $(".ozliste", form).innerHTML = baum().map(zeileHtml).join("") + `
+    const zeilenHtml = baum().map(zeileHtml).join("");
+    $(".ozliste", form).innerHTML = (allgemein && !zeilenHtml ? `<p class="leise oz-leer">Noch keine Ordner. Oben einfach einen anlegen.</p>` : zeilenHtml) +
+      (allgemein && !anzahl.Sonstiges ? "" : `
       <div class="oz oz--fest" style="--tiefe:0"><div class="oz__zeile"><span class="oz__symbol">${ICON_ORDNER_KLEIN}</span>
         <input value="Sonstiges" readonly tabindex="-1" aria-label="Sonstiges (immer da)">
         ${anzahl.Sonstiges ? `<span class="leise oz__zahl">${anzahl.Sonstiges} Dok.</span>` : ""}</div>
-        <div class="oz__knoepfe"><span class="leise">immer da, für alles ohne passenden Ordner</span></div></div>`;
+        <div class="oz__knoepfe"><span class="leise">immer da, für alles ohne passenden Ordner</span></div></div>`);
     auswahlNeu();
     if (fokusKey) {
       const z = $(`.oz[data-key="${fokusKey}"]`, form);
@@ -880,7 +930,10 @@ export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
     const eltern = nachKey($("[data-neu-eltern]", form).value);
     const wo = wohnungsOrdner();
     if (text) { h.textContent = text; h.className = `feldhinweis ${art}`; return; }
-    if (name && wieWohnung(name)) {
+    if (allgemein) {
+      h.textContent = name ? `Wird angelegt als: ${ordnerAnzeige((eltern ? voll(eltern) + "/" : "") + name)} (nur unter Allgemein)` : "Gilt nur unter Allgemein, nicht in den Häusern.";
+      h.className = "feldhinweis feldhinweis--leise";
+    } else if (name && wieWohnung(name)) {
       h.textContent = `Wohnungsordner bitte nicht von Hand anlegen: Sie entstehen${wo ? ` unter „${ordnerTeil(wo.teil)}“` : ""} automatisch, sobald etwas für eine Mietpartei abgelegt wird. Wohnungen und Mietparteien legt man unter Mieter → „Häuser & Wohnungen“ an.`;
       h.className = "feldhinweis feldhinweis--warn";
     } else if (eltern?.automatik === "wohnung") {
@@ -913,8 +966,11 @@ export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
   };
 
   const daten = await dialogFormular(`
-    <h2>Ordner der Ablage</h2>
-    <p class="leise">Diese Ordner gibt es in <strong>jedem Haus</strong> gleich. Die KI legt Dateien nur hier ab.</p>
+    ${allgemein
+      ? `<h2>Ordner unter „Allgemein“</h2>
+    <p class="leise">Hier gibt es keine Vorgabe: Lege die Ordner an, die du brauchst. Sie gelten <strong>nur unter Allgemein</strong>, nicht in den Häusern.</p>`
+      : `<h2>Ordner der Ablage</h2>
+    <p class="leise">Diese Ordner gibt es in <strong>jedem Haus</strong> gleich. Die KI legt Dateien nur hier ab.</p>`}
     <fieldset class="ordner-neu">
       <legend>Neuen Ordner anlegen</legend>
       <div class="ordner-neu__zeile">
@@ -1015,7 +1071,7 @@ export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
   const warte = wartehinweis("Ordner werden gespeichert …");
   try {
     for (const o of loeschen) {
-      await db.verschiebeDokumente(o.alt, "Sonstiges", { flach: true, ausser: bleiben.map((x) => x.alt) });
+      await db.verschiebeDokumente(o.alt, "Sonstiges", { flach: true, ausser: bleiben.map((x) => x.alt), allgemein });
       await db.loescheDokumentOrdner(o.id);
     }
     // Erst die Oberordner (kürzere Namen), damit Unterordner-Dokumente nicht doppelt verschoben werden
@@ -1023,10 +1079,10 @@ export async function ordnerBearbeiten({ nachher = () => {} } = {}) {
       const felder = { name: o.name, reihenfolge: o.reihenfolge };
       if (o.automatik !== o.vorher) felder.automatik = o.automatik || null;
       await db.speichereDokumentOrdner(o.id, felder);
-      if (o.name !== o.alt) await db.verschiebeDokumente(o.alt, o.name);
+      if (o.name !== o.alt) await db.verschiebeDokumente(o.alt, o.name, { allgemein });
     }
     for (const o of neue) {
-      await db.speichereDokumentOrdner(null, { name: o.name, reihenfolge: o.reihenfolge, ...(o.automatik ? { automatik: o.automatik } : {}) });
+      await db.speichereDokumentOrdner(null, { name: o.name, reihenfolge: o.reihenfolge, bereich, ...(o.automatik && !allgemein ? { automatik: o.automatik } : {}) });
     }
     await ordnerListe(true);
     melde("Ordner gespeichert.", "ok");
@@ -1110,7 +1166,8 @@ function ordnerOhneKi(liste, e) {
 }
 
 async function vorschlagFuer(e) {
-  const liste = await ordnerListe();
+  await ordnerListe();
+  const liste = ordnerFuer(e.objektId || null); // ohne Haus: nur die Ordner unter „Allgemein“
   const ersatz = { ordner: ordnerOhneKi(liste, e), art: e.art || "Sonstiges", gegenueber_kurz: null, zusammenfassung: "", vonKi: false };
   if (!zustand.ki?.ki) return ersatz;
   try {
@@ -1300,7 +1357,7 @@ export async function inAblageDialog(e, { nachher = () => {}, schon = [] } = {})
     ${e.beschreibung ? `<p class="leise">${esc(e.beschreibung)}</p>` : ""}
     ${schon.length ? `<p class="leise">Schon abgelegt als „${esc(schon[0].titel)}“ (${esc(ordnerAnzeige(schon[0].ordner))}). Es kommt eine weitere Fassung dazu.</p>` : ""}
     <div class="formraster formraster--zwei">
-      <label class="feld"><span>Ordner</span><select name="ordner">${ordnerOptionen(ordnerL, v.ordner)}</select>
+      <label class="feld"><span>Ordner</span><select name="ordner" data-wunsch="${esc(v.ordner || "")}">${ordnerOptionen(ordnerFuer(e.objektId || null), passenderOrdner(v.ordner, e.objektId || null))}</select>
         ${v.vonKi ? `<span class="feldhinweis">Vorschlag der KI</span>` : ""}
         <span class="feldhinweis feldhinweis--leise" data-zielordner></span></label>
       <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(e.objektId || null)}</select></label>

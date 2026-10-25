@@ -90,7 +90,7 @@ const sortiert = (k) => [...k.kinder.values()].sort((a, b) => {
 function baumHtml(k, objektKey, tiefe = 0) {
   return sortiert(k).map((x) => {
     const n = summe(x);
-    const auto = ablage.ordnerAutomatik(x.pfad);
+    const auto = objektKey === "allgemein" ? null : ablage.ordnerAutomatik(x.pfad); // unter Allgemein keine Automatik
     const schluessel = `${objektKey}|${x.pfad}`;
     const leerText = auto === "jahr" ? "Leer. Unterordner je Jahr entstehen beim Ablegen automatisch."
       : auto === "wohnung" ? "Leer. Unterordner je Wohnung entstehen beim Ablegen automatisch."
@@ -117,8 +117,9 @@ export async function zeigeOrdner(id) {
   const o = allgemein ? null : objektVon(id);
   if (!allgemein && !o) throw new Error("Dieses Haus gibt es nicht (mehr).");
   const objektId = allgemein ? null : o.id;
+  // Allgemein hat eigene, frei angelegte Ordner; „Sonstiges“ erscheint dort nur, wenn etwas drinliegt
   const [ordnerNamen, dokumente] = await Promise.all([
-    ablage.ordnerListe(),
+    ablage.ordnerListe(false, allgemein ? "allgemein" : "haus").then((l) => (allgemein ? l.filter((n) => n !== "Sonstiges") : l)),
     db.ladeDokumente({ objektId }).catch(() => []),
   ]);
   const titel = allgemein ? "Allgemein" : o.bezeichnung;
@@ -144,14 +145,14 @@ export async function zeigeOrdner(id) {
     </div>
     ${ablage.ablegeflaecheHtml({ text: `Dateien für ${titel} hierher ziehen` })}
     <section class="flaeche">
-      <div class="flaeche__kopf"><h2>Ordner</h2>
-        <span class="knopfreihe">
+      <div class="flaeche__kopf"><h2>Ordner</h2>${allgemein ? `<span class="leise">frei angelegt, nur hier</span>` : ""}
+        ${baum.kinder.size ? `<span class="knopfreihe">
           <button type="button" class="knopf knopf--klein knopf--leise" id="alle-auf">Alle aufklappen</button>
           <button type="button" class="knopf knopf--klein knopf--leise" id="alle-zu">Alle zuklappen</button>
-        </span></div>
-      <div class="baum">${baumHtml(baum, id)}</div>
+        </span>` : ""}</div>
+      <div class="baum">${baumHtml(baum, id) || (allgemein ? `<p class="baum__leer leise">Hier gibt es keine feste Ordnerstruktur. Lege mit „Ordner anlegen“ die Ordner an, die du brauchst, oder zieh Dateien einfach oben hinein (sie landen dann in „Sonstiges“).</p>` : "")}</div>
       <div class="flaeche__fuss knopfreihe">
-        <button type="button" class="knopf knopf--klein" id="ordner-bearbeiten">Ordner bearbeiten</button>
+        <button type="button" class="knopf knopf--klein" id="ordner-bearbeiten">${allgemein ? (ordnerNamen.length ? "Ordner bearbeiten" : "Ordner anlegen") : "Ordner bearbeiten"}</button>
         ${dokumente.length ? `<button type="button" class="knopf knopf--klein" id="zip">Als ZIP herunterladen</button>` : ""}
         ${unerschlossen.length && zustand.ki?.ki ? `<button type="button" class="knopf knopf--klein knopf--ki" id="erschliessen" title="Die KI liest die Dateien einmal und merkt sich, was drinsteht">${ICON_KI} Für die KI erschließen (${unerschlossen.length})</button>` : ""}
       </div>
@@ -171,8 +172,8 @@ export async function zeigeOrdner(id) {
     d.addEventListener("toggle", () => (d.open ? offen.add(d.dataset.pfad) : offen.delete(d.dataset.pfad)));
   }
   const alle = (auf) => { for (const d of $$(".baum__ordner", inhalt())) if (!d.classList.contains("baum__ordner--leer") || !auf) d.open = auf; };
-  $("#alle-auf").addEventListener("click", () => alle(true));
-  $("#alle-zu").addEventListener("click", () => alle(false));
-  $("#ordner-bearbeiten").addEventListener("click", () => ablage.ordnerBearbeiten({ nachher: neuLaden }));
+  $("#alle-auf")?.addEventListener("click", () => alle(true));
+  $("#alle-zu")?.addEventListener("click", () => alle(false));
+  $("#ordner-bearbeiten").addEventListener("click", () => ablage.ordnerBearbeiten({ nachher: neuLaden, bereich: allgemein ? "allgemein" : "haus" }));
   $("#zip")?.addEventListener("click", () => ablage.zipExport({ objektId }));
 }

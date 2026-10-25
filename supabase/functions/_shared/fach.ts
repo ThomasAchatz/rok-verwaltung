@@ -24,23 +24,38 @@ export const DOKUMENT_ARTEN = [
 ];
 
 /** Ordner der Dokumentenablage: bearbeitbare Liste aus der Datenbank, sonst die Standardliste */
-export async function dokumentOrdner(zugriff: Zugriff): Promise<string[]> {
-  return (await dokumentOrdnerInfo(zugriff)).namen;
+export async function dokumentOrdner(zugriff: Zugriff, bereich: OrdnerBereich = "haus"): Promise<string[]> {
+  return (await dokumentOrdnerInfo(zugriff, bereich)).namen;
 }
+/**
+ * Bereiche der Ablage: „haus“ = Ordner, die es in jedem Haus gleich gibt; „allgemein“ = frei angelegte Ordner
+ * für Unterlagen ohne Haus; „beide“ = beide Listen (wenn das Haus noch nicht feststeht, z. B. beim Lesen eines Briefs).
+ */
+export type OrdnerBereich = "haus" | "allgemein" | "beide";
 /** Ordnerliste plus Hinweis für die KI, welche Ordner automatische Unterordner bekommen (je Jahr / je Wohnung) */
-export async function dokumentOrdnerInfo(zugriff: Zugriff): Promise<{ namen: string[]; hinweis: string }> {
-  const zeilen = await rest("dokument_ordner?select=name,automatik&order=reihenfolge,name", zugriff).catch(() => []);
-  const liste: { name: string; automatik?: string | null }[] = (Array.isArray(zeilen) ? zeilen : [])
-    .map((z: { name: string; automatik?: string | null }) => ({ name: String(z.name ?? "").trim(), automatik: z.automatik ?? null }))
+export async function dokumentOrdnerInfo(zugriff: Zugriff, bereich: OrdnerBereich = "haus"): Promise<{ namen: string[]; hinweis: string }> {
+  const zeilen = await rest("dokument_ordner?select=name,automatik,bereich&order=reihenfolge,name", zugriff).catch(() => []);
+  const alle: { name: string; automatik?: string | null; bereich: string }[] = (Array.isArray(zeilen) ? zeilen : [])
+    .map((z: { name: string; automatik?: string | null; bereich?: string | null }) => ({ name: String(z.name ?? "").trim(), automatik: z.automatik ?? null, bereich: z.bereich || "haus" }))
     .filter((z) => z.name);
+  const allgemein = [...new Set(alle.filter((z) => z.bereich === "allgemein" && z.name !== "Sonstiges").map((z) => z.name))];
+  if (bereich === "allgemein") {
+    return { namen: [...allgemein, "Sonstiges"], hinweis: allgemein.length ? "" : " Unter „Allgemein“ gibt es noch keine eigenen Ordner, daher „Sonstiges“." };
+  }
+  const liste = alle.filter((z) => z.bereich === "haus");
   if (!liste.length) return { namen: DOKUMENT_ORDNER, hinweis: "" };
   const namen = liste.map((z) => z.name);
   const auto = liste.filter((z) => z.automatik === "jahr" || z.automatik === "wohnung")
     .map((z) => `${z.name} (${z.automatik === "jahr" ? "je Jahr" : "je Wohnung/Mietpartei"})`);
-  return {
-    namen: namen.includes("Sonstiges") ? namen : [...namen, "Sonstiges"],
-    hinweis: auto.length ? ` Diese Ordner bekommen ihre Unterordner automatisch, dort nur den Hauptordner wählen: ${auto.join(", ")}.` : "",
-  };
+  const hinweisAuto = auto.length ? ` Diese Ordner bekommen ihre Unterordner automatisch, dort nur den Hauptordner wählen: ${auto.join(", ")}.` : "";
+  const hausNamen = namen.includes("Sonstiges") ? namen : [...namen, "Sonstiges"];
+  if (bereich === "beide") {
+    return {
+      namen: [...new Set([...hausNamen, ...allgemein])],
+      hinweis: hinweisAuto + ` Gehört das Schreiben zu keinem Haus (objekt_id null), nur einen dieser Ordner wählen: ${[...allgemein, "Sonstiges"].join(", ")}.`,
+    };
+  }
+  return { namen: hausNamen, hinweis: hinweisAuto };
 }
 
 // Teile für den Dateinamen (Datum_Ort_Straße_Art_Thema_Wohnung_Betrag); zusammengesetzt wird in der App
@@ -528,7 +543,7 @@ export async function liesDokument(
   }
   const name = ohneIban(dateiname).replace(/[\u0000-\u001f<>]/g, " ").trim().slice(0, 150);
   const [{ objekte, text: objekteText }, { mieter, text: mieterText }, { namen: ordnerListe, hinweis: ordnerHinweis }, { wohnungen, text: wohnungenText }] = await Promise.all([
-    objektListe(zugriff), mieterListe(zugriff), dokumentOrdnerInfo(zugriff), wohnungListe(zugriff),
+    objektListe(zugriff), mieterListe(zugriff), dokumentOrdnerInfo(zugriff, "beide"), wohnungListe(zugriff),
   ]);
   // Werkzeug mit der aktuellen Ordnerliste (Unterordner mit „/“)
   const werkzeug: Werkzeug = {
@@ -607,8 +622,9 @@ export async function ablageVorschlag(e: AblageAnfrage, zugriff: Zugriff): Promi
   const text = kuerze(ohneIban(e.text), 4000);
   const titel = ohneIban(e.titel).slice(0, 300);
   if (!text.trim() && !titel.trim()) throw new Fehler(400, "Kein Text zum Ablegen.", "eingabe");
+  // Ohne Haus (objekt_id leer) gelten die frei angelegten Ordner unter „Allgemein“
   const [{ namen: ordnerListe, hinweis: ordnerHinweis }, mieter, haus] = await Promise.all([
-    dokumentOrdnerInfo(zugriff),
+    dokumentOrdnerInfo(zugriff, e.objekt_id ? "haus" : "allgemein"),
     e.mieter_id ? rest(`mieter?id=eq.${enc(e.mieter_id)}&select=vorname,nachname,wohnung_id,wohnung:wohnungen(bezeichnung,objekt_id,objekt:objekte(bezeichnung))`, zugriff).then((r) => r[0]).catch(() => null) : null,
     e.objekt_id ? rest(`objekte?id=eq.${enc(e.objekt_id)}&select=bezeichnung`, zugriff).then((r) => r[0]).catch(() => null) : null,
   ]);

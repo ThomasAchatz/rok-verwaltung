@@ -72,13 +72,16 @@ export async function planeZip(datei, { objektId = undefined } = {}) {
   const hausVonOben = new Map(oben.map((n) => [n, hausFuer(n)]).filter(([, h]) => h));
   const hausModus = hausVonOben.size > 0 && (objektId === undefined || [...hausVonOben.values()].every((h) => h.id === objektId));
 
-  const ordnerZeilen = (await ordnerListe(true), zustand.dokOrdnerZeilen || []);
-  const vorhanden = new Map(ordnerZeilen.map((o) => [norm(o.name), o]));
-  const auto = zustand.dokOrdnerAuto || new Map();
-  const neueOrdner = new Set();
-
-  const ordnerFuer = (teile) => {
+  // Zwei getrennte Ordnerlisten: Häuser (gleich in jedem Haus) und Allgemein (frei, ohne Automatik)
+  await ordnerListe(true);
+  const bereiche = {
+    haus: { vorhanden: new Map((zustand.dokOrdnerZeilen || []).map((o) => [norm(o.name), o])), auto: zustand.dokOrdnerAuto || new Map(), neu: new Set() },
+    allgemein: { vorhanden: new Map((zustand.dokOrdnerZeilenAllgemein || []).map((o) => [norm(o.name), o])), auto: new Map(), neu: new Set() },
+  };
+  // Ordnerpfad aus der ZIP auf die Liste des Bereichs abbilden; fehlende Ordner werden vorgemerkt
+  const ordnerFuer = (teile, bereich = "haus") => {
     if (!teile.length) return "Sonstiges";
+    const { vorhanden, auto, neu } = bereiche[bereich];
     const fertig = [];
     let virtuell = false;
     for (let i = 0; i < teile.length; i++) {
@@ -87,7 +90,7 @@ export async function planeZip(datei, { objektId = undefined } = {}) {
       if (da) { fertig.splice(0, fertig.length, ...da.name.split("/")); continue; }
       const eltern = fertig.join("/");
       if (virtuell || (eltern && auto.get(eltern))) virtuell = true; // Unterordner je Jahr/Wohnung entstehen von selbst
-      else neueOrdner.add(name);
+      else if (norm(name) !== norm("Sonstiges")) neu.add(name);
       fertig.push(teile[i].trim());
     }
     return fertig.join("/");
@@ -110,11 +113,19 @@ export async function planeZip(datei, { objektId = undefined } = {}) {
     dateien.push({
       eintrag: f, typ, endung: endung === "jpeg" ? "jpg" : endung,
       titel: name.replace(/\.[^.]+$/, "").trim().slice(0, 160) || "Datei",
-      ordner: ordnerFuer(p.slice(0, -1)),
+      teile: p.slice(0, -1),
+      ordner: ordnerFuer(p.slice(0, -1), haus === null ? "allgemein" : "haus"),
       haus, datum: datumAus(name, f.date), art: artAus(name),
     });
   });
-  return { dateien, uebersprungen, neueOrdner: [...neueOrdner].sort(), hausModus };
+  // Neue Ordner je Bereich erst bestimmen, wenn jedes Haus feststeht (Haus der übrigen Dateien wählt man im Dialog)
+  const neueOrdnerFuer = () => {
+    for (const b of Object.values(bereiche)) b.neu.clear();
+    for (const d of dateien) d.ordner = ordnerFuer(d.teile, d.haus === null ? "allgemein" : "haus");
+    return { haus: [...bereiche.haus.neu].sort(), allgemein: [...bereiche.allgemein.neu].sort() };
+  };
+  const vorab = neueOrdnerFuer();
+  return { dateien, uebersprungen, neueOrdner: [...new Set([...vorab.haus, ...vorab.allgemein])].sort(), neueOrdnerFuer, hausModus };
 }
 
 // --- Dialog: Vorschau und Import ---------------------------------------------------------
@@ -171,12 +182,15 @@ export async function zipImport(datei, { objektId = undefined, nachher = () => {
   const wahl = daten.get("haus");
   for (const d of ohneHaus) d.haus = wahl === "allgemein" ? null : wahl || null;
 
-  // Neue Ordner anlegen (gelten für alle Häuser)
+  // Neue Ordner anlegen: in Häusern für alle Häuser, unter Allgemein nur dort
   try {
-    const zeilen = zustand.dokOrdnerZeilen || [];
-    let platz = zeilen.reduce((m, o) => Math.max(m, Number(o.reihenfolge) || 0), 0);
-    for (const name of plan.neueOrdner) await db.speichereDokumentOrdner(null, { name, reihenfolge: ++platz });
-    if (plan.neueOrdner.length) await ordnerListe(true);
+    const neue = plan.neueOrdnerFuer();
+    for (const bereich of ["haus", "allgemein"]) {
+      const zeilen = (bereich === "haus" ? zustand.dokOrdnerZeilen : zustand.dokOrdnerZeilenAllgemein) || [];
+      let platz = zeilen.reduce((m, o) => Math.max(m, Number(o.reihenfolge) || 0), 0);
+      for (const name of neue[bereich]) await db.speichereDokumentOrdner(null, { name, reihenfolge: ++platz, bereich });
+    }
+    if (neue.haus.length || neue.allgemein.length) await ordnerListe(true);
   } catch (err) {
     return melde("Ordner konnten nicht angelegt werden: " + err.message, "fehler");
   }

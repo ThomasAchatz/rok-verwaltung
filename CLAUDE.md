@@ -38,7 +38,8 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Tabellen: mitglieder, vermieter_profil, objekte, wohnungen, kostentraeger, mieter, forderungen,
   vorgaenge, vorlagen, nachrichten, antworten, wissen, postfach, aufgaben, dienstleister, dokumente, kontakte, verlauf,
   themen (E-Mail-Vorgänge: nachrichten/antworten.thema_id, Status offen|erledigt, Abschluss-PDF in dokument_id),
-  dokument_ordner (bearbeitbare Ordnerliste, Unterordner mit „/“, „Sonstiges“ fest; KI liest sie über `dokumentOrdner()`);
+  dokument_ordner (bearbeitbare Ordnerliste, Unterordner mit „/“, „Sonstiges“ fest; KI liest sie über `dokumentOrdner()`;
+  Spalte `bereich` 'haus' | 'allgemein', siehe „Ordner unter Allgemein“ unten);
   View mieter_uebersicht (security_invoker); Buckets `vorlagen`, `schreiben`, `eingang`, `dokumente` (privat).
 - Edge Functions `ki`, `posteingang`, `versand` (Quellen in `supabase/functions/`, gemeinsamer Code in
   `_shared/` (gemeinsam, fach, mieterhoehung, chat, notiz), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
@@ -162,3 +163,9 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   `css/design-b.css` (alle mit `.design-b` davor). Elemente nur für B haben `nur-design-b` (sonst versteckt), dazu `.nav-icon`,
   `#oberleiste` (fragt den Chat über `oeffneChat(frage)`), Route `#/rueckstaende` (Filter), `vorbereitetHtml()` in start.js
   („Die KI hat vorbereitet“, prüft die Klasse). Zurück zum alten Design: Klasse in index.html entfernen (oder Commit zurücknehmen).
+- Ordner unter Allgemein (Migration `20261025120000_ordner_allgemein.sql`): `dokument_ordner.bereich` 'haus' (in jedem Haus gleich) |
+  'allgemein' (frei angelegt, ohne Vorgabe, ohne Automatik; unique(bereich, name)). App: `ordnerListe(neu, bereich)`, `ordnerFuer(objektId)`,
+  `passenderOrdner(name, objektId)`, Auswahl im Dialog folgt dem Haus (`verbindeOrdnerWahl`, merkt den KI-Wunsch in `data-wunsch`);
+  `ordnerBearbeiten({ bereich })`, `verschiebeDokumente(…, { allgemein })` trifft nur den eigenen Bereich; `zielOrdner(…, { objektId: null })`
+  ohne Automatik. Server: `dokumentOrdnerInfo(zugriff, "haus"|"allgemein"|"beide")` (ablage_vorschlag ohne objekt_id → allgemein,
+  brief_lesen → beide). ZIP-Import legt fehlende Ordner im passenden Bereich an (`plan.neueOrdnerFuer()`).

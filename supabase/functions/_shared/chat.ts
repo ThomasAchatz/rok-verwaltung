@@ -308,7 +308,7 @@ export async function chat(verlauf: Beitrag[], zugriff: Zugriff): Promise<{ text
   while (beitraege.length && beitraege[0].role !== "user") beitraege.shift();
   if (!beitraege.length || beitraege[beitraege.length - 1].role !== "user") throw new Fehler(400, "Bitte eine Frage stellen.", "eingabe");
 
-  const [[profil], ordnerListe] = await Promise.all([rest("vermieter_profil?id=eq.1&select=firma,inhaber", zugriff), dokumentOrdner(zugriff)]);
+  const [[profil], ordnerListe, ordnerAllgemein] = await Promise.all([rest("vermieter_profil?id=eq.1&select=firma,inhaber", zugriff), dokumentOrdner(zugriff), dokumentOrdner(zugriff, "allgemein")]);
   const system =
     `Du bist der Assistent in der Verwaltungs-App von ${profil?.firma ?? "der Hausverwaltung"}. Du sprichst mit ${profil?.inhaber ?? "Robert"} (Du-Form, locker, kurz). Heute ist ${heuteDE()}.\n` +
     "Regeln:\n" +
@@ -324,7 +324,8 @@ export async function chat(verlauf: Beitrag[], zugriff: Zugriff): Promise<{ text
     "Sonst schlage 'kontakt' bzw. 'handwerker' vor, nur mit den Angaben, die Robert genannt hat (nichts dazuerfinden, keine Bankdaten). " +
     "Mietparteien legt Robert selbst an (Kontakte › Mieter › Neue Mietpartei), weil Wohnung, Miete und Mietbeginn dazugehören.\n" +
     "- Kontakte (Makler, Bank, Behörden …) haben einen Gesprächsverlauf und persönliche Infos (z. B. Geburtstag). Bei Fragen wie 'Was weiß ich über …' kontakt_info nutzen und das Wichtigste kurz zusammenfassen.\n" +
-    `- Dokument-Ordner: ${ordnerListe.join(", ")}.`;
+    `- Dokument-Ordner (in jedem Haus gleich): ${ordnerListe.join(", ")}.\n` +
+    `- Ordner unter „Allgemein“ (Unterlagen ohne Haus, frei angelegt): ${ordnerAllgemein.join(", ")}.`;
 
   // deno-lint-ignore no-explicit-any
   const nachrichten: any[] = [...beitraege];
