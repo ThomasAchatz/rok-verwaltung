@@ -469,7 +469,7 @@ anbei erhalten Sie „${esc(titel)}“ als PDF.</textarea></label>
   if (ablegen) await ablage.automatischAblegen({ ...pdfAblageEintrag(a), gegenueber: name || "" }, { vorgabe: { titel: a.dateiname }, immer: true });
 }
 
-export function oeffneChat() {
+export function oeffneChat(frage = "") {
   if (!eingerichtet) einrichten();
   const dlg = $("#chat");
   zeichne();
@@ -477,6 +477,12 @@ export function oeffneChat() {
   if (!zustand.ki?.ki) {
     $("#chat-verlauf").insertAdjacentHTML("afterbegin", `<div class="chat__fehler">Die KI ist noch nicht eingerichtet. Ohne sie kann der Chat nicht antworten.</div>`);
   }
-  $("#chat-form").frage.focus();
+  const form = $("#chat-form");
+  form.frage.focus();
+  // Aus der Suchleiste oben: Frage gleich stellen
+  if (String(frage).trim() && !laeuft) {
+    form.frage.value = String(frage).trim();
+    form.requestSubmit();
+  }
 }
 

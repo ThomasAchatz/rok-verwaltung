@@ -1,0 +1,119 @@
+/* =====================================================================
+   Design B: Tintenblau-Seitenleiste, Suchleiste oben, Schrift Manrope.
+   Gilt nur mit <html class="design-b"> (index.html). Klasse entfernen = altes Design.
+   Farben nur über die Variablen aus app.css; hier nur Werte für dieses Design.
+   ===================================================================== */
+.design-b {
+  --grund: #eef1f5;
+  --linie: #dfe4ec;
+  --radius: 12px;
+  --leiste: #1f3a5f;          /* Seitenleiste */
+  --leiste-text: #dbe4f0;
+  --leiste-aktiv: rgba(255, 255, 255, 0.13);
+  --schatten: 0 1px 2px rgba(22, 36, 58, 0.05), 0 4px 14px rgba(22, 36, 58, 0.05);
+  font-family: "Manrope", "Public Sans", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+.design-b h1 { font-weight: 800; letter-spacing: -0.015em; color: #16243a; }
+.design-b h2 { font-weight: 800; color: #16243a; }
+.design-b .flaeche { border-radius: 14px; box-shadow: var(--schatten); }
+.design-b .knopf { border-radius: 8px; font-weight: 600; }
+.design-b .knopf--primaer { background: var(--leiste); border-color: var(--leiste); }
+.design-b .reiter__knopf { border-radius: 999px; }
+
+/* --- Kopf (Handy und Tablet): dunkel statt weiß --------------------------- */
+.design-b .leiste { background: var(--leiste); border-bottom: 0; color: var(--leiste-text); }
+.design-b .leiste .marke__name { color: #ffffff; font-weight: 800; }
+.design-b .leiste .marke__zusatz { color: #c9a56b; }
+.design-b .navigation a { color: var(--leiste-text); }
+.design-b .navigation a:hover { color: #ffffff; background: var(--leiste-aktiv); }
+.design-b .navigation a[aria-current="page"] { color: #ffffff; background: var(--leiste-aktiv); font-weight: 700; }
+.design-b .nav-zahl { background: #c9a56b; color: #16243a; }
+.design-b .leiste__konto { color: #b9c7da; }
+.design-b .leiste__konto .knopf--leise { color: var(--leiste-text); }
+.design-b .leiste__konto .knopf--leise:hover { background: var(--leiste-aktiv); color: #ffffff; }
+.design-b .leiste__konto .knopf--ki { background: rgba(201, 165, 107, 0.18); border-color: rgba(201, 165, 107, 0.45); color: #f1dfbd; }
+
+/* --- Suchleiste oben (fragt die KI bzw. sucht über den Chat) --------------- */
+.design-b .oberleiste {
+  display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center;
+  padding: 0.8rem calc(1.5rem + env(safe-area-inset-right, 0px)) 0.8rem calc(1.5rem + env(safe-area-inset-left, 0px));
+  background: var(--flaeche); border-bottom: 1px solid var(--linie);
+}
+.design-b .oberleiste__suche {
+  flex: 1 1 260px; display: flex; align-items: center; gap: 0.6rem; min-height: 44px; padding: 0 0.9rem;
+  border: 1px solid var(--rand); border-radius: 10px; background: var(--flaeche-zart); color: var(--text-leise);
+}
+.design-b .oberleiste__suche:focus-within { border-color: var(--tinte-hell); outline: 2px solid var(--tinte-zart); }
+.design-b .oberleiste__suche input { border: 0; background: transparent; padding: 0; min-width: 0; flex: 1; font-size: 0.95rem; }
+.design-b .oberleiste__suche input:focus { outline: none; }
+.design-b .oberleiste .knopf { min-height: 44px; border-radius: 10px; }
+
+/* --- Breiter Bildschirm: Kopf wird zur Seitenleiste links ------------------ */
+@media (min-width: 901px) {
+  .design-b .app:not([hidden]) {
+    display: grid; grid-template-columns: 236px minmax(0, 1fr); grid-template-rows: auto auto 1fr; min-height: 100vh;
+  }
+  .design-b .app > :not(.leiste) { grid-column: 2; }
+  .design-b .leiste {
+    grid-column: 1; grid-row: 1 / -1; align-self: start;
+    position: sticky; top: 0; height: 100vh; box-sizing: border-box; overflow-y: auto;
+    flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 0;
+    padding: calc(1.4rem + env(safe-area-inset-top, 0px)) 0.75rem 1rem calc(0.75rem + env(safe-area-inset-left, 0px));
+  }
+  .design-b .leiste .marke { padding: 0 0.75rem 1.5rem; }
+  .design-b .navigation { flex-direction: column; flex: 0 0 auto; gap: 0.15rem; }
+  .design-b .navigation a {
+    display: flex; align-items: center; gap: 0.75rem; padding: 0.65rem 0.75rem; border-radius: 8px; font-size: 0.93rem;
+  }
+  .design-b .navigation .nav-icon { display: block; flex: none; }
+  .design-b .navigation a.nur-design-b { display: flex; }
+  .design-b .navigation .nav-lang { display: inline !important; }
+  .design-b .navigation .nav-kurz { display: none !important; }
+  .design-b .navigation a[data-nav="einstellungen"] { margin-top: 0.9rem; border-top: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0 0 8px 8px; padding-top: 0.9rem; }
+  .design-b .navigation .nav-zahl { margin-left: auto; }
+  .design-b .leiste__konto {
+    margin-top: auto; flex-direction: column; align-items: stretch; gap: 0.4rem; padding: 1rem 0.25rem 0;
+  }
+  .design-b .leiste__konto .knopf { justify-content: center; }
+  .design-b .leiste__email { display: block; font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 0.5rem; }
+  .design-b .oberleiste { display: flex; position: sticky; top: 0; z-index: 9; padding-left: 1.75rem; padding-right: 1.75rem; }
+  .design-b .inhalt { max-width: 1180px; width: 100%; box-sizing: border-box; padding-left: 1.75rem; padding-right: 1.75rem; }
+  /* Den „Fragen“-Knopf gibt es oben in der Suchleiste */
+  .design-b .leiste__konto [data-aktion="chat"] { display: none; }
+}
+/* Mit Seitenleiste ist der Inhalt schmaler: Mietbuch-Zeilen zweizeilig wie am Handy */
+@media (min-width: 901px) and (max-width: 1280px) {
+  .design-b .zeile { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "wer betrag" "buch buch"; row-gap: 0.55rem; }
+}
+/* Handy/Tablet: Suchleiste unter dem Kopf, schmaler */
+@media (max-width: 900px) {
+  .design-b .oberleiste { display: flex; padding: 0.6rem calc(1rem + env(safe-area-inset-right, 0px)) 0.6rem calc(1rem + env(safe-area-inset-left, 0px)); }
+  .design-b .oberleiste .knopf { display: none; }
+}
+
+/* --- Übersicht ------------------------------------------------------------- */
+/* Kennzahlen als dunkler Block */
+.design-b .lage { background: var(--leiste); border: 0; color: #ffffff; box-shadow: var(--schatten); border-radius: 14px; }
+.design-b .lage > div + div, .design-b .lage.lage--kompakt > * + * { border-color: rgba(255, 255, 255, 0.14); }
+.design-b .lage__wert { color: #ffffff; }
+.design-b .lage__wert--offen { color: #f2a79a; }
+.design-b .lage__text, .design-b .lage__zusatz { color: #b9c7da; }
+.design-b .lage__zusatz--offen { color: #f2a79a; }
+.design-b .lage__link { color: #e4ecf6; }
+.design-b .lage__kachel { color: inherit; }
+.design-b .lage__kachel:hover { background: rgba(255, 255, 255, 0.06); }
+.design-b .lage hr, .design-b .lage [class*="trenn"] { border-color: rgba(255, 255, 255, 0.14); }
+
+/* „Die KI hat vorbereitet“ */
+.vorbereitet { display: none; }
+.design-b .vorbereitet { display: block; margin-bottom: 1.25rem; border-color: var(--messing-rand); }
+.design-b .vorbereitet__kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 1rem 1.25rem 0.25rem; }
+.design-b .vorbereitet__kopf h2 { font-size: 1.05rem; display: flex; align-items: center; gap: 0.45rem; }
+.design-b .vorbereitet__kopf span { margin-left: auto; font-size: 0.82rem; color: var(--text-leise); }
+.design-b .vorbereitet__karten { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.85rem; padding: 0.75rem 1.25rem 1.25rem; }
+.design-b .vorschlagkarte { border: 1px solid var(--linie); border-radius: 12px; padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.design-b .vorschlagkarte__ort { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--messing-text); }
+.design-b .vorschlagkarte__ort--frist { color: var(--offen); }
+.design-b .vorschlagkarte__titel { font-weight: 700; color: var(--text); }
+.design-b .vorschlagkarte__text { font-size: 0.85rem; color: var(--text-leise); }
+.design-b .vorschlagkarte .knopfreihe { margin-top: 0.35rem; }

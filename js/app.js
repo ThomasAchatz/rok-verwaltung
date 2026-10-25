@@ -147,6 +147,14 @@ async function betreten(nutzer) {
 // Navigation
 // ---------------------------------------------------------------------------
 window.addEventListener("hashchange", () => route());
+// Design B: Suchleiste oben → Frage an den Chat (der sucht über die Daten)
+document.getElementById("oberleiste")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const feld = e.currentTarget.frage;
+  const frage = feld.value.trim();
+  feld.value = "";
+  oeffneChat(frage);
+});
 
 async function route() {
   if ($("#app").hidden) return;
@@ -175,6 +183,7 @@ async function route() {
     else if (teil === "vorlagen") await zeigeVorlagen();
     else if (teil === "stammdaten") await stamm.zeigeStammdaten();
     else if (teil === "einstellungen" || teil === "briefkopf") await postfach.zeigeEinstellungen();
+    else if (teil === "rueckstaende") { zustand.startFilter = "rueckstand"; await start.zeigeStart(); $("#zu-erledigen")?.scrollIntoView({ block: "start" }); }
     else await start.zeigeStart();
     // Menü folgt den Brotkrumen (z. B. Vorgang einer Mietpartei → „Kontakte“, nicht „Postfach“)
     const wurzel = { "#/mieter": "mieter", "#/objekte": "objekte", "#/postfach": "postfach", "#/einstellungen": "einstellungen" }[$(".brotkrumen li a")?.getAttribute("href")];
@@ -182,7 +191,7 @@ async function route() {
       if (a.dataset.nav === wurzel) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
     }
-    window.scrollTo(0, 0);
+    if (teil !== "rueckstaende") window.scrollTo(0, 0);
   } catch (err) {
     console.error(err);
     inhalt.innerHTML = `<div class="flaeche leer"><h2>Das hat nicht geklappt</h2><p>${esc(err.message)}</p>

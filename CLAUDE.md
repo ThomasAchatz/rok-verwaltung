@@ -158,3 +158,7 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   im selben Fenster. chat.ts liefert `vorgaenge` (`themaKurz`) bei suche/mieter_info/objekt_info/offene_vorgaenge, notiz.ts bei kontakt_info.
 - Ablegen: der Dokument-weite Drop-Handler (ablage.js) nimmt ohne Ablagefläche alles an (`verteile(dateien, {})`, KI entscheidet),
   Overlay über `body.datei-ueber`.
+- Design B (Tintenblau-Seitenleiste, Suchleiste oben, Manrope): `<html class="design-b">` in index.html, Regeln nur in
+  `css/design-b.css` (alle mit `.design-b` davor). Elemente nur für B haben `nur-design-b` (sonst versteckt), dazu `.nav-icon`,
+  `#oberleiste` (fragt den Chat über `oeffneChat(frage)`), Route `#/rueckstaende` (Filter), `vorbereitetHtml()` in start.js
+  („Die KI hat vorbereitet“, prüft die Klasse). Zurück zum alten Design: Klasse in index.html entfernen (oder Commit zurücknehmen).

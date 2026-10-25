@@ -1182,3 +1182,7 @@ body.datei-ueber::after {
 .schritt__aktion { grid-column: 2; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .schritte__fuss { margin: 0; }
 .marker--ki { background: var(--messing-zart); color: var(--messing-text); }
+
+/* Teile, die nur im Design B (html.design-b, css/design-b.css) sichtbar sind */
+.nav-icon, .nur-design-b { display: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

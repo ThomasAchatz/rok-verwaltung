@@ -132,6 +132,40 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
   return { jetzt: jetzt.sort(ordnen), spaeter: spaeter.sort(ordnen), rueck: rueck.sort((x, y) => x.stufe - y.stufe) };
 }
 
+// Design B: „Die KI hat vorbereitet“ – Schadensmeldungen mit fertigen Entwürfen, sonstige Entwürfe (höchstens 3 Karten)
+function vorbereitetHtml(nachrichten, entwuerfe, orte) {
+  if (!document.documentElement.classList.contains("design-b")) return "";
+  const ort = (n) => (n.mieter_id && orte[n.mieter_id]) || (n.objekt_id && objektVon(n.objekt_id)?.bezeichnung) || "";
+  const schritte = nachrichten.filter((n) => n.ki_schritte?.status === "fertig" && n.status !== "beantwortet");
+  const ids = new Set(schritte.flatMap((n) => [n.ki_schritte.antwort_id, n.ki_schritte.auftrag_id]));
+  const karten = [
+    ...schritte.map((n) => ({
+      ort: ["Schaden", ort(n)].filter(Boolean).join(" · "), titel: n.betreff || "(ohne Betreff)",
+      text: n.ki_schritte.dienstleister
+        ? `Antwort an ${n.absender_name || "die Mietpartei"} und Auftrag an ${n.ki_schritte.dienstleister.name} liegen bereit.`
+        : `Antwort an ${n.absender_name || "die Mietpartei"} liegt bereit.`,
+      href: `#/postfach/${n.id}`, knopf: "Ansehen und senden",
+    })),
+    ...entwuerfe.filter((a) => !ids.has(a.id)).map((a) => ({
+      ort: a.art === "auftrag" ? "Auftrag" : "Entwurf", titel: a.betreff || "(ohne Betreff)",
+      text: `An ${a.empfaenger_name || a.empfaenger_email || "–"}, noch nicht gesendet.`,
+      href: a.nachricht_id ? `#/postfach/${a.nachricht_id}` : `#/entwurf/${a.id}`, knopf: "Öffnen",
+    })),
+  ].slice(0, 3);
+  if (!karten.length) return "";
+  return `
+    <section class="flaeche vorbereitet" aria-label="Von der KI vorbereitet">
+      <div class="vorbereitet__kopf"><h2>${ICON_KI} Die KI hat vorbereitet</h2><span>Nichts geht ohne dein Ja raus</span></div>
+      <div class="vorbereitet__karten">${karten.map((k) => `
+        <div class="vorschlagkarte">
+          <span class="vorschlagkarte__ort">${esc(k.ort)}</span>
+          <span class="vorschlagkarte__titel">${esc(k.titel)}</span>
+          <span class="vorschlagkarte__text">${esc(k.text)}</span>
+          <div class="knopfreihe"><a class="knopf knopf--primaer knopf--klein" href="${esc(k.href)}">${esc(k.knopf)}</a></div>
+        </div>`).join("")}</div>
+    </section>`;
+}
+
 function todoZeile(t) {
   const kopf = `
       <span class="todo__art">${esc(t.art)}${t.ort ? `<span class="todo__ort"> · ${esc(t.ort)}</span>` : ""}</span>
@@ -318,6 +352,7 @@ export async function zeigeStart() {
         <span class="lage__zusatz">${rueckstand.length ? `${rueckstand.length} von ${liste.length} Mietparteien` : "alles bezahlt"}</span>
       </button>
     </div>
+    ${vorbereitetHtml(nachrichten, entwuerfe, orte)}
 
     <div class="start">
       <section class="flaeche start__liste" id="zu-erledigen">
