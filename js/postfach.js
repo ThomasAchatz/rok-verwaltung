@@ -975,10 +975,13 @@ function baueEntwurf(el, k) {
     if (antwort?.thema_id) return antwort.thema_id;
     if (k.nachricht) return vorgaenge.themaFuerNachricht(k.nachricht);
     if (k.themaId) return k.themaId;
-    return vorgaenge.neuesThema({
+    const neu = await vorgaenge.neuesThema({
       betreff: v.betreff, an: v.an, mieterId: k.mieter?.id, kontaktId: k.kontakt?.id, dienstleisterId: k.dienstleister?.id,
       kostentraegerId: k.kostentraeger?.id, objektId: k.haus?.id || k.objektId?.() || null,
     });
+    // Aus einer Notiz gestartet: die Notiz zeigt danach auf diesen Vorgang
+    if (k.aufgabeId) await db.speichereAufgabe(k.aufgabeId, { thema_id: neu }).catch(() => null);
+    return neu;
   }
   async function speichere(extra = {}) {
     const v = werte();
@@ -1375,7 +1378,7 @@ function baueEntwurf(el, k) {
 
   // Für einen Wechsel des Empfängers: was bisher eingegeben bzw. entworfen wurde
   el.mitnehmen = () => ({
-    ...werte(), editor: !editor.hidden, eigenesThema,
+    ...werte(), editor: !editor.hidden, eigenesThema, aufgabeId: k.aufgabeId || null,
     antwortId: antwort?.id && (!antwort.status || antwort.status === "entwurf") && !k.nachricht && !k.auftrag ? antwort.id : null,
   });
   if (umzug && (umzug.antwort || (umzug.editor && (umzug.text || umzug.betreff)))) {
@@ -1645,6 +1648,8 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
     </div>`;
 
   const vorbelegt = zustand.vorbelegung && !zustand.vorbelegung.nachricht_id ? zustand.vorbelegung.anweisung : null;
+  // Aus einer Notiz gestartet: der Vorgang wird an der Notiz gemerkt
+  const aufgabeId = !antwort && zustand.vorbelegung && !zustand.vorbelegung.nachricht_id ? zustand.vorbelegung.aufgabeId || null : null;
   let uebernahme = !antwort && zustand.vorbelegung && !zustand.vorbelegung.nachricht_id ? zustand.vorbelegung.uebernahme || null : null;
   zustand.vorbelegung = null;
   if (uebernahme?.antwortId) {
@@ -1654,7 +1659,7 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
   const themaVorgabe = antwort ? null : zustand.themaVorgabe || null;
   zustand.themaVorgabe = null;
   baueEntwurf($("#entwurf"), {
-    nachricht: null, mieter, dienstleister, kontakt, kostentraeger, haus, antwort, anweisung: vorbelegt, themaId: themaVorgabe, uebernahme,
+    nachricht: null, mieter, dienstleister, kontakt, kostentraeger, haus, antwort, anweisung: vorbelegt, themaId: themaVorgabe, uebernahme, aufgabeId,
     rundEmpfaenger: () => hausMieter.filter((m) => $(`[data-rund="${m.id}"]`)?.checked),
     hinweise: antwort ? zustand.entwurfHinweise?.get(antwort.id) : null,
     objektId: () => $("#empf-haus")?.value || null,
@@ -1684,7 +1689,7 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
     const alt = $("#entwurf")?.mitnehmen?.();
     if (alt && (alt.anweisung || alt.antwortId || (alt.editor && alt.text.trim()))) {
       zustand.vorbelegung = {
-        nachricht_id: null, anweisung: alt.anweisung,
+        nachricht_id: null, anweisung: alt.anweisung, aufgabeId: alt.aufgabeId || null,
         uebernahme: { betreff: alt.betreff, text: alt.text, editor: alt.editor, antwortId: alt.antwortId, eigenesThema: alt.eigenesThema },
       };
     }

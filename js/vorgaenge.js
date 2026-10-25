@@ -3,7 +3,7 @@
 // eigene Schreiben bekommen den Vorgang der Nachricht bzw. einen neuen. „Erledigt“ legt den ganzen Verlauf als PDF ab.
 import * as db from "./daten.js";
 import { datumDE, mieterName } from "./dokumente.js";
-import { $, esc, melde, dialogFormular, heuteISO, zustand, wohnungVon, objektVon, kostentraegerVon, brotkrumen, KRUMEN } from "./helfer.js";
+import { $, $$, esc, melde, dialogFormular, heuteISO, zustand, wohnungVon, objektVon, kostentraegerVon, brotkrumen, KRUMEN } from "./helfer.js";
 import { ICON_KI, datumZeit, geheZu, wartehinweis } from "./ui.js";
 import * as ablage from "./ablage.js";
 import { kontaktName, kontaktVon, kontakteListe } from "./kontakte.js";
@@ -138,7 +138,7 @@ function gegenueberVon(t, mieter) {
 }
 
 export async function zeigeThema(id) {
-  const [t, posten] = await Promise.all([db.ladeThema(id), db.ladeThemaPosten(id), kontakteListe()]);
+  const [t, posten, notizen] = await Promise.all([db.ladeThema(id), db.ladeThemaPosten(id), db.ladeAufgaben({ status: null, themaId: id }).catch(() => []), kontakteListe()]);
   const mieter = t.mieter_id ? await db.ladeMieter(t.mieter_id).catch(() => null) : null;
   const dienst = t.dienstleister_id ? (await db.ladeDienstleister().catch(() => [])).find((d) => d.id === t.dienstleister_id) : null;
   const liste = postenListe(posten);
@@ -167,6 +167,8 @@ export async function zeigeThema(id) {
           : `<button type="button" class="knopf knopf--primaer" id="thema-erledigt">Erledigt</button>`}
       </div>
     </div>
+    ${notizen.length ? `<p class="notiz-vorgang">Gestartet aus ${notizen.length === 1 ? "der Notiz" : "den Notizen"}
+      ${notizen.map((a) => `<button type="button" class="textknopf" data-notiz="${esc(a.id)}">„${esc(a.titel)}“</button>${a.status === "erledigt" ? ` <span class="leise">(erledigt)</span>` : ""}`).join(", ")}</p>` : ""}
     ${t.status === "erledigt" ? `
     <section class="flaeche vorgang-abschluss">
       <div class="flaeche__inhalt">
@@ -181,6 +183,13 @@ export async function zeigeThema(id) {
     </section>`;
 
   if (doc) ablage.verbindeAbgelegt(inhalt(), [doc], { nachher: neuLaden });
+  // Notiz, aus der der Vorgang gestartet wurde (start.js erst bei Bedarf laden: Kreis start↔postfach↔vorgaenge)
+  for (const b of $$("[data-notiz]")) {
+    b.addEventListener("click", async () => {
+      const { aufgabeDialog } = await import("./start.js");
+      aufgabeDialog(notizen.find((a) => a.id === b.dataset.notiz), { nachher: neuLaden });
+    });
+  }
   $("#thema-antworten").addEventListener("click", () => {
     const letzte = [...posten.nachrichten].sort((a, b) => String(b.eingang_am).localeCompare(String(a.eingang_am)))[0];
     if (letzte) return geheZu(`#/postfach/${letzte.id}`);

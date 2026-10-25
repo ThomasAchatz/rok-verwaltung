@@ -254,12 +254,13 @@ export async function zaehleNeue() {
 }
 
 // --- Notizen und Wiedervorlagen (Tabelle aufgaben) -------------------------
-export async function ladeAufgaben({ status = "offen", mieterId = null, objektId = null, kontaktId = null } = {}) {
+export async function ladeAufgaben({ status = "offen", mieterId = null, objektId = null, kontaktId = null, themaId = null } = {}) {
   let q = sb.from("aufgaben").select("*, dienstleister:dienstleister(name)").order("faellig_am", { ascending: true, nullsFirst: false }).order("erstellt_am", { ascending: false }).limit(300);
   if (status) q = q.eq("status", status);
   if (mieterId) q = q.eq("mieter_id", mieterId);
   if (objektId) q = q.eq("objekt_id", objektId);
   if (kontaktId) q = q.eq("kontakt_id", kontaktId);
+  if (themaId) q = q.eq("thema_id", themaId);
   return pruefe(await q);
 }
 export async function ladeAufgabe(id) {

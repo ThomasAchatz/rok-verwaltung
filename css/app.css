@@ -6,6 +6,10 @@
   --tinte-zart: #e8eef6;
   --messing: #b08d57;
   --messing-zart: #f6f1e7;
+  --messing-rand: #e2d2b3;
+  --messing-text: #85642f;
+  --flaeche-zart: #f7f9fb;
+  --rand: #cfd6e0;
   --grund: #f2f4f7;
   --flaeche: #ffffff;
   --text: #1d2430;
@@ -1188,3 +1192,4 @@ body.datei-ueber::after {
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .baum > .baum__leer { padding: 1.1rem 1.25rem; font-size: 0.92rem; }
 .oz-leer { padding: 0.75rem 0.25rem; margin: 0; }
+.notiz-vorgang { margin: 0 0 0.9rem; padding: 0.6rem 0.85rem; border-radius: 8px; background: var(--flaeche-zart); border: 1px solid var(--rand); font-size: 0.9rem; }

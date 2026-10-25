@@ -86,7 +86,7 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
     const eintrag = {
       art: a.faellig_am ? (a.mieter_id || a.objekt_id || a.kontakt_id || a.dienstleister_id ? "Wiedervorlage" : "To-do") : "Notiz", aufgabe: a, titel: a.titel,
       ort: ortVon({ mieterId: a.mieter_id, objektId: a.objekt_id }),
-      unter: [bezug, a.antwort ? "KI-Antwort liegt vor" : ""].filter(Boolean).join(" · "),
+      unter: [bezug, a.thema_id ? "Vorgang gestartet" : "", a.antwort ? "KI-Antwort liegt vor" : ""].filter(Boolean).join(" · "),
       marken: "",
     };
     if (!a.faellig_am) {
@@ -610,6 +610,7 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
   const daten = await dialogFormular(`
     <h2>${vorhanden ? "Notiz" : "Neue Notiz"}</h2>
     ${abgelegt.length ? `<p>${ablage.abgelegtHtml(abgelegt)}</p>` : ""}
+    ${a.thema_id ? `<p class="notiz-vorgang">Aus dieser Notiz wurde ein Vorgang gestartet: <a href="#/thema/${esc(a.thema_id)}" data-zum-vorgang>Zum Vorgang</a></p>` : ""}
     <label class="feld"><span>Worum geht es?</span>
       <span class="diktat"><input name="titel" required maxlength="200" value="${esc(a.titel || "")}" placeholder="z. B. Check Möglichkeit Mieterhöhung Huber" autocomplete="off">${mikroKnopf()}</span></label>
     <label class="feld"><span>Notiz (optional)</span>
@@ -634,6 +635,7 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
       <p class="leise">Nur ein Vorschlag, keine Rechtsberatung.</p></div>` : ""}
     <div class="knopfreihe">
       ${vorhanden ? `<button class="knopf knopf--gefahr knopf--links" value="loeschen" formnovalidate>Löschen</button>` : ""}
+      <button class="knopf ${vorhanden ? "" : "knopf--links"}" value="schreiben" title="Speichert die Notiz und öffnet ein neues Schreiben an die zugeordnete Person – mit der Notiz als Auftrag für die KI. Daraus wird ein Vorgang.">✉ ${a.thema_id ? "Weiter anschreiben" : "Anschreiben"}</button>
       <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
       ${kiDa ? `<button class="knopf knopf--ki" value="pruefen" data-zuordnung ${nurTodoStart ? "hidden" : ""}>${ICON_KI} Mit KI prüfen</button>` : ""}
       <button class="knopf" value="ablage" title="Notiz speichern und als PDF in die Ablage legen">In Ablage</button>
@@ -650,6 +652,8 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
         $("[data-datum-titel]", form).textContent = an ? "Fällig am" : "Wiedervorlage am";
         if (an && !form.faellig_am.value) form.faellig_am.value = heuteISO();
       });
+      // „Zum Vorgang“ schließt den Dialog
+      $("[data-zum-vorgang]", form)?.addEventListener("click", () => $("#dialog").close());
       // „In der Ablage“ öffnet das Dokument (der Notiz-Dialog schließt sich dabei)
       for (const b of $$("[data-abgelegt]", form)) {
         b.addEventListener("click", () => {
@@ -702,6 +706,7 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
     if (aktion === "erledigt") Object.assign(felder, { status: "erledigt", erledigt_am: new Date().toISOString() });
     const gespeichert = await db.speichereAufgabe(a.id, felder);
     if (aktion === "pruefen") return pruefeMitKi(gespeichert, nachher);
+    if (aktion === "schreiben") return anschreiben({ ...a, ...gespeichert }, mieterL);
     if (aktion === "ablage") {
       nachher();
       return ablage.inAblageDialog(eintragNotiz(gespeichert), { nachher, schon: abgelegt });
@@ -711,6 +716,27 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
   } catch (err) {
     melde(err.message, "fehler");
   }
+}
+
+/**
+ * Aus einer Notiz / einem To-do einen Vorgang starten: „Neues Schreiben“ an die zugeordnete Person
+ * (Mietpartei, Handwerker, Kontakt; ohne Zuordnung: Nachname im Titel, sonst Empfänger frei wählen).
+ * Die Notiz wird zur Anweisung für die KI; der Vorgang des Schreibens wird an der Notiz gemerkt (aufgaben.thema_id).
+ * Nie automatisch senden: es entsteht nur ein Entwurf.
+ */
+export function anschreiben(a, mieterL = []) {
+  let ziel = a.mieter_id || (a.dienstleister_id ? `d-${a.dienstleister_id}` : a.kontakt_id ? `k-${a.kontakt_id}` : "");
+  if (!ziel) {
+    const t = ` ${norm(`${a.titel} ${a.notiz || ""}`).replace(/[^a-z0-9]+/g, " ")} `;
+    const treffer = mieterL.filter((m) => m.nachname && t.includes(` ${norm(m.nachname).replace(/[^a-z0-9]+/g, " ").trim()} `));
+    if (treffer.length === 1) ziel = treffer[0].id;
+  }
+  const anweisung = [`Anlass (meine Notiz): ${a.titel}`, a.notiz ? a.notiz : ""].filter(Boolean).join("\n");
+  zustand.vorbelegung = { nachricht_id: null, anweisung, aufgabeId: a.id };
+  if (a.thema_id) zustand.themaVorgabe = a.thema_id;
+  if (a.objekt_id) zustand.hausVorgabe = a.objekt_id;
+  melde(ziel ? "Notiz übernommen. Anweisung prüfen und „Entwurf mit KI“ klicken." : "Notiz übernommen. Bitte oben den Empfänger wählen.", "info");
+  geheZu(`#/schreiben${ziel ? `/${ziel}` : ""}`);
 }
 
 // Notiz als PDF für die Ablage

@@ -169,3 +169,8 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   `ordnerBearbeiten({ bereich })`, `verschiebeDokumente(…, { allgemein })` trifft nur den eigenen Bereich; `zielOrdner(…, { objektId: null })`
   ohne Automatik. Server: `dokumentOrdnerInfo(zugriff, "haus"|"allgemein"|"beide")` (ablage_vorschlag ohne objekt_id → allgemein,
   brief_lesen → beide). ZIP-Import legt fehlende Ordner im passenden Bereich an (`plan.neueOrdnerFuer()`).
+- Notiz → Vorgang (Migration `20261025140000_aufgabe_vorgang.sql`, `aufgaben.thema_id`): Knopf „Anschreiben“ im Notiz-Dialog
+  (`aufgabeDialog`, value `schreiben`) speichert und ruft `anschreiben(a)` in start.js: Empfänger = Mietpartei | `d-` Handwerker | `k-` Kontakt,
+  ohne Zuordnung Nachname im Titel, sonst `#/schreiben` (Empfänger wählen). `zustand.vorbelegung = { anweisung, aufgabeId }`; baueEntwurf
+  (`k.aufgabeId`) setzt beim Anlegen des Vorgangs `aufgaben.thema_id`; vorhandener Vorgang → `zustand.themaVorgabe` („Weiter anschreiben“).
+  Vorgangsseite zeigt „Gestartet aus der Notiz …“ (`.notiz-vorgang`, start.js per dynamischem Import). Nie automatisch senden.
