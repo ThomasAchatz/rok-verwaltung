@@ -68,15 +68,24 @@ export function mieterOptionen(liste, gewaehlt, leer = "Keine Mietpartei") {
 // Diktat (Spracherkennung des Browsers). Auf dem iPhone geht auch das Mikrofon der Tastatur.
 // ---------------------------------------------------------------------------
 const Erkennung = window.SpeechRecognition || window.webkitSpeechRecognition;
+// iPhone/iPad (alle Browser dort nutzen WebKit): Der Dauer-Modus („continuous“) bleibt nach dem ersten Satz oft stumm hängen.
+// Darum dort kurze Runden ohne Dauer-Modus, die sich bis zum Stopp-Klick selbst neu starten (je Runde ein neues Objekt),
+// plus Wächter gegen stilles Hängenbleiben. Kein focus() auf das Feld: die Tastatur stört dort die Aufnahme.
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const STILLE_MAX_MS = 45000; // so lange ohne erkannte Wörter → Diktat endet von selbst
 let diktat = null;
 
 export const mikroKnopf = () =>
   `<button type="button" class="mikro" data-diktat aria-pressed="false" title="Diktieren" aria-label="Diktieren">${ICON_MIKRO}</button>`;
 
 export function stoppeDiktat() {
-  try { diktat?.erkennung.stop(); } catch { /* schon beendet */ }
+  if (!diktat) return;
+  diktat.aus = true;
+  try { diktat.erkennung?.stop(); } catch { /* schon beendet */ }
 }
 window.addEventListener("hashchange", stoppeDiktat);
+window.addEventListener("pagehide", stoppeDiktat);
+document.addEventListener("visibilitychange", () => { if (document.hidden) stoppeDiktat(); });
 document.getElementById("dialog")?.addEventListener("close", stoppeDiktat);
 
 export function verbindeDiktat(root) {
@@ -112,44 +121,78 @@ export function fuegeZusammen(bisher, neu) {
   return bisher + " " + neu;
 }
 
+const ANLEITUNG_IOS = "Auf dem iPhone: Einstellungen › Allgemein › Tastatur › „Diktierfunktion“ einschalten und beim Mikrofon-Hinweis „Erlauben“ tippen.";
+
 function starteDiktat(knopf, feld) {
-  const erkennung = new Erkennung();
-  erkennung.lang = "de-DE";
-  erkennung.continuous = true;
-  erkennung.interimResults = true;
-  const anfang = feld.value.trim() ? feld.value.replace(/\s*$/, " ") : "";
-  let fest = ""; // fertig erkannter Text dieses Diktats
-  erkennung.onresult = (e) => {
-    let vorlaeufig = "";
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const teil = e.results[i][0].transcript.trim();
-      if (e.results[i].isFinal) fest = fuegeZusammen(fest, teil);
-      else vorlaeufig = fuegeZusammen(vorlaeufig, teil);
-    }
-    feld.value = anfang + fuegeZusammen(fest, vorlaeufig);
+  const sitzung = { knopf, aus: false, erkennung: null, zuletzt: Date.now() };
+  let basis = feld.value.trim() ? feld.value.replace(/\s*$/, " ") : ""; // Text vor dieser Runde
+  const zeige = (t) => {
+    feld.value = basis + t;
     feld.dispatchEvent(new Event("input", { bubbles: true }));
   };
-  erkennung.onerror = (e) => {
-    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-      melde("Bitte den Zugriff aufs Mikrofon erlauben. Alternativ das Mikrofon der Tastatur nutzen.", "fehler");
-    } else if (e.error !== "aborted" && e.error !== "no-speech") {
-      melde("Diktat nicht möglich (" + e.error + "). Alternativ das Mikrofon der Tastatur nutzen.", "fehler");
-    }
-  };
-  erkennung.onend = () => {
+  const ende = () => {
     knopf.classList.remove("mikro--an");
     knopf.setAttribute("aria-pressed", "false");
-    if (diktat?.erkennung === erkennung) diktat = null;
+    if (diktat === sitzung) diktat = null;
+    feld.value = feld.value.replace(/\s+$/, "");
+    feld.dispatchEvent(new Event("input", { bubbles: true }));
   };
-  try {
-    erkennung.start();
-  } catch (err) {
-    return melde("Diktat nicht möglich: " + err.message, "fehler");
-  }
-  diktat = { knopf, erkennung };
+  const runde = () => {
+    const erkennung = new Erkennung();
+    erkennung.lang = "de-DE";
+    erkennung.continuous = !IOS;
+    erkennung.interimResults = true;
+    let fest = "", vorlaeufig = "", fehler = false, waechter = null;
+    // iPhone: Kommt eine Weile nichts mehr, obwohl die Aufnahme läuft, Runde abbrechen (startet neu)
+    const wache = () => {
+      clearTimeout(waechter);
+      if (IOS) waechter = setTimeout(() => { try { erkennung.abort(); } catch { /* egal */ } }, 8000);
+    };
+    erkennung.onresult = (e) => {
+      vorlaeufig = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const teil = e.results[i][0].transcript.trim();
+        if (e.results[i].isFinal) fest = fuegeZusammen(fest, teil);
+        else vorlaeufig = fuegeZusammen(vorlaeufig, teil);
+      }
+      sitzung.zuletzt = Date.now();
+      zeige(fuegeZusammen(fest, vorlaeufig));
+      wache();
+    };
+    erkennung.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed" || e.error === "audio-capture") {
+        fehler = true;
+        sitzung.aus = true;
+        melde(`Das Mikrofon ist nicht freigegeben. ${IOS ? ANLEITUNG_IOS : "Bitte den Zugriff aufs Mikrofon im Browser erlauben."}`, "fehler");
+      } else if (!IOS && e.error !== "aborted" && e.error !== "no-speech") {
+        fehler = true;
+        melde("Diktat nicht möglich (" + e.error + "). Alternativ das Mikrofon der Tastatur nutzen.", "fehler");
+      }
+    };
+    erkennung.onend = () => {
+      clearTimeout(waechter);
+      // Was diese Runde erkannt hat, bleibt stehen (auf dem iPhone kommt das Endergebnis manchmal nie als „final“)
+      const text = fuegeZusammen(fest, vorlaeufig);
+      if (text) basis = (basis + text).replace(/\s*$/, " ");
+      feld.value = basis;
+      const weiter = IOS && !sitzung.aus && !fehler && diktat === sitzung && Date.now() - sitzung.zuletzt < STILLE_MAX_MS;
+      if (weiter) return setTimeout(() => (diktat === sitzung && !sitzung.aus ? runde() : ende()), 250);
+      ende();
+    };
+    sitzung.erkennung = erkennung;
+    try {
+      erkennung.start();
+    } catch (err) {
+      melde("Diktat nicht möglich: " + err.message, "fehler");
+      return ende();
+    }
+    wache();
+  };
+  diktat = sitzung;
   knopf.classList.add("mikro--an");
   knopf.setAttribute("aria-pressed", "true");
-  feld.focus();
+  runde();
+  if (!IOS) feld.focus();
 }
 
 // Textfelder wachsen mit dem Inhalt

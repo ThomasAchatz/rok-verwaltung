@@ -174,3 +174,7 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   ohne Zuordnung Nachname im Titel, sonst `#/schreiben` (Empfänger wählen). `zustand.vorbelegung = { anweisung, aufgabeId }`; baueEntwurf
   (`k.aufgabeId`) setzt beim Anlegen des Vorgangs `aufgaben.thema_id`; vorhandener Vorgang → `zustand.themaVorgabe` („Weiter anschreiben“).
   Vorgangsseite zeigt „Gestartet aus der Notiz …“ (`.notiz-vorgang`, start.js per dynamischem Import). Nie automatisch senden.
+- Diktat (`js/ui.js`): auf iPhone/iPad (`IOS`) kein Dauer-Modus, sondern kurze Runden mit Neustart bis zum Stopp-Klick (je Runde neues
+  Objekt, Wächter 8 s gegen stilles Hängen, Ende nach 45 s ohne Wörter), Text jeder Runde wird in `onend` übernommen (iOS liefert „final“
+  nicht zuverlässig), kein `focus()`. Fehler „service-not-allowed“ → Hinweis auf Einstellungen › Allgemein › Tastatur › Diktierfunktion.
+  Test mit nachgebauter Erkennung: `ui_diktat.py`.
