@@ -7,6 +7,7 @@ import { $, $$, esc, melde, dialogFormular, heuteISO, zustand, wohnungVon, objek
 import { ICON_KI, datumZeit, geheZu, wartehinweis } from "./ui.js";
 import * as ablage from "./ablage.js";
 import { kontaktName, kontaktVon, kontakteListe } from "./kontakte.js";
+import { naechsterSchritt } from "./schritte.js";
 
 const inhalt = () => $("#inhalt");
 const VORSILBE = /^(\s*(aw|re|wg|fw|fwd|antw|antwort|tr)\s*(\[\d+\])?\s*:\s*)+/i;
@@ -144,6 +145,8 @@ export async function zeigeThema(id) {
   const liste = postenListe(posten);
   const gesendet = liste.filter((p) => p.art !== "entwurf");
   const doc = t.dokument_id ? (await db.ladeAbgelegte("id", [t.dokument_id]).catch(() => []))[0] : null;
+  // Dateien, die an den Notizen des Vorgangs hängen (z. B. Infos von außen)
+  const notizDateien = notizen.length ? (await db.ladeAbgelegte("aufgabe_id", notizen.map((a) => a.id)).catch(() => [])).filter((d) => d.art !== "Notiz") : [];
   const wer = gegenueberVon(t, mieter) || dienst?.name || "";
   // Wohin gehört der Vorgang? Mietpartei, Kontakt, Handwerker, Haus – sonst Postfach
   const haus = t.objekt_id ? objektVon(t.objekt_id) : null;
@@ -162,13 +165,15 @@ export async function zeigeThema(id) {
           ${t.status === "erledigt" ? `<span class="marker marker--ok">erledigt</span>` : `<span class="marker marker--messing">offen</span>`}</p></div>
       <div class="knopfreihe">
         <button type="button" class="knopf" id="thema-antworten">Antworten</button>
+        ${t.status === "erledigt" ? "" : `<button type="button" class="knopf knopf--ki" id="thema-schritt">${ICON_KI} Nächster Schritt</button>`}
         ${t.status === "erledigt"
           ? `<button type="button" class="knopf" id="thema-offen">Wieder öffnen</button>`
           : `<button type="button" class="knopf knopf--primaer" id="thema-erledigt">Erledigt</button>`}
       </div>
     </div>
-    ${notizen.length ? `<p class="notiz-vorgang">Gestartet aus ${notizen.length === 1 ? "der Notiz" : "den Notizen"}
-      ${notizen.map((a) => `<button type="button" class="textknopf" data-notiz="${esc(a.id)}">„${esc(a.titel)}“</button>${a.status === "erledigt" ? ` <span class="leise">(erledigt)</span>` : ""}`).join(", ")}</p>` : ""}
+    ${notizen.length ? `<p class="notiz-vorgang">${notizen.length === 1 ? "Notiz" : "Notizen"} zu diesem Vorgang:
+      ${notizen.map((a) => `<button type="button" class="textknopf" data-notiz="${esc(a.id)}">„${esc(a.titel)}“</button>${a.status === "erledigt" ? ` <span class="leise">(erledigt)</span>` : ""}`).join(", ")}
+      ${notizDateien.length ? `<br>Dateien: ${notizDateien.map((d) => `<button type="button" class="textknopf" data-abgelegt="${esc(d.id)}">${esc(d.titel || "Datei")}</button>`).join(", ")}` : ""}</p>` : ""}
     ${t.status === "erledigt" ? `
     <section class="flaeche vorgang-abschluss">
       <div class="flaeche__inhalt">
@@ -182,7 +187,7 @@ export async function zeigeThema(id) {
       ${liste.length ? `<div class="faden">${liste.map(postenHtml).join("")}</div>` : `<div class="leer">Noch nichts in diesem Vorgang.</div>`}
     </section>`;
 
-  if (doc) ablage.verbindeAbgelegt(inhalt(), [doc], { nachher: neuLaden });
+  if (doc || notizDateien.length) ablage.verbindeAbgelegt(inhalt(), [doc, ...notizDateien].filter(Boolean), { nachher: neuLaden });
   // Notiz, aus der der Vorgang gestartet wurde (start.js erst bei Bedarf laden: Kreis start↔postfach↔vorgaenge)
   for (const b of $$("[data-notiz]")) {
     b.addEventListener("click", async () => {
@@ -199,6 +204,7 @@ export async function zeigeThema(id) {
       : t.kostentraeger_id ? `t-${t.kostentraeger_id}${t.mieter_id ? "." + t.mieter_id : ""}` : t.mieter_id || "";
     geheZu(`#/schreiben${ziel ? "/" + ziel : ""}`);
   });
+  $("#thema-schritt")?.addEventListener("click", () => naechsterSchritt(t.id));
   $("#thema-erledigt")?.addEventListener("click", () => abschliessen(t, posten, { mieter, wer, nachher: neuLaden }));
   $("#thema-offen")?.addEventListener("click", async () => {
     try {

@@ -1,7 +1,7 @@
 // Eingesprochene Notiz einordnen („Mini-CRM“): Wer ist gemeint (Mietpartei, Kontakt oder neuer Kontakt),
 // was ist die Notiz für den Verlauf, gibt es Geburtstag, feste Infos zum Kontakt oder Aufgaben mit Datum?
 // Die KI schlägt nur vor; gespeichert wird erst nach Bestätigung in der App. Keine Bankdaten an die KI.
-import { Fehler, KI_REGEL_FREMD, type Werkzeug, type Zugriff, claude, datumOk, enc, heuteDE, heuteISO, kuerze, rest } from "./gemeinsam.ts";
+import { Fehler, KI_REGEL_FREMD, type Werkzeug, type Zugriff, claude, datumDE, datumOk, enc, heuteDE, heuteISO, kuerze, rest } from "./gemeinsam.ts";
 
 export const VERLAUF_ARTEN = ["telefonat", "treffen", "email", "notiz"] as const;
 const ZIELE = ["mieter", "kontakt", "neuer_kontakt", "keiner"] as const;
@@ -207,4 +207,132 @@ export async function kontaktInfo(id: string, zugriff: Zugriff) {
     offene_aufgaben: aufgaben,
     vorgaenge: themen.map((t: { id: string; titel: string; status: string }) => ({ titel: t.titel, status: t.status, link: `#/thema/${t.id}` })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Nächster Schritt in einem Vorgang (z. B. nach einer Antwort: Hausmeister informieren, Wiedervorlage)
+// Nur Vorschläge: die App öffnet daraus einen vorbelegten Entwurf bzw. den Notiz-Dialog, gesendet wird nie automatisch.
+// ---------------------------------------------------------------------------
+const SCHRITT_AN = ["mieter", "handwerker", "kontakt", "kostentraeger"] as const;
+const WERKZEUG_SCHRITTE: Werkzeug = {
+  name: "schritte",
+  description: "Schlägt die nächsten Schritte in einem Vorgang der Hausverwaltung vor.",
+  input_schema: {
+    type: "object",
+    properties: {
+      vorschlaege: {
+        type: "array",
+        description: "1 bis 3 sinnvolle nächste Schritte, der wichtigste zuerst.",
+        items: {
+          type: "object",
+          properties: {
+            art: { type: "string", enum: ["schreiben", "wiedervorlage"], description: "schreiben: E-Mail an jemanden vorbereiten. wiedervorlage: Erinnerung mit Datum." },
+            titel: { type: "string", description: "Kurzer Knopftext, z. B. 'Hausmeister bitten, sich den Geruch in Whg. 2 anzusehen' oder 'Wiedervorlage: Rückmeldung von Frau Demir'." },
+            grund: { type: "string", description: "Ein kurzer Satz, warum dieser Schritt sinnvoll ist." },
+            an: { type: ["string", "null"], enum: [...SCHRITT_AN, null], description: "Nur bei schreiben: Art des Empfängers." },
+            id: { type: ["string", "null"], description: "Nur bei schreiben: ID aus der passenden Liste (<mietpartei>, <handwerker>, <kontakte>, <kostentraeger>)." },
+            anweisung: { type: ["string", "null"], description: "Nur bei schreiben: was im Schreiben stehen soll, als Auftrag an die schreibende KI, mit allen nötigen Fakten (Adresse, Wohnung, worum es geht; bei Handwerkern/Hausmeister Name und Telefon der Mietpartei für die Terminabsprache)." },
+            faellig_am: { type: ["string", "null"], description: "Nur bei wiedervorlage: Datum JJJJ-MM-TT (meist in 3–7 Tagen)." },
+          },
+          required: ["art", "titel", "grund", "an", "id", "anweisung", "faellig_am"],
+        },
+      },
+    },
+    required: ["vorschlaege"],
+  },
+};
+
+// deno-lint-ignore no-explicit-any
+export async function naechsteSchritte(themaId: string, wunsch: string | null, zugriff: Zugriff): Promise<any> {
+  const [t] = await rest(`themen?id=eq.${enc(themaId)}&select=id,titel,status,mieter_id,kontakt_id,dienstleister_id,kostentraeger_id,objekt_id`, zugriff);
+  if (!t) throw new Fehler(404, "Vorgang nicht gefunden.", "nicht_gefunden");
+  const [ein, aus] = await Promise.all([
+    rest(`nachrichten?thema_id=eq.${enc(themaId)}&select=eingang_am,absender_name,betreff,text&order=eingang_am&limit=20`, zugriff),
+    rest(`antworten?thema_id=eq.${enc(themaId)}&select=status,gesendet_am,aktualisiert_am,empfaenger_name,art,betreff,text&limit=20`, zugriff),
+  ]);
+  // Mietpartei des Vorgangs (ohne Bankdaten, ohne Miete): für Ort und Terminabsprache
+  let mieter = null;
+  if (t.mieter_id) {
+    [mieter] = await rest(`mieter?id=eq.${enc(t.mieter_id)}&select=id,anrede,vorname,nachname,telefon,email,kostentraeger_id,` +
+      "wohnung:wohnungen(bezeichnung,objekt:objekte(id,bezeichnung,strasse,plz,ort)),kostentraeger:kostentraeger(id,name)", zugriff).catch(() => []);
+  }
+  const objektId = t.objekt_id ?? mieter?.wohnung?.objekt?.id ?? null;
+  const [haus, handwerker, kontakte, aemter] = await Promise.all([
+    objektId && !mieter ? rest(`objekte?id=eq.${enc(objektId)}&select=id,bezeichnung,strasse,plz,ort`, zugriff).then((r) => r[0]).catch(() => null) : null,
+    rest(`dienstleister?aktiv=is.true&select=id,name,gewerk,objekt_id${objektId ? `&or=(objekt_id.is.null,objekt_id.eq.${enc(objektId)})` : "&objekt_id=is.null"}&order=gewerk`, zugriff).catch(() => []),
+    rest("kontakte?select=id,vorname,nachname,firma,rolle&order=nachname&limit=150", zugriff).catch(() => []),
+    rest("kostentraeger?select=id,name&order=name", zugriff).catch(() => []),
+  ]);
+  const posten = [
+    // deno-lint-ignore no-explicit-any
+    ...ein.map((n: any) => ({ zeit: n.eingang_am, kopf: `Eingang von ${n.absender_name ?? "unbekannt"}`, betreff: n.betreff, text: n.text })),
+    // deno-lint-ignore no-explicit-any
+    ...aus.map((a: any) => ({ zeit: a.gesendet_am ?? a.aktualisiert_am, kopf: `${a.status === "entwurf" ? "Entwurf (noch nicht gesendet)" : a.art === "auftrag" ? "Auftrag" : "Schreiben"} der Verwaltung an ${a.empfaenger_name ?? "-"}`, betreff: a.betreff, text: a.text })),
+  ].sort((a, b) => String(a.zeit).localeCompare(String(b.zeit)));
+  let gesamt = 0;
+  const bloecke: string[] = [];
+  for (const p of posten.reverse()) { // neueste zuerst, damit sie bei langen Verläufen nicht fehlen
+    const b = `--- ${p.zeit ? datumDE(p.zeit) : ""} · ${p.kopf}\nBetreff: ${p.betreff ?? ""}\n${kuerze(ohneIban(p.text), 2500)}`;
+    if (gesamt + b.length > 16000) break;
+    gesamt += b.length;
+    bloecke.unshift(b);
+  }
+  const o = mieter?.wohnung?.objekt ?? haus;
+  const mieterText = mieter
+    ? `<mietpartei>\nID: ${mieter.id}\nName: ${[mieter.anrede === "Herr" || mieter.anrede === "Frau" ? mieter.anrede : "", mieter.vorname, mieter.nachname].filter(Boolean).join(" ")}\n` +
+      `Wohnung: ${mieter.wohnung?.bezeichnung ?? "-"}, ${o ? `${o.strasse}, ${o.plz} ${o.ort} (${o.bezeichnung})` : "-"}\n` +
+      `Telefon: ${mieter.telefon || "nicht hinterlegt"}\nE-Mail: ${mieter.email || "nicht hinterlegt"}\n` +
+      `Kostenträger: ${mieter.kostentraeger ? `${mieter.kostentraeger.name} (ID ${mieter.kostentraeger.id})` : "keiner"}\n</mietpartei>`
+    : o ? `<haus>${o.bezeichnung}: ${o.strasse}, ${o.plz} ${o.ort}</haus>` : "";
+  const name = (k: { vorname?: string | null; nachname?: string | null; firma?: string | null }) => [k.vorname, k.nachname].filter(Boolean).join(" ") || k.firma || "";
+  const text = [
+    `Heute ist ${heuteDE()} (${heuteISO()}).`,
+    `<vorgang titel="${String(t.titel ?? "").replace(/"/g, "'")}">\n${bloecke.join("\n\n") || "(noch keine Einträge)"}\n</vorgang>`,
+    mieterText,
+    `<handwerker>\nID | Name | Gewerk\n${handwerker.map((d: { id: string; name: string; gewerk: string }) => `${d.id} | ${d.name} | ${d.gewerk ?? "-"}`).join("\n")}\n</handwerker>`,
+    `<kontakte>\nID | Name | Rolle\n${kontakte.map((k: { id: string; rolle: string }) => `${k.id} | ${name(k)} | ${k.rolle ?? "-"}`).join("\n")}\n</kontakte>`,
+    `<kostentraeger>\nID | Name\n${aemter.map((k: { id: string; name: string }) => `${k.id} | ${k.name}`).join("\n")}\n</kostentraeger>`,
+    wunsch?.trim() ? `<wunsch_von_robert>\n${kuerze(ohneIban(wunsch), 1500)}\n</wunsch_von_robert>` : "",
+    wunsch?.trim() ? "Aufgabe: Setze Roberts Wunsch als Vorschlag um (meist genau ein Schritt)." : "Aufgabe: Was sind die sinnvollen nächsten Schritte?",
+  ].filter(Boolean).join("\n\n");
+  const { daten } = await claude({
+    system:
+      "Du hilfst Robert (Hausverwaltung), den nächsten Schritt in einem Vorgang festzulegen. " +
+      "Typisch: Hausmeister oder Handwerker informieren bzw. bitten, sich etwas anzusehen (Hausmeister = Gewerk 'Hausmeister' des Hauses), " +
+      "eine Wiedervorlage, wenn auf eine Antwort gewartet wird, den Kostenträger informieren, der Mietpartei Bescheid geben. " +
+      "Schlage nichts vor, was im Verlauf schon erledigt ist. Nur IDs aus den Listen, niemals raten; gibt es keinen passenden Empfänger, lieber eine Wiedervorlage. " +
+      "Schreiben an Handwerker/Hausmeister enthalten nur Ort, Wohnung, worum es geht und Name/Telefon der Mietpartei für die Terminabsprache, nie Miete, Rückstände oder Kostenträger. " +
+      `Keine Bankdaten, keine Rechtsberatung. ${KI_REGEL_FREMD} Antworte ausschließlich über das Werkzeug 'schritte', auf Deutsch.`,
+    inhalt: [{ type: "text", text }],
+    werkzeug: WERKZEUG_SCHRITTE,
+    maxTokens: 2000,
+  });
+
+  const gibt = (liste: { id: string }[], id: unknown) => (liste.some((x) => x.id === id) ? (id as string) : null);
+  const vorschlaege = (Array.isArray(daten.vorschlaege) ? daten.vorschlaege : []).slice(0, 5)
+    // deno-lint-ignore no-explicit-any
+    .map((v: any) => {
+      const titel = kurz(v?.titel, 140);
+      const grund = kurz(v?.grund, 300);
+      if (!titel) return null;
+      if (v?.art === "wiedervorlage") {
+        const datum = datumOk(v.faellig_am) && v.faellig_am >= heuteISO() ? v.faellig_am : null;
+        return { art: "wiedervorlage", titel, grund, faellig_am: datum, mieter_id: mieter?.id ?? null, objekt_id: objektId };
+      }
+      if (v?.art !== "schreiben") return null;
+      const an = (SCHRITT_AN as readonly string[]).includes(v.an) ? v.an : null;
+      const id = an === "mieter" ? (mieter && v.id === mieter.id ? mieter.id : null)
+        : an === "handwerker" ? gibt(handwerker, v.id) : an === "kontakt" ? gibt(kontakte, v.id) : an === "kostentraeger" ? gibt(aemter, v.id) : null;
+      const anweisung = kurz(v.anweisung, 2000);
+      if (!an || !id || !anweisung) return null;
+      // deno-lint-ignore no-explicit-any
+      const wer: any = an === "mieter" ? mieter : (an === "handwerker" ? handwerker : an === "kontakt" ? kontakte : aemter).find((x: { id: string }) => x.id === id);
+      return {
+        art: "schreiben", titel, grund, an, id, anweisung, objekt_id: objektId,
+        mieter_id: an === "kostentraeger" || an === "mieter" ? mieter?.id ?? null : null,
+        name: an === "handwerker" ? `${wer.name}${wer.gewerk ? ` (${wer.gewerk})` : ""}` : an === "kostentraeger" ? wer.name : name(wer),
+      };
+    })
+    .filter(Boolean).slice(0, 3);
+  return { vorschlaege };
 }

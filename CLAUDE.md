@@ -195,3 +195,12 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   `db.ladeDokumenteIds()` in `zustand.anhangVorgabe` (verbraucht der nächste Nicht-Auftrag-Editor). `empfaenger_neu` 'kontakt'|'handwerker':
   Schreiben an die Person, die in derselben Antwort angelegt wird; Karte wartet, bis die Kontakt-Karte `zielId` hat (`neuerEmpfaenger()`, auch nach
   „Vorhandenen ergänzen“ über `urArt`). `bearbeiteDienstleister` ruft `nachher(gespeichert)`.
+- Nächster Schritt im Vorgang (`js/schritte.js`, `naechsterSchritt(themaId, { gesendet })`): Dialog mit KI-Vorschlägen (KI-Aktion `naechste_schritte`
+  { thema_id, wunsch? } → `naechsteSchritte()` in `_shared/notiz.ts`: Verlauf + Mietpartei (Ort, Telefon, nie Miete/Bank) + Handwerker des Hauses +
+  Kontakte + Kostenträger, IDs geprüft, max. 3; art schreiben → `zustand.vorbelegung` + `themaVorgabe` + `#/schreiben/<ziel>`, art wiedervorlage →
+  `aufgabeDialog({ …, thema_id })`). Freies Wunschfeld (Enter fragt die KI, Dialog bleibt offen). Aufgerufen nach dem Senden (`nachSenden()` in
+  baueEntwurf, nicht bei Rundschreiben, nicht wenn schon ein Dialog offen ist), Knopf `[data-k=schritt]` im Editor und `#thema-schritt` auf der
+  Vorgangsseite. Hausmeister = Handwerker mit Gewerk „Hausmeister“ je Haus (Testdaten: `supabase/seed_hausmeister.sql`).
+- Notiz mit Dateien: Feld `dateien` im Notiz-Dialog; nach dem Speichern je Datei `ablage.erfasse(…, { nurAblage, weiter: false })` (Name sichtbar),
+  dann `dokumente.aufgabe_id` setzen (`dateienAnNotiz`). „Anschreiben“ fragt vorher `anhaengeAusNotiz()` (Häkchen je Datei → `zustand.anhangVorgabe`).
+  Neue Notizen aus einem Vorgang speichern `thema_id`; die Vorgangsseite zeigt „Notiz(en) zu diesem Vorgang“ mit ihren Dateien.

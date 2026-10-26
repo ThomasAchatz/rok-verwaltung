@@ -14,6 +14,7 @@ import {
   mieterListe, ortVon, mieterOptionen, betrifftOptionen, betrifftAus, mikroKnopf, verbindeDiktat, stoppeDiktat, wachsen, wartehinweis, beschaeftigt,
   suchauswahlHtml, verbindeSuchauswahl,
 } from "./ui.js";
+import { naechsterSchritt } from "./schritte.js";
 import * as ablage from "./ablage.js";
 import { drucke } from "./ui.js";
 import { aufgabeDialog, fristVon } from "./start.js";
@@ -880,6 +881,7 @@ function baueEntwurf(el, k) {
             ${k.auftrag ? `<button type="button" class="knopf" data-k="drucken">Drucken</button>` : briefZuerst ? "" : `<button type="button" class="knopf" data-k="brief">${k.haus ? "Als Aushang/Brief" : "Als Brief"}</button>`}
             <button type="button" class="knopf" data-k="speichern">Entwurf speichern</button>
             <button type="button" class="knopf knopf--leise knopf--gefahr" data-k="verwerfen">Verwerfen</button>
+            ${k.haus ? "" : `<button type="button" class="knopf knopf--ki" data-k="schritt" title="Was kommt danach? Z. B. Hausmeister informieren oder eine Wiedervorlage – im selben Vorgang">${ICON_KI} Nächster Schritt</button>`}
           </div>
           <p class="leise entwurf__hinweis">Nichts geht automatisch raus. Erst „Per E-Mail senden“ oder „${k.auftrag ? "Drucken" : "Als Brief"}“ verlässt die App.</p>
         </div>
@@ -1094,6 +1096,15 @@ function baueEntwurf(el, k) {
     const a = { ...antwort, betreff: werte().betreff, text: werte().text, gesendet_am: new Date().toISOString(), empfaenger_email: an || antwort.empfaenger_email };
     return eintragAntwort(a, { nachricht: k.nachricht, mieter: k.mieter, objektId: hausId(), kanal, an, ...extra });
   }
+  // Nach dem Senden fragen, was als Nächstes kommt (nicht bei Rundschreiben)
+  function nachSenden() {
+    const thema = antwort?.thema_id;
+    if (!thema || k.haus) return;
+    setTimeout(() => {
+      if ($("#dialog")?.open) return; // ein anderer Dialog ist schon offen (z. B. „Ändern“ der Ablage): nicht überdecken
+      naechsterSchritt(thema, { gesendet: true }).catch((err) => melde(err.message, "fehler"));
+    }, 350);
+  }
   function ablegenNachVersand(kanal, an, extra = {}) {
     return ablage.automatischAblegen(eintragJetzt(kanal, an, extra), { nachher: k.nachEnde, meldung: extra.meldung !== false, vorgabe: extra.vorgabe || null });
   }
@@ -1292,6 +1303,12 @@ function baueEntwurf(el, k) {
         try { await speichere(); melde("Entwurf gespeichert.", "ok"); } catch (err) { melde(err.message, "fehler"); }
       });
     },
+    async schritt(knopf) {
+      // Entwurf erst speichern, damit es einen Vorgang gibt
+      try { await speichere(); } catch (err) { return melde(err.message, "fehler"); }
+      knopf.blur();
+      naechsterSchritt(antwort.thema_id).catch((err) => melde(err.message, "fehler"));
+    },
     async verwerfen() {
       if (!(await frage("Entwurf verwerfen?", "<p>Der Text wird gelöscht.</p>", "Verwerfen", { gefahr: true }))) return;
       try {
@@ -1332,7 +1349,8 @@ function baueEntwurf(el, k) {
           await vorgaenge.beruehre(antwort.thema_id);
           if (k.kontakt) await vermerkeBeimKontakt("E-Mail");
           ablegenNachVersand("email", v.an, { vorgabe: ok.vorgabe });
-          return k.nachEnde();
+          k.nachEnde();
+          return nachSenden();
         }
         if (erfolg === null) return;
       }
@@ -1352,6 +1370,7 @@ function baueEntwurf(el, k) {
           melde("Als beantwortet markiert.", "ok");
           ablegenNachVersand("email-programm", v.an, { vorgabe: raus.vorgabe });
           k.nachEnde();
+          nachSenden();
         } catch (err) { melde(err.message, "fehler"); }
       }
     },

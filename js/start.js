@@ -610,7 +610,7 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
   const daten = await dialogFormular(`
     <h2>${vorhanden ? "Notiz" : "Neue Notiz"}</h2>
     ${abgelegt.length ? `<p>${ablage.abgelegtHtml(abgelegt)}</p>` : ""}
-    ${a.thema_id ? `<p class="notiz-vorgang">Aus dieser Notiz wurde ein Vorgang gestartet: <a href="#/thema/${esc(a.thema_id)}" data-zum-vorgang>Zum Vorgang</a></p>` : ""}
+    ${a.thema_id ? `<p class="notiz-vorgang">Gehört zu einem Vorgang: <a href="#/thema/${esc(a.thema_id)}" data-zum-vorgang>Zum Vorgang</a></p>` : ""}
     <label class="feld"><span>Worum geht es?</span>
       <span class="diktat"><input name="titel" required maxlength="200" value="${esc(a.titel || "")}" placeholder="z. B. Check Möglichkeit Mieterhöhung Huber" autocomplete="off">${mikroKnopf()}</span></label>
     <label class="feld"><span>Notiz (optional)</span>
@@ -628,6 +628,10 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
       <label class="feld"><span data-datum-titel>${nurTodoStart ? "Fällig am" : "Wiedervorlage am"}</span><input type="date" name="faellig_am" value="${esc(faellig)}" min="2020-01-01" max="2099-12-31">
         ${vorschlag?.wiedervorlage && vorschlag.wiedervorlage !== a.faellig_am ? `<span class="feldhinweis">Vorschlag der KI – mit „Speichern“ übernehmen.</span>` : ""}</label>
       <label class="feld"><span>In der Liste zeigen ab … Tage vorher</span><input type="number" name="vorlauf_tage" min="0" max="60" value="${esc(a.vorlauf_tage ?? 7)}"></label>
+      <div class="feld"><span>Datei anhängen (optional)</span>
+        <label class="knopf knopf--klein dateiknopf">Foto, PDF, Word oder Excel wählen
+          <input type="file" name="dateien" multiple accept="image/*,application/pdf,.docx,.xlsx" hidden></label>
+        <span class="feldhinweis feldhinweis--leise" data-dateien>Wird nach dem Speichern in der Ablage abgelegt – Name und Ordner bestätigst du dann.</span></div>
     </div>
     ${a.antwort ? `<div class="ki-antwort"><strong>${ICON_KI} Einschätzung der KI</strong>${vorschlag ? "" : ` <span class="leise">(vom ${esc(datumDE(a.aktualisiert_am))})</span>`}
       <p>${esc(a.antwort)}</p>
@@ -651,6 +655,13 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
         for (const el of $$("[data-zuordnung]", form)) el.hidden = an;
         $("[data-datum-titel]", form).textContent = an ? "Fällig am" : "Wiedervorlage am";
         if (an && !form.faellig_am.value) form.faellig_am.value = heuteISO();
+      });
+      // Gewählte Dateien anzeigen (abgelegt wird erst nach dem Speichern, mit sichtbarem Namen)
+      form.dateien.addEventListener("change", () => {
+        const namen = [...form.dateien.files].map((f) => f.name);
+        $("[data-dateien]", form).textContent = namen.length
+          ? `${namen.join(", ")} – wird nach dem Speichern in der Ablage abgelegt (Name und Ordner bestätigst du dann).`
+          : "Wird nach dem Speichern in der Ablage abgelegt – Name und Ordner bestätigst du dann.";
       });
       // „Zum Vorgang“ schließt den Dialog
       $("[data-zum-vorgang]", form)?.addEventListener("click", () => $("#dialog").close());
@@ -703,8 +714,12 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
       vorlauf_tage: vorlauf,
     };
     if (!vorhanden && a.nachricht_id) felder.nachricht_id = a.nachricht_id;
+    if (!vorhanden && a.thema_id) felder.thema_id = a.thema_id;
     if (aktion === "erledigt") Object.assign(felder, { status: "erledigt", erledigt_am: new Date().toISOString() });
     const gespeichert = await db.speichereAufgabe(a.id, felder);
+    // Angehängte Dateien: einzeln in die Ablage (Dialog mit Name und Ordner), dann an die Notiz knüpfen
+    const dateien = daten.getAll("dateien").filter((f) => f && f.size > 0);
+    if (dateien.length) await dateienAnNotiz(gespeichert, dateien, mieterL);
     if (aktion === "pruefen") return pruefeMitKi(gespeichert, nachher);
     if (aktion === "schreiben") return anschreiben({ ...a, ...gespeichert }, mieterL);
     if (aktion === "ablage") {
@@ -724,7 +739,40 @@ export async function aufgabeDialog(a = null, { nachher = () => {}, vorschlag = 
  * Die Notiz wird zur Anweisung für die KI; der Vorgang des Schreibens wird an der Notiz gemerkt (aufgaben.thema_id).
  * Nie automatisch senden: es entsteht nur ein Entwurf.
  */
-export function anschreiben(a, mieterL = []) {
+async function dateienAnNotiz(a, dateien, mieterL) {
+  const m = a.mieter_id ? mieterL.find((x) => x.id === a.mieter_id) : null;
+  const haus = a.objekt_id || (m ? wohnungVon(m.wohnung_id)?.objekt_id : null) || undefined;
+  let n = 0;
+  for (let i = 0; i < dateien.length; i++) {
+    const r = await ablage.erfasse(dateien[i], { nurAblage: true, weiter: false, objektId: haus, nr: i + 1, von: dateien.length });
+    if (r?.abbruch) break;
+    if (r?.dokument) {
+      await db.aendereDokument(r.dokument.id, { aufgabe_id: a.id }).catch((err) => melde(err.message, "fehler"));
+      n++;
+    }
+  }
+  if (n) melde(`${n === 1 ? "Datei" : `${n} Dateien`} an der Notiz abgelegt.`, "ok");
+}
+
+/** Dateien der Notiz (ohne die Notiz selbst als PDF): auf Nachfrage als Anhang ins Schreiben mitnehmen */
+async function anhaengeAusNotiz(a) {
+  const docs = (await db.ladeAbgelegte("aufgabe_id", [a.id]).catch(() => [])).filter((d) => d.pfad && d.art !== "Notiz");
+  if (!docs.length) return;
+  const daten = await dialogFormular(`
+    <h2>Dateien mitnehmen?</h2>
+    <p>Die Notiz hat ${docs.length === 1 ? "eine Datei" : `${docs.length} Dateien`}. Als Anhang ins Schreiben übernehmen?</p>
+    <div class="checkliste">${docs.map((d) => `<label class="checkfeld"><input type="checkbox" name="dok" value="${esc(d.id)}" checked> ${esc(d.titel || "Datei")}</label>`).join("")}</div>
+    <div class="knopfreihe">
+      <button class="knopf" value="ohne" formnovalidate>Ohne Anhang</button>
+      <button class="knopf knopf--primaer" value="ok">Als Anhang mitnehmen</button>
+    </div>`);
+  if (!daten || daten.get("_aktion") !== "ok") return;
+  const ids = daten.getAll("dok");
+  zustand.anhangVorgabe = docs.filter((d) => ids.includes(d.id)).map(ablage.anhangVonDokument);
+}
+
+export async function anschreiben(a, mieterL = []) {
+  if (a.id) await anhaengeAusNotiz(a);
   let ziel = a.mieter_id || (a.dienstleister_id ? `d-${a.dienstleister_id}` : a.kontakt_id ? `k-${a.kontakt_id}` : "");
   if (!ziel) {
     const t = ` ${norm(`${a.titel} ${a.notiz || ""}`).replace(/[^a-z0-9]+/g, " ")} `;

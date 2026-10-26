@@ -1199,3 +1199,17 @@ body.datei-ueber::after {
 .notiz-vorgang { margin: 0 0 0.9rem; padding: 0.6rem 0.85rem; border-radius: 8px; background: var(--flaeche-zart); border: 1px solid var(--rand); font-size: 0.9rem; }
 .chatvorschlag__aenderung { list-style: none; margin: 0.3rem 0 0; padding: 0; display: grid; gap: 0.2rem; overflow-wrap: anywhere; }
 .chatvorschlag__aenderung s { color: var(--text-leise); }
+
+/* --- Nächster Schritt (Vorgang) ------------------------------------------- */
+.schritte { display: grid; gap: 0.5rem; margin: 0.25rem 0 1rem; min-height: 2.5rem; }
+.schritte .schritt {
+  display: flex; flex-direction: column; align-items: stretch; gap: 0.15rem; text-align: left; width: 100%; min-width: 0; cursor: pointer;
+  padding: 0.65rem 0.85rem; border: 1px solid var(--linie); border-left: 3px solid var(--messing); border-radius: 8px;
+  background: var(--flaeche); color: inherit; font: inherit;
+}
+.schritte .schritt:hover, .schritte .schritt:focus-visible { border-color: var(--messing); background: var(--messing-zart); }
+.schritt__titel { font-weight: 650; overflow-wrap: break-word; min-width: 0; }
+.schritt__unter { font-size: 0.85rem; overflow-wrap: break-word; min-width: 0; }
+.dateiknopf { cursor: pointer; align-self: flex-start; }
+.checkliste { display: grid; gap: 0.1rem; margin: 0.5rem 0 1rem; }
+.checkliste .checkfeld { margin: 0.2rem 0; overflow-wrap: anywhere; }

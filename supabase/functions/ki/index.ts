@@ -13,12 +13,13 @@
 //   { aktion: "thema_zusammenfassen", thema_id }                              → Zusammenfassung für das Abschluss-PDF
 //   { aktion: "datei_erschliessen", bild | datei_text, dateiname?, ordner? } → kurze Inhaltsangabe einer abgelegten Datei
 //   { aktion: "schritte", nachricht_id, erzwingen? }                          → Antwort + Handwerker-Auftrag als Entwürfe vorbereiten
+//   { aktion: "naechste_schritte", thema_id, wunsch? }                        → Vorschläge für den nächsten Schritt in einem Vorgang
 import { CORS, Fehler, MODELL, env, fehlerAntwort, json, kiEingerichtet, pruefeMitglied } from "../_shared/gemeinsam.ts";
 import {
   ablageVorschlag, auftrag, bereiteSchritteVor, entwirf, erschliesseDatei, fasseThemaZusammen, liesDokument, ordneEin, ordneWissen, pruefeNotiz,
 } from "../_shared/fach.ts";
 import { chat } from "../_shared/chat.ts";
-import { liesNotiz } from "../_shared/notiz.ts";
+import { liesNotiz, naechsteSchritte } from "../_shared/notiz.ts";
 
 export async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -77,6 +78,9 @@ export async function handler(req: Request): Promise<Response> {
       case "schritte":
         if (!e.nachricht_id) throw new Fehler(400, "nachricht_id fehlt", "eingabe");
         return json({ schritte: await bereiteSchritteVor(e.nachricht_id, zugriff, { erzwingen: e.erzwingen === true }) });
+      case "naechste_schritte":
+        if (!e.thema_id) throw new Fehler(400, "thema_id fehlt", "eingabe");
+        return json(await naechsteSchritte(e.thema_id, typeof e.wunsch === "string" ? e.wunsch : null, zugriff));
       case "datei_erschliessen":
         if (typeof e.datei_text?.text === "string") {
           return json(await erschliesseDatei({ text: e.datei_text.text, art: e.datei_text.art }, zugriff, e.dateiname ?? null, e.ordner ?? null));
