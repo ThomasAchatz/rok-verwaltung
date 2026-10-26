@@ -60,7 +60,9 @@ const WERKZEUGE = [
       "Schlägt Robert eine Aktion vor. Sie wird NICHT ausgeführt: Robert nimmt sie per Klick an oder lehnt sie ab. Arten: " +
       "notiz (daten: titel, notiz?, faellig_am? JJJJ-MM-TT, mieter_id?, objekt_id?, kontakt_id?), " +
       "entwurf (daten: genau EIN Empfänger: nachricht_id? (Antwort) oder mieter_id? oder kontakt_id? oder dienstleister_id? (Handwerker) oder kostentraeger_id? (Amt, optional mit mieter_id), " +
-      "objekt_id? (betroffenes Haus), anweisung): öffnet 'Neues Schreiben' an genau diesen Empfänger mit der Anweisung. " +
+      "objekt_id? (betroffenes Haus), anweisung, anhaenge? (bis zu 8 IDs von Dokumenten aus der Ablage, gefunden mit 'suche' oder 'objekt_info'; die App hängt die Dateien an die E-Mail), " +
+      "empfaenger_neu? ('kontakt' oder 'handwerker': an die Person, die du in DIESER Antwort vorher mit 'kontakt' bzw. 'handwerker' vorschlägst; dann keine Empfänger-ID)): " +
+      "öffnet 'Neues Schreiben' an genau diesen Empfänger mit der Anweisung und den Anhängen. " +
       "Geht das Schreiben an einen Handwerker, dienstleister_id verwenden, nicht die Mietpartei; die Anweisung beschreibt nur den Inhalt, " +
       `wissen (daten: titel, inhalt, ordner aus [${WISSEN_ORDNER.join(", ")}], objekt_id?), ` +
       "oeffnen (daten: ziel aus [mieter, kontakt, objekt, nachricht, postfach, wissen], id?), " +
@@ -232,6 +234,10 @@ async function fuehreAus(werkzeug: string, e: any, zugriff: Zugriff, aktionen: u
           return { fehler: `${da.name} gibt es schon (id ${da.id}). Nicht neu anlegen: schlage stattdessen 'stammdaten' mit ziel '${a.art}', id '${da.id}' und nur den neuen oder geänderten Angaben vor.` };
         }
       }
+      if (a.art === "entwurf") {
+        const fehler = await ergaenzeEntwurf(a, zugriff, aktionen);
+        if (fehler) return { fehler };
+      }
       if (aktionen.length >= 4) return { fehler: "Höchstens 4 Vorschläge pro Antwort." };
       aktionen.push(a);
       return { ok: true, hinweis: "Der Vorschlag wird Robert als Knopf angezeigt. Er entscheidet selbst." };
@@ -254,13 +260,17 @@ export function pruefeAktion(e: any): Record<string, unknown> | null {
         faellig_am: datumOk(d.faellig_am) ? d.faellig_am : null, mieter_id: opt(d.mieter_id), objekt_id: opt(d.objekt_id),
         kontakt_id: opt(d.kontakt_id),
       } };
-    case "entwurf":
-      if (!opt(d.mieter_id) && !opt(d.nachricht_id) && !opt(d.kontakt_id) && !opt(d.dienstleister_id) && !opt(d.kostentraeger_id)) return null;
+    case "entwurf": {
+      const neu = d.empfaenger_neu === "kontakt" || d.empfaenger_neu === "handwerker" ? d.empfaenger_neu : null;
+      if (!neu && !opt(d.mieter_id) && !opt(d.nachricht_id) && !opt(d.kontakt_id) && !opt(d.dienstleister_id) && !opt(d.kostentraeger_id)) return null;
+      // Anhänge: IDs (oder { id }) von Dokumenten der Ablage; geprüft wird beim Vorschlagen
+      const anhaenge = [...new Set((Array.isArray(d.anhaenge) ? d.anhaenge : []).map((x: unknown) => opt(typeof x === "object" && x ? (x as { id?: unknown }).id : x)).filter(Boolean))].slice(0, 8);
       return { art: "entwurf", beschriftung, daten: {
-        mieter_id: opt(d.mieter_id), nachricht_id: opt(d.nachricht_id), kontakt_id: opt(d.kontakt_id),
-        dienstleister_id: opt(d.dienstleister_id), kostentraeger_id: opt(d.kostentraeger_id), objekt_id: opt(d.objekt_id),
-        anweisung: String(d.anweisung ?? "").slice(0, 2000),
+        mieter_id: opt(d.mieter_id), nachricht_id: neu ? null : opt(d.nachricht_id), kontakt_id: neu ? null : opt(d.kontakt_id),
+        dienstleister_id: neu ? null : opt(d.dienstleister_id), kostentraeger_id: neu ? null : opt(d.kostentraeger_id), objekt_id: opt(d.objekt_id),
+        anweisung: String(d.anweisung ?? "").slice(0, 2000), empfaenger_neu: neu, anhaenge,
       } };
+    }
     case "wissen":
       if (!String(d.titel ?? "").trim() || !String(d.inhalt ?? "").trim()) return null;
       return { art: "wissen", beschriftung, daten: {
@@ -370,6 +380,22 @@ async function ergaenzeStammdaten(a: any, zugriff: Zugriff): Promise<string | nu
   return null;
 }
 
+/** Schreiben prüfen: Anhänge nur echte Dokumente (mit Titel für die Karte), neuer Empfänger nur mit passendem Vorschlag davor */
+// deno-lint-ignore no-explicit-any
+export async function ergaenzeEntwurf(a: any, zugriff: Zugriff, aktionen: unknown[]): Promise<string | null> {
+  const d = a.daten;
+  if (d.empfaenger_neu && !(aktionen as { art: string }[]).some((x) => x.art === d.empfaenger_neu)) {
+    return `Schlage in dieser Antwort zuerst '${d.empfaenger_neu}' vor (die neue Person) und danach den Entwurf mit empfaenger_neu. Gibt es die Person schon, nimm ihre ID.`;
+  }
+  if (d.anhaenge.length) {
+    const docs = await rest(`dokumente?id=in.(${d.anhaenge.join(",")})&select=id,titel`, zugriff).catch(() => []);
+    const fehlt = d.anhaenge.length - docs.length;
+    d.anhaenge = d.anhaenge.map((id: string) => docs.find((x: { id: string }) => x.id === id)).filter(Boolean).map((x: { id: string; titel: string }) => ({ id: x.id, titel: x.titel }));
+    if (fehlt && !d.anhaenge.length) return "Diese Dokumente gibt es nicht. Bitte die ID mit 'suche' (dokumente) oder 'objekt_info' holen.";
+  }
+  return null;
+}
+
 /** Gibt es den Kontakt bzw. Handwerker schon (gleiche E-Mail, gleicher Name oder gleiche Firma)? */
 // deno-lint-ignore no-explicit-any
 export async function vorhandenePerson(art: string, d: Record<string, string | null>, zugriff: Zugriff): Promise<{ id: string; name: string } | null> {
@@ -378,6 +404,8 @@ export async function vorhandenePerson(art: string, d: Record<string, string | n
   if (d.email) teile.push(`email.ilike.${enc(String(d.email).replace(/[,()]/g, ""))}`);
   if (art === "kontakt") {
     if (d.nachname) teile.push(d.vorname ? `and(nachname.ilike.${w(d.nachname)},vorname.ilike.${w(d.vorname)})` : `nachname.ilike.${w(d.nachname)}`);
+    // „Thomas Immo“ kann auch als Firma gespeichert sein
+    if (d.nachname && !d.firma) teile.push(`firma.ilike.${w([d.vorname, d.nachname].filter(Boolean).join(" "))}`);
     if (d.firma && !d.nachname) teile.push(`firma.ilike.${w(d.firma)}`);
   } else if (d.name) {
     teile.push(`name.ilike.${w(d.name)}`);
@@ -415,6 +443,10 @@ export async function chat(verlauf: Beitrag[], zugriff: Zugriff): Promise<{ text
     "Sonst schlage 'kontakt' bzw. 'handwerker' vor, nur mit den Angaben, die Robert genannt hat (nichts dazuerfinden, keine Bankdaten). " +
     "Mietparteien legt Robert selbst an (Kontakte › Mieter › Neue Mietpartei), weil Wohnung, Miete und Mietbeginn dazugehören.\n" +
     "- Gibt es die Person schon (Treffer bei 'suche'), schlage nie 'kontakt' oder 'handwerker' vor, sondern 'stammdaten' für den vorhandenen Eintrag.\n" +
+    "- Schreiben an eine Person, die es noch nicht gibt: in DERSELBEN Antwort erst 'kontakt' bzw. 'handwerker' vorschlagen, danach 'entwurf' mit empfaenger_neu.\n" +
+    "  Nicht auf eine Bestätigung warten und Robert nicht bitten, 'angelegt' zu schreiben: die App öffnet das Schreiben, sobald er die Person angelegt hat.\n" +
+    "- Anhänge: Du kannst Dateien aus der Ablage an ein Schreiben hängen ('entwurf' mit anhaenge = Dokument-IDs). Such das Dokument mit 'suche' oder 'objekt_info'.\n" +
+    "  Sag nie, dass du nichts anhängen kannst. Gibt es mehrere passende, nimm das neueste und nenne es; findest du keins, sag das.\n" +
     "- Ändert sich eine Telefonnummer, E-Mail, Anrede, ein Name (Kontakte auch Firma/Rolle/Adresse, Handwerker Gewerk) oder zieht jemand mit ein (weitere Bewohner), " +
     "hole die Person mit 'suche' und schlage 'stammdaten' vor (nur die geänderten Felder). Robert bestätigt per Klick, dann ist es gespeichert. Keine Notiz dafür anlegen. " +
     "Miete, Wohnung, Mietbeginn/-ende, Kostenträger, Aktenzeichen und Bankdaten änderst du nie: dafür auf die Akte verweisen (Link aus 'suche'), Robert ändert sie dort unter Stammdaten.\n" +

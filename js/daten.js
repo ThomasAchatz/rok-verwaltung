@@ -354,6 +354,11 @@ export async function ladeDokumente({ objektId, mieterId = null } = {}) {
   return pruefe(await q);
 }
 /** Nur Haus und Ordner aller Dokumente (für die Zahlen in der Objektübersicht) */
+/** Bestimmte Dokumente (z. B. Anhänge, die der Chat vorschlägt) */
+export async function ladeDokumenteIds(ids) {
+  if (!ids?.length) return [];
+  return pruefe(await sb.from("dokumente").select("*").in("id", ids));
+}
 export async function ladeDokumentZahlen() {
   return pruefe(await sb.from("dokumente").select("objekt_id,ordner").limit(10000));
 }

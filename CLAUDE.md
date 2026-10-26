@@ -187,3 +187,11 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Doppelte Kontakte: Chat-Aktion `kontakt`/`handwerker` prüft im Server `vorhandenePerson()` (chat.ts, E-Mail/Name/Firma) und verlangt dann
   `stammdaten` statt Neuanlage. In der App fragt `doppeltFragen(a)` (js/chat.js, über `vorhandener(a)`) vor dem Anlegen: „Vorhandenen ergänzen“
   (nur neue/abweichende Felder aus `ERGAENZ_FELDER`, Karte wird zur Stammdaten-Karte mit Rückgängig) | „Trotzdem neu anlegen“ | Abbrechen.
+- Anhänge an Schreiben: `antworten.anhaenge` [{ bucket, pfad, name, groesse?, dokument_id? }] gilt für alle Schreiben (nicht nur Aufträge), `versand` schickt sie
+  (max. 8, zusammen 20 MB). Editor (`baueEntwurf`): Block `[data-teil=anhaenge]` mit „Aus der Ablage anhängen“ (`ablage.dokumentWaehlen()`) und
+  „Vom Gerät anhängen“ (erst `ablage.erfasse(…, { nurAblage, weiter: false })` → Rückgabe `dokument`, dann `ablage.anhangVonDokument()`); Anhänge
+  ziehen beim Empfängerwechsel mit (`mitnehmen().anhaenge` → `uebernahme.anhaenge`), Rundschreiben-Kopien bekommen sie auch. Nicht beim Brief.
+  Chat-Aktion `entwurf` kennt `anhaenge` (Dokument-IDs, Server prüft und hängt { id, titel } an, `ergaenzeEntwurf()`) → App lädt sie über
+  `db.ladeDokumenteIds()` in `zustand.anhangVorgabe` (verbraucht der nächste Nicht-Auftrag-Editor). `empfaenger_neu` 'kontakt'|'handwerker':
+  Schreiben an die Person, die in derselben Antwort angelegt wird; Karte wartet, bis die Kontakt-Karte `zielId` hat (`neuerEmpfaenger()`, auch nach
+  „Vorhandenen ergänzen“ über `urArt`). `bearbeiteDienstleister` ruft `nachher(gespeichert)`.

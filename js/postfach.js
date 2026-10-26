@@ -669,7 +669,8 @@ export async function zeigeNachricht(id) {
     zustand.vorbelegung = {
       nachricht_id: null,
       anweisung: alt.anweisung || `Rundschreiben an alle Mietparteien wegen: ${n.betreff || "Nachricht"}`,
-      uebernahme: alt.editor && alt.text?.trim() ? { betreff: String(alt.betreff || "").replace(/^(aw|re):\s*/i, ""), text: alt.text, editor: true } : null,
+      uebernahme: alt.editor && alt.text?.trim() ? { betreff: String(alt.betreff || "").replace(/^(aw|re):\s*/i, ""), text: alt.text, editor: true, anhaenge: alt.anhaenge }
+        : alt.anhaenge?.length ? { anhaenge: alt.anhaenge } : null,
     };
     zustand.themaVorgabe = n.thema_id || null;
     geheZu(`#/schreiben/h-${o.id}`);
@@ -848,9 +849,9 @@ function baueEntwurf(el, k) {
           ${k.nachricht && !k.auftrag && kiDa ? `<button type="button" class="knopf knopf--ki" data-k="fotos" title="Entwurf, der freundlich um Fotos bittet">${ICON_KI} Fotos anfordern</button>` : ""}
           ${antwort ? "" : `<button type="button" class="knopf" data-k="selbst">Selbst schreiben</button>`}
         </div>
+        <div class="anhaenge-feld" data-teil="anhaenge"></div>
         <div class="entwurf__editor" data-teil="editor" ${antwort ? "" : "hidden"}>
           <div class="ki-hinweise" data-teil="hinweise" hidden></div>
-          ${k.auftrag && antwort?.anhaenge?.length ? `<p class="leise">Im Anhang: ${antwort.anhaenge.length} ${antwort.anhaenge.length === 1 ? "Foto" : "Fotos"} aus der Nachricht.</p>` : ""}
           ${absenderL.length ? `<label class="feld feld--eng"><span>Absender</span><select name="absender">
             <option value="">${esc(zustand.profil?.firma || "Firma")}</option>
             ${absenderL.map((a) => `<option value="${esc(a.id)}" ${a.id === absenderStart ? "selected" : ""}>${esc(a.bezeichnung || a.name)}${a.bezeichnung ? ` (${esc(a.name)})` : ""}</option>`).join("")}
@@ -887,6 +888,65 @@ function baueEntwurf(el, k) {
 
   const feld = (name) => el.querySelector(`[name="${name}"]`);
   const editor = el.querySelector('[data-teil="editor"]');
+
+  // Anhänge (Dateien aus der Ablage, beim Auftrag die Fotos der Meldung): { bucket, pfad, name, groesse?, dokument_id? }
+  const anhaenge = [...(umzug?.anhaenge ?? antwort?.anhaenge ?? [])];
+  if (!k.auftrag && zustand.anhangVorgabe?.length) {
+    for (const x of zustand.anhangVorgabe) if (!anhaenge.some((y) => y.pfad === x.pfad)) anhaenge.push(x);
+    zustand.anhangVorgabe = null;
+  }
+  const anhangBox = el.querySelector('[data-teil="anhaenge"]');
+  const MAX_ANHAENGE = 8, MAX_ANHANG_MB = 20;
+  const groesseText = (b) => (b ? (b >= 1048576 ? `${(b / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(b / 1024))} KB`) : "");
+  function zeigeAnhaenge() {
+    const summe = anhaenge.reduce((s, a) => s + (Number(a.groesse) || 0), 0);
+    anhangBox.innerHTML = `
+      <div class="feld"><span>Anhänge${anhaenge.length ? ` (${anhaenge.length})` : ""}</span>
+        ${anhaenge.length ? `<ul class="mailanhaenge">${anhaenge.map((a, i) => `<li><span class="mailanhaenge__name">${esc(a.name || "Datei")}</span>
+          ${a.groesse ? `<span class="leise">${groesseText(a.groesse)}</span>` : ""}
+          <button type="button" class="textknopf" data-anhang-weg="${i}" aria-label="${esc(a.name || "Datei")} entfernen">Entfernen</button></li>`).join("")}</ul>` : ""}
+        ${k.auftrag ? "" : `<div class="knopfreihe knopfreihe--eng">
+          <button type="button" class="knopf knopf--klein" data-anhang="ablage" ${anhaenge.length >= MAX_ANHAENGE ? "disabled" : ""}>Aus der Ablage anhängen</button>
+          <button type="button" class="knopf knopf--klein" data-anhang="geraet" ${anhaenge.length >= MAX_ANHAENGE ? "disabled" : ""}>Vom Gerät anhängen</button>
+          <input type="file" data-anhang-datei hidden accept="application/pdf,image/jpeg,image/png,image/webp,.docx,.xlsx">
+        </div>`}
+        ${summe > MAX_ANHANG_MB * 1048576 ? `<p class="feldhinweis betrag--offen">Zusammen ${groesseText(summe)}: Mehr als ${MAX_ANHANG_MB} MB gehen per E-Mail nicht.</p>` : ""}
+        ${anhaenge.length && !k.auftrag ? `<p class="leise">Gehen nur per E-Mail mit, nicht beim Brief.</p>` : ""}
+      </div>`;
+    anhangBox.hidden = k.auftrag && !anhaenge.length;
+  }
+  // Änderung merken: ein gespeicherter Entwurf wird sofort aktualisiert
+  async function anhaengeGeaendert() {
+    zeigeAnhaenge();
+    if (antwort?.id) await db.speichereAntwort(antwort.id, { anhaenge }).then((a) => (antwort = a)).catch((err) => melde(err.message, "fehler"));
+  }
+  function fuegeAn(a) {
+    if (!a) return;
+    if (anhaenge.some((x) => x.pfad === a.pfad)) return melde("Diese Datei hängt schon an.", "info");
+    if (anhaenge.length >= MAX_ANHAENGE) return melde(`Höchstens ${MAX_ANHAENGE} Anhänge.`, "fehler");
+    anhaenge.push(a);
+    anhaengeGeaendert();
+  }
+  anhangBox.addEventListener("click", async (e) => {
+    const weg = e.target.closest("[data-anhang-weg]");
+    if (weg) { anhaenge.splice(Number(weg.dataset.anhangWeg), 1); return anhaengeGeaendert(); }
+    const knopf = e.target.closest("[data-anhang]");
+    if (!knopf) return;
+    if (knopf.dataset.anhang === "geraet") return anhangBox.querySelector("[data-anhang-datei]").click();
+    try { fuegeAn(await ablage.dokumentWaehlen({ objektId: hausId() })); } catch (err) { melde(err.message, "fehler"); }
+  });
+  anhangBox.addEventListener("change", async (e) => {
+    const input = e.target.closest("[data-anhang-datei]");
+    const datei = input?.files?.[0];
+    if (!datei) return;
+    input.value = "";
+    // Datei vom Gerät: erst in die Ablage (Name und Ordner sichtbar, wie überall), dann anhängen
+    try {
+      const r = await ablage.erfasse(datei, { nurAblage: true, weiter: false, objektId: hausId() || undefined });
+      if (r?.dokument) fuegeAn(ablage.anhangVonDokument(r.dokument));
+    } catch (err) { melde(err.message, "fehler"); }
+  });
+  zeigeAnhaenge();
   const hinweisBox = el.querySelector('[data-teil="hinweise"]');
   verbindeDiktat(el);
   const textGroesse = wachsen(feld("text"));
@@ -901,6 +961,9 @@ function baueEntwurf(el, k) {
     el.querySelector('[data-teil="signatur"]').innerHTML = signaturHtml(gewaehlterAbsender());
     if (antwort) speichere().catch(() => null);
   });
+  const anhangZeile = () => (!anhaenge.length ? ""
+    : k.auftrag ? `<br>Anhang: ${anhaenge.length} ${anhaenge.length === 1 ? "Foto" : "Fotos"}`
+    : `<br>${anhaenge.length === 1 ? "Anhang" : "Anhänge"}: ${anhaenge.map((a) => esc(a.name || "Datei")).join(", ")}`);
   const werte = () => ({
     an: feld("an").value.trim(),
     betreff: feld("betreff").value.trim(),
@@ -959,7 +1022,7 @@ function baueEntwurf(el, k) {
       anweisung: alt.anweisung || (k.nachricht ? `Rundschreiben an alle Mietparteien wegen: ${k.nachricht.betreff || "Nachricht"}` : ""),
       uebernahme: {
         betreff: String(alt.betreff || "").replace(/^(aw|re|wg):\s*/i, ""), text: alt.text, editor: alt.editor || !!alt.text?.trim(),
-        antwortId: alt.antwortId, eigenesThema: alt.eigenesThema, rund: true,
+        antwortId: alt.antwortId, eigenesThema: alt.eigenesThema, rund: true, anhaenge: alt.anhaenge,
       },
     };
     zustand.themaVorgabe = k.nachricht?.thema_id || (alt.eigenesThema ? null : k.themaId) || null;
@@ -1007,6 +1070,7 @@ function baueEntwurf(el, k) {
       betreff: v.betreff,
       text: v.text,
       anweisung: v.anweisung || null,
+      anhaenge,
       ...extra,
     });
     const kopf = el.querySelector(".flaeche__kopf");
@@ -1078,7 +1142,7 @@ function baueEntwurf(el, k) {
       <ul class="rundliste">${mitMail.map((m) => `<li>${esc(mieterName(m))} <span class="leise">${esc(m.email)}</span></li>`).join("")}</ul>
       ${eigene ? `<p>Eine Kopie geht an <strong>${esc(eigene)}</strong> (für euren Posteingang).</p>` : ""}
       ${ohne.length ? `<p class="hinweisbox">Ohne E-Mail (${ohne.length}): ${ohne.map((m) => esc(mieterName(m))).join(", ")}. Für sie danach „Als Aushang/Brief“.</p>` : ""}
-      <p>Betreff: ${esc(v.betreff)}</p>
+      <p>Betreff: ${esc(v.betreff)}${anhangZeile()}</p>
       <div class="mailvorschau">${esc(voll)}</div>
       ${absenderHinweis(gewaehlterAbsender())}`, `${mitMail.length} ${mitMail.length === 1 ? "E-Mail" : "E-Mails"} senden`);
     if (!ok) return;
@@ -1089,7 +1153,7 @@ function baueEntwurf(el, k) {
         try {
           kopie = await db.speichereAntwort(null, {
             mieter_id: m.id, objekt_id: k.haus.id, empfaenger_email: m.email, empfaenger_name: mieterName(m),
-            betreff: v.betreff, text: v.text, anweisung: `Rundschreiben ${k.haus.bezeichnung}`, absender: gewaehlterAbsender(),
+            betreff: v.betreff, text: v.text, anweisung: `Rundschreiben ${k.haus.bezeichnung}`, absender: gewaehlterAbsender(), anhaenge,
           });
           await db.funktion("versand", { antwort_id: kopie.id, an: m.email });
           gesendet.push(m);
@@ -1103,7 +1167,7 @@ function baueEntwurf(el, k) {
         try {
           kopie = await db.speichereAntwort(null, {
             objekt_id: k.haus.id, empfaenger_email: eigene, empfaenger_name: "Kopie an die eigene Adresse",
-            betreff: v.betreff, text: v.text, anweisung: `Rundschreiben ${k.haus.bezeichnung} (Kopie)`, absender: gewaehlterAbsender(),
+            betreff: v.betreff, text: v.text, anweisung: `Rundschreiben ${k.haus.bezeichnung} (Kopie)`, absender: gewaehlterAbsender(), anhaenge,
           });
           await db.funktion("versand", { antwort_id: kopie.id, an: eigene });
         } catch (err) {
@@ -1245,10 +1309,10 @@ function baueEntwurf(el, k) {
       const voll = `${v.text.trim()}\n\nMit freundlichen Grüßen\n${aktSignatur()}`;
       const abs = gewaehlterAbsender();
 
-      const anzahlFotos = k.auftrag ? (antwort.anhaenge || []).length : 0;
       if (zustand.ki?.versand) {
+        if (anhaenge.reduce((s, a) => s + (Number(a.groesse) || 0), 0) > MAX_ANHANG_MB * 1048576) return melde(`Die Anhänge sind zusammen größer als ${MAX_ANHANG_MB} MB. Bitte einen entfernen.`, "fehler");
         const ok = await ablage.frageMitAblage("E-Mail jetzt senden?", `
-          <p>An <strong>${esc(v.an)}</strong><br>Betreff: ${esc(v.betreff || "Ihre Nachricht")}${anzahlFotos ? `<br>Anhang: ${anzahlFotos} ${anzahlFotos === 1 ? "Foto" : "Fotos"}` : ""}</p>
+          <p>An <strong>${esc(v.an)}</strong><br>Betreff: ${esc(v.betreff || "Ihre Nachricht")}${anhangZeile()}</p>
           <div class="mailvorschau">${esc(voll)}</div>
           ${absenderHinweis(abs)}`,
         "Jetzt senden", eintragJetzt("email", v.an));
@@ -1276,7 +1340,7 @@ function baueEntwurf(el, k) {
       // Rückfall: Das eigene E-Mail-Programm öffnen
       const ok = await frage("Im E-Mail-Programm öffnen", `
         <p>Der direkte Versand aus der App ist noch nicht eingerichtet. Die E-Mail öffnet sich in Ihrem E-Mail-Programm.
-        Dort prüfen und abschicken.</p>${anzahlFotos ? `<p><strong>Die Fotos bitte im E-Mail-Programm selbst anhängen</strong> (oder „Drucken“ nutzen).</p>` : ""}`, "E-Mail-Programm öffnen");
+        Dort prüfen und abschicken.</p>${anhaenge.length ? `<p><strong>Die Anhänge (${anhaenge.map((a) => esc(a.name || "Datei")).join(", ")}) bitte im E-Mail-Programm selbst anhängen.</strong></p>` : ""}`, "E-Mail-Programm öffnen");
       if (!ok) return;
       window.location.href = `mailto:${encodeURIComponent(v.an)}?subject=${encodeURIComponent(v.betreff)}&body=${encodeURIComponent(voll)}`;
       await new Promise((r) => setTimeout(r, 600));
@@ -1338,9 +1402,10 @@ function baueEntwurf(el, k) {
         bytes,
         dateiname,
         name: { vorschlag: namensVorschlag },
-        hinweis: k.mieter
+        hinweis: (k.mieter
           ? "Noch nicht gespeichert. Beim Herunterladen, Drucken oder Versenden wird der Brief in der Akte abgelegt."
-          : "Beim Herunterladen, Drucken oder Versenden wird das Schreiben als erledigt vermerkt.",
+          : "Beim Herunterladen, Drucken oder Versenden wird das Schreiben als erledigt vermerkt.")
+          + (anhaenge.length && !k.auftrag ? ` Die Anhänge (${anhaenge.length}) gehen beim Brief nicht mit: bitte ausdrucken und beilegen.` : ""),
         unterschrift: uOption,
         email: { an: v.an, betreff: v.betreff, text: `${anrede}\n\nim Anhang erhalten Sie unser Schreiben.\n\nMit freundlichen Grüßen\n${aktSignatur()}` },
         melde,
@@ -1378,7 +1443,7 @@ function baueEntwurf(el, k) {
 
   // Für einen Wechsel des Empfängers: was bisher eingegeben bzw. entworfen wurde
   el.mitnehmen = () => ({
-    ...werte(), editor: !editor.hidden, eigenesThema, aufgabeId: k.aufgabeId || null,
+    ...werte(), editor: !editor.hidden, eigenesThema, aufgabeId: k.aufgabeId || null, anhaenge: k.auftrag ? [] : [...anhaenge],
     antwortId: antwort?.id && (!antwort.status || antwort.status === "entwurf") && !k.nachricht && !k.auftrag ? antwort.id : null,
   });
   if (umzug && (umzug.antwort || (umzug.editor && (umzug.text || umzug.betreff)))) {
@@ -1687,10 +1752,10 @@ export async function zeigeNeuesSchreiben(ziel = null, antwortId = null) {
   // Empfänger wechseln: Anweisung, Text und Entwurf wandern mit (Roberts Wunsch: der KI-Vorschlag soll bleiben)
   const wechsle = (ziel) => {
     const alt = $("#entwurf")?.mitnehmen?.();
-    if (alt && (alt.anweisung || alt.antwortId || (alt.editor && alt.text.trim()))) {
+    if (alt && (alt.anweisung || alt.antwortId || alt.anhaenge?.length || (alt.editor && alt.text.trim()))) {
       zustand.vorbelegung = {
         nachricht_id: null, anweisung: alt.anweisung, aufgabeId: alt.aufgabeId || null,
-        uebernahme: { betreff: alt.betreff, text: alt.text, editor: alt.editor, antwortId: alt.antwortId, eigenesThema: alt.eigenesThema },
+        uebernahme: { betreff: alt.betreff, text: alt.text, editor: alt.editor, antwortId: alt.antwortId, eigenesThema: alt.eigenesThema, anhaenge: alt.anhaenge },
       };
     }
     geheZu(`#/schreiben/${ziel}`);

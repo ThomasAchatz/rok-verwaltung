@@ -179,6 +179,7 @@ function vorschlagHtml(a, i, j) {
     : a.art === "kontakt" ? [kontaktName(d), d.vorname || d.nachname ? d.firma : "", d.rolle, d.telefon, d.email,
         d.geburtstag_tag ? `Geburtstag ${d.geburtstag_tag}.${d.geburtstag_monat}.${d.geburtsjahr || ""}` : ""].filter(Boolean).join(" · ")
     : a.art === "handwerker" ? [d.name, d.gewerk, d.telefon, d.email, d.objekt_id ? objektVon(d.objekt_id)?.bezeichnung || "" : "alle Häuser"].filter(Boolean).join(" · ")
+    : a.art === "entwurf" && d.anhaenge?.length ? `${d.anhaenge.length === 1 ? "Anhang" : "Anhänge"}: ${d.anhaenge.map((x) => x.titel || "Datei").join(", ")}`
     : "";
   let knoepfe = "";
   if (a.status === "gespeichert") {
@@ -194,7 +195,11 @@ function vorschlagHtml(a, i, j) {
   } else if (a.art === "stammdaten") {
     knoepfe = k("annehmen", "Übernehmen", "knopf--primaer") + k("aendern", "Ändern") + k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "entwurf") {
-    knoepfe = k("oeffnen", "Schreiben öffnen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
+    // An einen Kontakt/Handwerker, der in derselben Antwort erst angelegt wird: Knopf erst danach
+    const neu = neuerEmpfaenger(a);
+    knoepfe = d.empfaenger_neu && !neu?.zielId
+      ? `<span class="chatvorschlag__status">Erst ${d.empfaenger_neu === "handwerker" ? "den Handwerker" : "den Kontakt"} oben anlegen</span>` + k("ablehnen", "Ablehnen", "knopf--leise")
+      : k("oeffnen", "Schreiben öffnen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "pdf") {
     knoepfe = k("ansehen", "Ansehen") + k("laden", "Herunterladen") + k("mail", "Per E-Mail", "knopf--primaer") + k("ablage", "In Ablage") +
       k("ablehnen", "Ablehnen", "knopf--leise");
@@ -216,6 +221,14 @@ function vorschlagHtml(a, i, j) {
     ${nameFeld}
     <div class="chatvorschlag__knoepfe">${knoepfe}</div>
   </div>`;
+}
+
+/** Karte „Neuer Kontakt/Handwerker“ aus derselben Antwort, an den ein vorgeschlagenes Schreiben gehen soll */
+function neuerEmpfaenger(a) {
+  const art = a.daten?.empfaenger_neu;
+  if (!art) return null;
+  const antwort = verlauf.find((b) => b.aktionen?.includes(a));
+  return antwort?.aktionen.find((x) => x !== a && (x.urArt || x.art) === art) || null;
 }
 
 function setze(a, status, statusText = "") {
@@ -318,6 +331,8 @@ async function doppeltFragen(a) {
   // Karte wird zur „Stammdaten ändern“-Karte des vorhandenen Eintrags (mit Rückgängig)
   const ziel = a.art === "kontakt" ? "kontakt" : "handwerker";
   const link = ziel === "kontakt" ? `#/kontakt/${x.id}` : "#/handwerker";
+  a.zielId = x.id;
+  a.urArt = a.art;
   if (!zeilen.length) {
     a.href = link;
     setze(a, "gespeichert", "Schon vorhanden, nichts geändert");
@@ -444,12 +459,14 @@ async function behandle(a, op, knopf) {
           if (weiter !== "neu") { knopf.disabled = false; if (weiter) neuLaden(); return; }
           const k = await db.speichereKontakt(null, kontaktFelder(d));
           await kontakteListe(true);
+          a.zielId = k.id;
           a.href = `#/kontakt/${k.id}`;
           setze(a, "gespeichert", "Kontakt angelegt");
         } else if (a.art === "handwerker") {
           const weiter = await doppeltFragen(a);
           if (weiter !== "neu") { knopf.disabled = false; if (weiter) neuLaden(); return; }
-          await db.speichereDienstleister(null, handwerkerFelder(d));
+          const h = await db.speichereDienstleister(null, handwerkerFelder(d));
+          a.zielId = h?.id || null;
           a.href = "#/handwerker";
           setze(a, "gespeichert", "Handwerker angelegt");
         }
@@ -470,10 +487,10 @@ async function behandle(a, op, knopf) {
             { nachher: fertig("Geändert gespeichert") });
         }
         if (a.art === "kontakt") {
-          return kontaktDialog(kontaktFelder(d), { nachher: (k) => { a.href = k?.id ? `#/kontakt/${k.id}` : null; setze(a, "gespeichert", "Kontakt angelegt"); neuLaden(); } });
+          return kontaktDialog(kontaktFelder(d), { nachher: (k) => { a.zielId = k?.id || null; a.href = k?.id ? `#/kontakt/${k.id}` : null; setze(a, "gespeichert", "Kontakt angelegt"); neuLaden(); } });
         }
         if (a.art === "handwerker") {
-          return ablage.bearbeiteDienstleister({ ...handwerkerFelder(d), id: null }, { nachher: () => { a.href = "#/handwerker"; setze(a, "gespeichert", "Handwerker angelegt"); neuLaden(); } });
+          return ablage.bearbeiteDienstleister({ ...handwerkerFelder(d), id: null }, { nachher: (h) => { a.zielId = h?.id || null; a.href = "#/handwerker"; setze(a, "gespeichert", "Handwerker angelegt"); neuLaden(); } });
         }
         if (a.art === "wissen") {
           return ablage.bearbeiteWissen({ titel: d.titel, inhalt: d.inhalt, ordner: d.ordner, objekt_id: d.objekt_id, aktiv: true },
@@ -483,15 +500,28 @@ async function behandle(a, op, knopf) {
       }
       case "oeffnen":
         if (a.art === "entwurf") {
-          zustand.vorbelegung = { nachricht_id: d.nachricht_id || null, anweisung: d.anweisung || "" };
+          const z = { ...d };
+          // Empfänger, der erst in dieser Antwort angelegt (oder ergänzt) wurde
+          if (d.empfaenger_neu) {
+            const neu = neuerEmpfaenger(a);
+            if (!neu?.zielId) return melde(`Bitte erst ${d.empfaenger_neu === "handwerker" ? "den Handwerker" : "den Kontakt"} anlegen.`, "info");
+            if (d.empfaenger_neu === "handwerker") z.dienstleister_id = neu.zielId; else z.kontakt_id = neu.zielId;
+          }
+          // Dateien aus der Ablage als Anhang vorbelegen (im Schreiben sichtbar und entfernbar)
+          if (d.anhaenge?.length) {
+            knopf.disabled = true;
+            const docs = await db.ladeDokumenteIds(d.anhaenge.map((x) => x.id));
+            zustand.anhangVorgabe = docs.filter((x) => x.pfad).map(ablage.anhangVonDokument);
+          }
+          zustand.vorbelegung = { nachricht_id: z.nachricht_id || null, anweisung: z.anweisung || "" };
           dlg.close();
-          melde("Anweisung eingetragen. Mit „Entwurf mit KI“ den Entwurf erstellen.", "info");
-          if (d.objekt_id) zustand.hausVorgabe = d.objekt_id;
-          return geheZu(d.nachricht_id ? `#/postfach/${d.nachricht_id}`
-            : d.dienstleister_id ? `#/schreiben/d-${d.dienstleister_id}`
-            : d.kontakt_id ? `#/schreiben/k-${d.kontakt_id}`
-            : d.kostentraeger_id ? `#/schreiben/t-${d.kostentraeger_id}${d.mieter_id ? "." + d.mieter_id : ""}`
-            : d.mieter_id ? `#/schreiben/${d.mieter_id}` : "#/schreiben");
+          melde(`Anweisung${zustand.anhangVorgabe?.length ? " und Anhang" : ""} eingetragen. Mit „Entwurf mit KI“ den Entwurf erstellen.`, "info");
+          if (z.objekt_id) zustand.hausVorgabe = z.objekt_id;
+          return geheZu(z.nachricht_id ? `#/postfach/${z.nachricht_id}`
+            : z.dienstleister_id ? `#/schreiben/d-${z.dienstleister_id}`
+            : z.kontakt_id ? `#/schreiben/k-${z.kontakt_id}`
+            : z.kostentraeger_id ? `#/schreiben/t-${z.kostentraeger_id}${z.mieter_id ? "." + z.mieter_id : ""}`
+            : z.mieter_id ? `#/schreiben/${z.mieter_id}` : "#/schreiben");
         }
         dlg.close();
         return geheZu(ZIELE[d.ziel] ? ZIELE[d.ziel] + d.id : d.ziel === "wissen" ? "#/wissen" : "#/postfach");

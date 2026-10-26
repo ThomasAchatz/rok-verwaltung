@@ -5,6 +5,7 @@ import { datumDE, mieterName } from "./dokumente.js";
 import { $, $$, esc, melde, dialogFormular, frage, heuteISO, dateiTeil, herunterladen, zustand, objektVon, wohnungVon } from "./helfer.js";
 import {
   ICON_KI, istEmail, norm, geheZu, mieterListe, mieterOptionen, betrifftOptionen, betrifftAus, mikroKnopf, verbindeDiktat, wartehinweis, verkleinere, alsBase64,
+  suchauswahlHtml, verbindeSuchauswahl,
 } from "./ui.js";
 import { textPdf } from "./pdf.js";
 import { officeText } from "./officetext.js";
@@ -269,6 +270,49 @@ document.addEventListener("drop", (e) => {
 // ---------------------------------------------------------------------------
 // Mehrere Dateien nacheinander erfassen (je Datei ein Dialog), am Ende einmal weiter
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Anhänge für E-Mails: Dateien aus der Ablage (Bucket „dokumente“) als { bucket, pfad, name, groesse, dokument_id }
+// ---------------------------------------------------------------------------
+export function anhangVonDokument(d) {
+  const endung = ENDUNG[d.typ] || String(d.pfad || "").split(".").pop() || "pdf";
+  const titel = String(d.titel || "Dokument").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").trim().slice(0, 150) || "Dokument";
+  return { bucket: "dokumente", pfad: d.pfad, name: `${titel}.${endung}`, groesse: d.groesse || null, dokument_id: d.id };
+}
+/** Dokument aus der Ablage suchen und wählen (Suchfeld über alle Häuser und „Allgemein“). Liefert den Anhang oder null. */
+export async function dokumentWaehlen({ objektId = null } = {}) {
+  const liste = await db.ladeDokumente({}).catch(() => []);
+  if (!liste.length) { melde("In der Ablage liegen noch keine Dateien.", "info"); return null; }
+  const haus = (id) => (id ? objektVon(id)?.bezeichnung || "Haus" : "Allgemein");
+  // Dateien des betroffenen Hauses zuerst
+  const sortiert = [...liste].sort((a, b) => (b.objekt_id === objektId) - (a.objekt_id === objektId) || haus(a.objekt_id).localeCompare(haus(b.objekt_id)));
+  const eintraege = sortiert.map((d) => ({
+    wert: d.id, name: d.titel || "(ohne Namen)", gruppe: haus(d.objekt_id),
+    zusatz: [ordnerAnzeige(d.ordner), d.datum ? datumDE(d.datum) : ""].filter(Boolean).join(" · "),
+  }));
+  const daten = await dialogFormular(`
+    <h2>Datei aus der Ablage anhängen</h2>
+    ${suchauswahlHtml({ label: "Datei suchen", placeholder: "Name, Ordner oder Haus …", name: "dokument" })}
+    <p class="oz-fehler" data-fehler role="alert" hidden></p>
+    <div class="knopfreihe">
+      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      <button class="knopf knopf--primaer" value="ok">Anhängen</button>
+    </div>`, {
+    breit: true,
+    vorbereiten: (form) => {
+      verbindeSuchauswahl($(".suchauswahl", form), eintraege);
+      form.addEventListener("submit", (e) => {
+        if (e.submitter?.value !== "ok" || form.dokument.value) return;
+        e.preventDefault();
+        const p = $("[data-fehler]", form);
+        p.textContent = "Bitte eine Datei aus der Liste wählen."; p.hidden = false;
+      });
+    },
+  });
+  const id = daten?.get("dokument");
+  const d = id ? liste.find((x) => x.id === id) : null;
+  return d ? anhangVonDokument(d) : null;
+}
+
 export async function erfasseAlle(dateien, optionen = {}) {
   const liste = [...(dateien || [])].filter(Boolean);
   if (liste.length <= 1) return erfasse(liste[0], optionen);
@@ -446,7 +490,7 @@ export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von 
       }, blob);
       zustand.zuletztAbgelegt = neu?.id || null;
       melde(von > 1 ? `Abgelegt: ${String(daten.get("titel") || "").trim()}` : "Abgelegt.", "ok");
-      return fertig(ablageZiel ? ablageZiel(objekt_id) : `#/objekt/${objekt_id || "allgemein"}`, true);
+      return { ...fertig(ablageZiel ? ablageZiel(objekt_id) : `#/objekt/${objekt_id || "allgemein"}`, true), dokument: neu };
     } catch (err) {
       melde(err.message, "fehler");
     }
@@ -772,6 +816,7 @@ export async function bearbeiteDienstleister(d, { nachher = () => {}, objektId =
     </div>`, { breit: true });
   if (!daten) return;
   if (daten.get("_aktion") === "schreiben") return geheZu(`#/schreiben/d-${d.id}`);
+  let gespeichert = null;
   try {
     if (daten.get("_aktion") === "loeschen") {
       if (!(await frage("Löschen?", `<p>„${esc(d.name)}“ wird aus der Liste gelöscht.</p>`, "Löschen", { gefahr: true }))) return;
@@ -780,7 +825,7 @@ export async function bearbeiteDienstleister(d, { nachher = () => {}, objektId =
     } else {
       const email = String(daten.get("email") || "").trim();
       if (email && !istEmail(email)) return melde("Die E-Mail-Adresse sieht nicht richtig aus.", "fehler");
-      await db.speichereDienstleister(d.id, {
+      gespeichert = await db.speichereDienstleister(d.id, {
         name: String(daten.get("name")).trim(),
         gewerk: String(daten.get("gewerk") || "").trim() || null,
         telefon: String(daten.get("telefon") || "").trim() || null,
@@ -791,7 +836,7 @@ export async function bearbeiteDienstleister(d, { nachher = () => {}, objektId =
       });
       melde("Gespeichert.", "ok");
     }
-    nachher();
+    nachher(gespeichert);
   } catch (err) {
     melde(err.message, "fehler");
   }
