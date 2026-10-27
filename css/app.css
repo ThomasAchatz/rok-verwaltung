@@ -1213,3 +1213,116 @@ body.datei-ueber::after {
 .dateiknopf { cursor: pointer; align-self: flex-start; }
 .checkliste { display: grid; gap: 0.1rem; margin: 0.5rem 0 1rem; }
 .checkliste .checkfeld { margin: 0.2rem 0; overflow-wrap: anywhere; }
+
+/* --- Mieteingänge ---------------------------------------------------------- */
+.me-steuerung { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1rem; margin-bottom: 1rem; }
+.me-monat { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.me-monat strong { font-size: 1.05rem; min-width: 9.5rem; text-align: center; color: var(--tinte); }
+.me-sicht { margin-bottom: 0; }
+.me-kacheln { display: grid; grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.me-kachel { background: var(--flaeche); border: 1px solid var(--linie); border-radius: 10px; padding: 0.9rem 1rem; box-shadow: var(--schatten); min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.me-kachel__titel { font-size: 0.82rem; color: var(--text-leise); font-weight: 600; }
+.me-kachel__wert { font-size: 1.55rem; font-weight: 700; color: var(--tinte); font-variant-numeric: tabular-nums; line-height: 1.15; overflow-wrap: anywhere; }
+.me-kachel__unter { font-size: 0.82rem; color: var(--text-leise); }
+.me-kachel__fuss { font-size: 0.85rem; font-weight: 600; margin-top: 0.15rem; }
+.me-balken { height: 6px; border-radius: 3px; background: var(--grund); overflow: hidden; margin-top: 0.35rem; }
+.me-balken span { display: block; height: 100%; background: var(--bezahlt); border-radius: 3px; }
+.me-gut { color: var(--bezahlt); }
+.me-verlauf summary { font-weight: 600; }
+.me-jahr { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0.25rem; align-items: end; padding: 0.75rem 1rem 0.25rem; }
+.me-jahr__monat { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; background: none; border: 1px solid transparent; border-radius: 6px; padding: 0.2rem 0; cursor: pointer; font: inherit; color: inherit; min-width: 0; }
+.me-jahr__monat:hover, .me-jahr__monat--aktiv { border-color: var(--linie); background: var(--flaeche-zart); }
+.me-jahr__saeulen { position: relative; display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 6.5rem; width: 100%; }
+.me-jahr__soll, .me-jahr__ist { display: block; width: 38%; max-width: 0.9rem; border-radius: 2px 2px 0 0; min-height: 1px; }
+.me-jahr__soll { background: var(--tinte-zart); border: 1px solid var(--rand); border-bottom: 0; }
+.me-jahr__ist { background: var(--bezahlt); }
+.me-jahr__ist--fehlt { background: var(--teil); }
+.me-jahr__name { font-size: 0.72rem; color: var(--text-leise); }
+.me-jahr__legende { padding: 0 1rem 0.75rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0; }
+.me-jahr__legende i { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 2px; vertical-align: -1px; }
+.me-l-soll { background: var(--tinte-zart); border: 1px solid var(--rand); }
+.me-l-ist { background: var(--bezahlt); }
+.me-l-fehlt { background: var(--teil); }
+.me-haeuser { margin: 0.25rem 0 0.75rem; }
+.me-nur-offen { margin: 0; font-weight: 400; }
+.me-zeile {
+  display: grid; grid-template-columns: minmax(9rem, 1.3fr) minmax(5.5rem, 0.9fr) minmax(6.5rem, 0.8fr) minmax(7rem, 0.8fr) 14.75rem minmax(13rem, 1.6fr);
+  gap: 0.4rem 0.9rem; align-items: center; padding: 0.7rem 1.1rem; border-top: 1px solid var(--linie); min-width: 0;
+}
+.me-zeile > * { min-width: 0; }
+.me-zeile--kopf { font-size: 0.78rem; color: var(--text-leise); font-weight: 600; text-transform: none; padding-top: 0.5rem; padding-bottom: 0.5rem; background: var(--flaeche-zart); }
+.me-zeile__mieter { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.4rem; font-weight: 600; overflow-wrap: anywhere; }
+.me-zeile__mieter a { color: var(--tinte); }
+.me-zeile__mieter .marker { white-space: normal; max-width: 100%; }
+.me-label { display: none; }
+.me-betrag { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.me-betrag b { display: inline-block; min-width: 1.1rem; text-align: center; border-radius: 3px; font-size: 0.85rem; }
+.me-betrag--ok b { color: var(--bezahlt); }
+.me-betrag--teil b { color: #8a5d0d; background: var(--teil-zart); }
+.me-betrag--offen b { color: #fff; background: var(--offen); }
+.me-betrag--zukunft b { color: var(--text-leise); }
+.me-zeile__historie .mietbuch { flex-wrap: nowrap; }
+.me-zeile__historie .mietbuch__monat { cursor: pointer; font: inherit; font-size: 0.72rem; padding: 0; }
+.mietbuch__monat--erwartet { background: var(--tinte-zart); color: var(--tinte); border-color: var(--rand); }
+.me-aktuell { outline: 2px solid var(--tinte); outline-offset: 1px; }
+.me-zeile__aktion { display: flex; flex-direction: column; gap: 0.35rem; }
+.me-vorschlag { font-size: 0.85rem; color: var(--text); overflow-wrap: anywhere; }
+.me-ki svg { width: 0.85rem; height: 0.85rem; vertical-align: -1px; color: var(--messing-text); }
+.me-aktion { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.me-aktion__wahl { max-width: 100%; font-size: 0.85rem; padding: 0.3rem 0.5rem; }
+.me-hinweis { margin-top: 0.75rem; }
+.me-dialog__titel { font-size: 0.95rem; margin: 0.9rem 0 0.3rem; }
+.me-zahlungen li { align-items: flex-start; }
+.me-neu { margin-top: 1rem; }
+@media (max-width: 1100px) {
+  .me-zeile { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0.85rem 1rem; }
+  .me-zeile--kopf { display: none; }
+  .me-zeile__mieter, .me-zeile__historie, .me-zeile__aktion { grid-column: 1 / -1; }
+  .me-label { display: block; font-size: 0.72rem; color: var(--text-leise); font-weight: 600; }
+  .me-zeile__historie .mietbuch { flex-wrap: wrap; }
+}
+@media (max-width: 520px) {
+  .me-kachel__wert { font-size: 1.3rem; }
+  .me-monat strong { min-width: 0; }
+  .me-jahr { padding: 0.5rem 0.4rem 0.25rem; gap: 0.1rem; }
+  .me-jahr__name { font-size: 0.62rem; }
+}
+
+/* Zahlungsimport (Vorschau) */
+.zi-wege { margin: 0 0 1rem; padding-left: 1.1rem; display: grid; gap: 0.5rem; }
+.zi-zusammenfassung { margin: 0 0 0.4rem; }
+.zi-zusammenfassung .leise { display: inline-block; margin-left: 0.3rem; }
+.zi-ki-info { display: block; font-size: 0.8rem; margin-top: 0.3rem; }
+.zi-liste { border: 1px solid var(--linie); border-radius: var(--radius); margin: 0.6rem 0; }
+.zi-zeile {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.25fr); gap: 0.3rem 0.8rem; align-items: start;
+  padding: 0.65rem 0.8rem; border-top: 1px solid var(--linie); border-left: 3px solid transparent; min-width: 0;
+}
+.zi-zeile:first-child { border-top: 0; }
+.zi-zeile--unklar { border-left-color: var(--offen); }
+.zi-zeile--pruefen { border-left-color: var(--teil); }
+.zi-zeile > * { min-width: 0; }
+.zi-an { padding-top: 0.15rem; }
+.zi-an input { width: 1.2rem; height: 1.2rem; }
+.zi-buchung { overflow-wrap: anywhere; font-size: 0.92rem; }
+.zi-betrag { font-variant-numeric: tabular-nums; }
+.zi-zahler { font-weight: 600; }
+.zi-text { font-size: 0.82rem; }
+.zi-felder { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.35rem; }
+.zi-felder select:first-child { grid-column: 1 / -1; }
+.zi-felder select, .zi-felder input { width: 100%; min-width: 0; }
+.zi-hinweis { grid-column: 2 / -1; margin: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; font-size: 0.8rem; color: var(--text-leise); }
+.zi-chip { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 999px; font-weight: 600; font-size: 0.75rem; }
+.zi-chip--sicher { background: var(--bezahlt-zart); color: var(--bezahlt); }
+.zi-chip--pruefen { background: var(--teil-zart); color: #8a5d0d; }
+.zi-chip--unklar { background: var(--offen-zart); color: var(--offen); }
+.zi-ki { display: inline-flex; gap: 0.25rem; align-items: center; color: var(--tinte); }
+.zi-warnungen { margin: 0.3rem 0; padding: 0.5rem 0.8rem 0.5rem 1.6rem; background: var(--teil-zart); border-radius: var(--radius); font-size: 0.86rem; }
+.zi-blatt + .zi-blatt { margin-top: 1rem; }
+.zi-fuss { align-items: center; }
+.zi-summe { margin-right: auto; color: var(--text-leise); font-size: 0.9rem; }
+@media (max-width: 640px) {
+  .zi-zeile { grid-template-columns: auto minmax(0, 1fr); }
+  .zi-felder, .zi-hinweis { grid-column: 1 / -1; }
+  .zi-summe { flex-basis: 100%; }
+}

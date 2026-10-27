@@ -109,6 +109,60 @@ async function excelText(zip) {
   return teile.join("\n\n");
 }
 
+/**
+ * Zellen einer Excel-Datei als Raster: [{ name, zeilen: [[wert, …], …] }]. Zahlen kommen als Number,
+ * Text als String, leere Zellen als "". Für den Zahlungsimport (immocloud-Mietübersicht).
+ */
+export async function excelZellen(blob) {
+  if (!window.JSZip) throw new Error("Excel-Leser nicht geladen");
+  const zip = await window.JSZip.loadAsync(blob);
+  const geteilt = [];
+  const ss = await xml(zip, "xl/sharedStrings.xml");
+  if (ss) for (const si of ss.getElementsByTagNameNS(S, "si")) geteilt.push(texteVon(si));
+  const [wb, rels] = await Promise.all([xml(zip, "xl/workbook.xml"), xml(zip, "xl/_rels/workbook.xml.rels")]);
+  const ziele = new Map();
+  if (rels) for (const r of rels.getElementsByTagName("Relationship")) ziele.set(r.getAttribute("Id"), r.getAttribute("Target") || "");
+  const pfadVon = (t) => (t.startsWith("/") ? t.slice(1) : "xl/" + t.replace(/^\.\//, ""));
+  let blaetter = wb
+    ? [...wb.getElementsByTagNameNS(S, "sheet")]
+      .map((b) => ({ name: b.getAttribute("name") || "", pfad: pfadVon(ziele.get(b.getAttributeNS(R, "id")) || "") }))
+      .filter((b) => zip.file(b.pfad))
+    : [];
+  if (!blaetter.length) {
+    blaetter = Object.keys(zip.files).filter((p) => /^xl\/worksheets\/sheet\d+\.xml$/.test(p)).sort()
+      .map((pfad, i) => ({ name: `Blatt ${i + 1}`, pfad }));
+  }
+  const ergebnis = [];
+  for (const b of blaetter.slice(0, 30)) {
+    const doc = await xml(zip, b.pfad);
+    if (!doc) continue;
+    const zeilen = [];
+    let zeileNr = 0;
+    for (const row of doc.getElementsByTagNameNS(S, "row")) {
+      const r = Number(row.getAttribute("r")) - 1;
+      zeileNr = Number.isInteger(r) && r >= 0 ? r : zeileNr;
+      if (zeileNr > 5000) break;
+      const zellen = [];
+      let naechste = 0;
+      for (const c of row.getElementsByTagNameNS(S, "c")) {
+        const nr = c.getAttribute("r") ? spalteNr(c.getAttribute("r")) : naechste;
+        naechste = nr + 1;
+        if (nr > 60) continue;
+        const typ = c.getAttribute("t");
+        const v = c.getElementsByTagNameNS(S, "v")[0]?.textContent ?? "";
+        zellen[nr] = typ === "s" ? String(geteilt[Number(v)] ?? "").trim()
+          : typ === "inlineStr" ? texteVon(c).trim()
+          : typ === "str" || typ === "b" || typ === "e" ? String(v).trim()
+          : v === "" ? "" : Number.isFinite(Number(v)) ? Number(v) : String(v);
+      }
+      zeilen[zeileNr] = Array.from(zellen, (z) => (z === undefined ? "" : z));
+      zeileNr++;
+    }
+    ergebnis.push({ name: b.name, zeilen: Array.from(zeilen, (z) => z || []) });
+  }
+  return ergebnis;
+}
+
 /** Liest den Text einer Word- oder Excel-Datei. art: "word" | "excel". Gibt "" zurück, wenn nichts lesbar ist. */
 export async function officeText(blob, art) {
   if (!window.JSZip) throw new Error("ZIP-Bibliothek fehlt");

@@ -17,6 +17,7 @@ import * as stamm from "./stammdaten.js";
 import * as objekte from "./objekte.js";
 import * as kontakte from "./kontakte.js";
 import * as themen from "./vorgaenge.js";
+import * as mieteingaenge from "./mieteingaenge.js";
 import { oeffneChat } from "./chat.js";
 import {
   MONATE_KURZ, monatISO, letzteMonate, mietbuch, LEGENDE, naechsterSchritt, mieterZeile, schreibenKachel, oeffneSchreiben, emailDaten,
@@ -159,7 +160,7 @@ document.getElementById("oberleiste")?.addEventListener("submit", (e) => {
 async function route() {
   if ($("#app").hidden) return;
   const [, teil = "uebersicht", id] = (location.hash || "#/uebersicht").split("/");
-  const navTeil = { schreiben: "postfach", entwurf: "postfach", thema: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "objekte", ablage: "objekte", stammdaten: "mieter", kontakte: "mieter", kontakt: "mieter", handwerker: "mieter" }[teil] || teil;
+  const navTeil = { rueckstaende: "mieteingaenge", schreiben: "postfach", entwurf: "postfach", thema: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "objekte", ablage: "objekte", stammdaten: "mieter", kontakte: "mieter", kontakt: "mieter", handwerker: "mieter" }[teil] || teil;
   for (const a of $$("[data-nav]")) {
     if (a.dataset.nav === navTeil) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -183,7 +184,7 @@ async function route() {
     else if (teil === "vorlagen") await zeigeVorlagen();
     else if (teil === "stammdaten") await stamm.zeigeStammdaten();
     else if (teil === "einstellungen" || teil === "briefkopf") await postfach.zeigeEinstellungen();
-    else if (teil === "rueckstaende") { zustand.startFilter = "rueckstand"; await start.zeigeStart(); $("#zu-erledigen")?.scrollIntoView({ block: "start" }); }
+    else if (teil === "mieteingaenge" || teil === "rueckstaende") await mieteingaenge.zeigeMieteingaenge();
     else await start.zeigeStart();
     // Menü folgt den Brotkrumen (z. B. Vorgang einer Mietpartei → „Kontakte“, nicht „Postfach“)
     const wurzel = { "#/mieter": "mieter", "#/objekte": "objekte", "#/postfach": "postfach", "#/einstellungen": "einstellungen" }[$(".brotkrumen li a")?.getAttribute("href")];
@@ -191,7 +192,7 @@ async function route() {
       if (a.dataset.nav === wurzel) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
     }
-    if (teil !== "rueckstaende") window.scrollTo(0, 0);
+    window.scrollTo(0, 0);
   } catch (err) {
     console.error(err);
     inhalt.innerHTML = `<div class="flaeche leer"><h2>Das hat nicht geklappt</h2><p>${esc(err.message)}</p>

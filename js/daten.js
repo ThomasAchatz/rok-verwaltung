@@ -57,6 +57,65 @@ export async function ladeForderungen({ mieterId = null, abMonat = null } = {}) 
   if (abMonat) q = q.gte("monat", abMonat);
   return pruefe(await q);
 }
+// --- Mieteingänge: Zahlungen (Ist), Status je Mietpartei und Monat, Sollstellung -------------
+/** Mietparteien mit allem, was die Seite „Mieteingänge“ braucht (ohne Bankdaten) */
+export async function ladeMieterMiete() {
+  return pruefe(await sb.from("mieter")
+    .select("id,anrede,vorname,nachname,weitere_bewohner,email,telefon,wohnung_id,kostentraeger_id,direktzahlung,aktenzeichen,mietbeginn,mietende,kaltmiete,nebenkosten_vz,strom_pauschale,internet_pauschale")
+    .order("nachname"));
+}
+export async function ladeForderungenZeitraum(von, bis) {
+  return pruefe(await sb.from("forderungen").select("*").gte("monat", von).lte("monat", bis).order("monat").order("art").limit(10000));
+}
+export async function ladeZahlungen({ von = null, bis = null, mieterId = null, monat = null } = {}) {
+  let q = sb.from("zahlungen").select("*").order("monat").order("datum", { nullsFirst: true }).limit(10000);
+  if (von) q = q.gte("monat", von);
+  if (bis) q = q.lte("monat", bis);
+  if (mieterId) q = q.eq("mieter_id", mieterId);
+  if (monat) q = q.eq("monat", monat);
+  return pruefe(await q);
+}
+/**
+ * Zahlungen anlegen; schon vorhandene (gleicher Schlüssel, z. B. doppelt importiert) werden übersprungen.
+ * ersetzen: vorhandene mit gleichem Schlüssel überschreiben (erneuter Excel-Import mit geänderten Beträgen).
+ */
+export async function neueZahlungen(zeilen, { ersetzen = false } = {}) {
+  if (!zeilen.length) return [];
+  return pruefe(await sb.from("zahlungen").upsert(zeilen, { onConflict: "schluessel", ignoreDuplicates: !ersetzen }).select());
+}
+/** Welche dieser Schlüssel gibt es schon? (Doppelte Buchungen erkennen) */
+export async function vorhandeneSchluessel(schluessel) {
+  const liste = [...new Set(schluessel.filter(Boolean))];
+  const da = new Set();
+  for (let i = 0; i < liste.length; i += 150) {
+    const zeilen = pruefe(await sb.from("zahlungen").select("schluessel").in("schluessel", liste.slice(i, i + 150)));
+    for (const z of zeilen) da.add(z.schluessel);
+  }
+  return da;
+}
+export async function loescheZahlungen(ids) {
+  if (!ids.length) return;
+  pruefe(await sb.from("zahlungen").delete().in("id", ids));
+}
+export async function loescheZahlung(id) {
+  pruefe(await sb.from("zahlungen").delete().eq("id", id));
+}
+export async function ladeMieteingangStatus(von, bis) {
+  return pruefe(await sb.from("mieteingang_status").select("*").gte("monat", von).lte("monat", bis).limit(10000));
+}
+export async function setzeMieteingangStatus(mieterId, monat, felder) {
+  return pruefe(await sb.from("mieteingang_status")
+    .upsert({ mieter_id: mieterId, monat, ...felder }, { onConflict: "mieter_id,monat" }).select().single());
+}
+/** Fehlende Monatsposten bis heute anlegen (Datenbankfunktion, mehrfach ausführbar); liefert die Anzahl */
+export async function sollstellungErgaenzen() {
+  return pruefe(await sb.rpc("sollstellung_ergaenzen"));
+}
+export async function setzeForderungen(ids, felder) {
+  if (!ids.length) return [];
+  return pruefe(await sb.from("forderungen").update(felder).in("id", ids).select());
+}
+
 export async function ladeVorgaenge({ mieterId = null, anzahl = 50 } = {}) {
   let q = sb.from("vorgaenge").select("*").order("erstellt_am", { ascending: false }).limit(anzahl);
   if (mieterId) q = q.eq("mieter_id", mieterId);

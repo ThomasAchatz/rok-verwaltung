@@ -39,12 +39,14 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   vorgaenge, vorlagen, nachrichten, antworten, wissen, postfach, aufgaben, dienstleister, dokumente, kontakte, verlauf,
   themen (E-Mail-Vorgänge: nachrichten/antworten.thema_id, Status offen|erledigt, Abschluss-PDF in dokument_id),
   dokument_ordner (bearbeitbare Ordnerliste, Unterordner mit „/“, „Sonstiges“ fest; KI liest sie über `dokumentOrdner()`;
-  Spalte `bereich` 'haus' | 'allgemein', siehe „Ordner unter Allgemein“ unten);
+  Spalte `bereich` 'haus' | 'allgemein', siehe „Ordner unter Allgemein“ unten),
+  zahlungen + mieteingang_status (siehe „Mieteingänge“ unten);
   View mieter_uebersicht (security_invoker); Buckets `vorlagen`, `schreiben`, `eingang`, `dokumente` (privat).
-- Edge Functions `ki`, `posteingang`, `versand` (Quellen in `supabase/functions/`, gemeinsamer Code in
-  `_shared/` (gemeinsam, fach, mieterhoehung, chat, notiz), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
+- Edge Functions `ki`, `posteingang`, `versand`, `miete` (Quellen in `supabase/functions/`, gemeinsamer Code in
+  `_shared/` (gemeinsam, fach, mieterhoehung, chat, notiz, miete), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
   Postfach-Token). Beim Deploy über MCP alle importierten `_shared`-Dateien mitschicken (ki: alle fünf = 6 Dateien mit index,
-  posteingang: gemeinsam + fach + mieterhoehung, versand: gemeinsam).
+  posteingang: gemeinsam + fach + mieterhoehung, versand: gemeinsam, miete: gemeinsam + miete = 3 Dateien).
+  Neue KI-Bereiche lieber als eigene kleine Function (wie `miete`) statt `ki` zu vergrößern – der Deploy bleibt klein und prüfbar.
   service_role hat nur die Rechte aus `20261015010200_rechte_server.sql` (Projekt vergibt keine automatischen Grants).
   Nach jedem Deploy prüfen: `get_edge_function` holen und jede Datei mit dem Repo vergleichen (nie Platzhalter mitschicken).
 - Secrets: ANTHROPIC_API_KEY, RESEND_API_KEY, VERSAND_ABSENDER, optional RESEND_WEBHOOK_SECRET, KI_MODELL.
@@ -204,3 +206,17 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Notiz mit Dateien: Feld `dateien` im Notiz-Dialog; nach dem Speichern je Datei `ablage.erfasse(…, { nurAblage, weiter: false })` (Name sichtbar),
   dann `dokumente.aufgabe_id` setzen (`dateienAnNotiz`). „Anschreiben“ fragt vorher `anhaengeAusNotiz()` (Häkchen je Datei → `zustand.anhangVorgabe`).
   Neue Notizen aus einem Vorgang speichern `thema_id`; die Vorgangsseite zeigt „Notiz(en) zu diesem Vorgang“ mit ihren Dateien.
+- Mieteingänge (Menüpunkt statt „Rückstände“, Route `#/mieteingaenge`, alter Link `#/rueckstaende` führt dorthin; Migration
+  `20261027120000_mieteingaenge.sql`): Soll = Forderungen (kaltmiete/nebenkosten/strom/internet), Ist = `zahlungen` Art „miete“
+  (verteilt in dieser Reihenfolge); ohne Zahlungen gilt `forderungen.bezahlt`. `abgleichen()`/`abgleichenViele()` setzen den Haken
+  „bezahlt“ aus den Zahlungen (für Mietbuch/Akte). `mieteingang_status` je Mietpartei+Monat: geprueft (Zahlung da und passt) |
+  rueckstand | kontaktiert, dazu `ki_vorschlag`. `sollstellung_ergaenzen()` (SQL) legt fehlende Monatsposten an (einmal am Tag).
+  Seite `js/mieteingaenge.js` (Kacheln, Jahresverlauf, Reiter je Haus, Zeile mit Kalt/NK/Historie/Aktion, Monatsdialog).
+  Import `js/zahlungsimport.js` (Oberfläche) + `js/zahlungslogik.js` (ohne DOM, in Node testbar): Kontoauszug-CSV (UTF-8 oder
+  Windows-1252, IBAN-Spalten nie gelesen, IBANs aus Texten entfernt, Ausgänge übersprungen, ab dem 25. → Folgemonat außer der
+  Text nennt den Monat, Mehrbetrag wird abgespalten, Schlüssel `bank:…` erkennt doppelte Importe) und immocloud-Mietübersicht
+  (Excel über `excelZellen()` in officetext.js; Haus über die Straße, Wohnung über die Nummer, Jahr aus dem Dateinamen; Schlüssel
+  `excel:<mieter>:<monat>`, erneuter Import überschreibt; Kontoauszug/Hand gehen vor, ersetzen Excel-Beträge). Immer Vorschau,
+  gespeichert wird erst nach „Übernehmen“; Kontoauszug-Import mit „Rückgängig“. KI (Function `miete`) nur auf Klick:
+  `mieteingang_vorschlaege` (nur Zahlen, keine Namen) und `buchungen_zuordnen` (nur unklare Eingänge, ohne IBAN).
+  Test-Dateien sind erfunden (Scratchpad), Roberts echte Exporte NICHT ins Repo/Testsystem.
