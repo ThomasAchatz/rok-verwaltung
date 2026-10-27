@@ -79,7 +79,11 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   `automatischAblegen(e, { vorgabe })`. Brief-Vorschau: Option `name: { vorschlag }` in `js/vorschau.js`,
   `vorAbschluss({ titel })` übernimmt den Namen (Feld danach gesperrt). Jede neue Stelle, die eine Datei erzeugt,
   muss den Namen so vorher zeigen.
-- Upload: `erfasseAlle(dateien, opt)` → je Datei `erfasse()` (Rückgabe { ziel, abgelegt } bzw. { abbruch }).
+- Upload: `erfasseAlle(dateien, opt)` fragt bei mehreren „Zusammen erfassen“ (ein Vorgang) | „Jede einzeln“; `erfasse(datei | [dateien], opt)`
+  (Rückgabe { ziel, abgelegt, dokument, dokumente } bzw. { abbruch }). Ein Vorgang = bis zu 6 Dateien („Teile“, `bereiteTeil()`), im Dialog
+  „＋ Foto/Datei dazu“ (liest alles neu, `liesTeile()`) und × zum Entfernen (ohne neues Lesen). KI `brief_lesen` mit `weitere` [gleiche Form wie
+  bild/datei_text] liest alles in einem Aufruf. Ablage: je Datei ein Dokument, Name `<Titel>_1`, `_2` … (vorher sichtbar in `[data-gruppen-namen]`);
+  Postfach: eine Nachricht mit allen Dateien als Anhang. Word/Excel im Vorgang → nur Ablage.
   KI-Aktion `brief_lesen` nimmt `bild` (Foto/PDF) oder `datei_text: { text, art: "word"|"excel" }` plus `dateiname`;
   Text aus Office-Dateien liest `js/officetext.js` im Browser, `liesDokument()` entfernt IBANs vor der KI.
 - Objekte: `js/objekte.js` (Routen `#/objekte`, `#/ablage/<id|allgemein>`), `ordnerBaum()` aus Ordnerliste + Dokumenten,

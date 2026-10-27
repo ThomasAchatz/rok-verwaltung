@@ -1326,3 +1326,23 @@ body.datei-ueber::after {
   .zi-felder, .zi-hinweis { grid-column: 1 / -1; }
   .zi-summe { flex-basis: 100%; }
 }
+
+/* Erfassen mit mehreren Dateien (ein Vorgang) */
+.erfass-teile { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); gap: 0.5rem; margin-bottom: 0.6rem; }
+.erfass-teile--eins { display: block; }
+.erfass-teil { position: relative; margin: 0; min-width: 0; }
+.erfass-teile:not(.erfass-teile--eins) .erfass-teil {
+  border: 1px solid var(--linie); border-radius: var(--radius); background: var(--flaeche-zart); overflow: hidden;
+  min-height: 6.5rem; display: flex; align-items: center; justify-content: center;
+}
+.erfass-teile:not(.erfass-teile--eins) .erfass-teil img { display: block; width: 100%; height: 6.5rem; object-fit: cover; }
+.erfass-teile:not(.erfass-teile--eins) .erfass-teil .dateizeile { padding: 0.5rem; font-size: 0.78rem; flex-direction: column; text-align: center; gap: 0.3rem; }
+.erfass-teil__weg {
+  position: absolute; top: 0.25rem; right: 0.25rem; width: 1.9rem; height: 1.9rem; padding: 0; border: 0; border-radius: 999px;
+  background: rgba(22, 36, 58, 0.72); color: #ffffff; font-size: 1.15rem; line-height: 1; cursor: pointer;
+}
+.erfass-teil__weg:hover, .erfass-teil__weg:focus-visible { background: var(--offen); }
+.erfass-dazu { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; margin: 0 0 0.6rem; }
+.erfass-dazu .leise { font-size: 0.85rem; }
+.erfass-dazu label.knopf { cursor: pointer; }
+.erfass-namen { margin: 0.4rem 0 1rem; padding-left: 1.2rem; overflow-wrap: anywhere; }

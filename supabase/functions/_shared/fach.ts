@@ -526,21 +526,43 @@ const WERKZEUG_DOKUMENT: Werkzeug = {
 
 // datei: Foto/PDF als { daten, typ } oder ausgelesener Text einer Word-/Excel-Datei als { text, art: "word" | "excel" };
 // dateiname (optional): Name auf dem Gerät, nur als Hinweis
+type LeseDatei = { daten?: string; typ?: string; text?: string; art?: string };
+function pruefeLeseDatei(datei: LeseDatei) {
+  if (typeof datei?.text === "string") {
+    if (!datei.text.trim()) throw new Fehler(400, "In der Datei steht kein lesbarer Text.", "eingabe");
+    return;
+  }
+  const istPdf = datei?.typ === "application/pdf";
+  if (typeof datei?.daten !== "string" || !datei.typ) throw new Fehler(400, "Foto oder PDF fehlt", "eingabe");
+  if (!istPdf && !/^image\/(jpeg|png|webp|gif)$/.test(datei.typ)) throw new Fehler(400, "Bitte ein Foto (JPEG/PNG) oder ein PDF senden.", "eingabe");
+  if (datei.daten.length > (istPdf ? 11_000_000 : 7_000_000)) throw new Fehler(413, "Die Datei ist zu groß.", "eingabe");
+}
+// Ein Inhaltsblock für Claude: Text aus Word/Excel (ohne Bankverbindungen, gekürzt), PDF oder Foto
+function leseBlock(datei: LeseDatei) {
+  if (typeof datei.text === "string") {
+    return { type: "text", text: `<datei art="${datei.art === "excel" ? "Excel-Tabelle" : "Word-Dokument"}">\n${kuerze(ohneIban(datei.text), 20000)}\n</datei>` };
+  }
+  return datei.typ === "application/pdf"
+    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: datei.daten } }
+    : { type: "image", source: { type: "base64", media_type: datei.typ, data: datei.daten } };
+}
+
+/**
+ * Foto/PDF/Word/Excel lesen und die Ablage vorschlagen. weitere: bis zu 5 weitere Dateien zum selben Vorgang
+ * (z. B. zweites Foto, ein Zettel) – die KI liest alles zusammen und liefert einen gemeinsamen Vorschlag.
+ */
 export async function liesDokument(
-  datei: { daten?: string; typ?: string; text?: string; art?: string },
+  datei: LeseDatei,
   zugriff: Zugriff,
   dateiname: unknown = null,
+  weitere: unknown = [],
   // deno-lint-ignore no-explicit-any
 ): Promise<any> {
-  const alsText = typeof datei.text === "string";
-  const istPdf = datei.typ === "application/pdf";
-  if (alsText) {
-    if (!datei.text!.trim()) throw new Fehler(400, "In der Datei steht kein lesbarer Text.", "eingabe");
-  } else {
-    if (typeof datei.daten !== "string" || !datei.typ) throw new Fehler(400, "Foto oder PDF fehlt", "eingabe");
-    if (!istPdf && !/^image\/(jpeg|png|webp|gif)$/.test(datei.typ)) throw new Fehler(400, "Bitte ein Foto (JPEG/PNG) oder ein PDF senden.", "eingabe");
-    if (datei.daten.length > (istPdf ? 11_000_000 : 7_000_000)) throw new Fehler(413, "Die Datei ist zu groß.", "eingabe");
-  }
+  const alle: LeseDatei[] = [datei, ...(Array.isArray(weitere) ? weitere : []).slice(0, 5)];
+  for (const d of alle) pruefeLeseDatei(d);
+  const gesamt = alle.reduce((s, d) => s + (d.daten?.length ?? d.text?.length ?? 0), 0);
+  if (gesamt > 20_000_000) throw new Fehler(413, "Die Dateien sind zusammen zu groß für die KI.", "eingabe");
+  const alsText = alle.every((d) => typeof d.text === "string");
   const name = ohneIban(dateiname).replace(/[\u0000-\u001f<>]/g, " ").trim().slice(0, 150);
   const [{ objekte, text: objekteText }, { mieter, text: mieterText }, { namen: ordnerListe, hinweis: ordnerHinweis }, { wohnungen, text: wohnungenText }] = await Promise.all([
     objektListe(zugriff), mieterListe(zugriff), dokumentOrdnerInfo(zugriff, "beide"), wohnungListe(zugriff),
@@ -556,16 +578,15 @@ export async function liesDokument(
       },
     },
   };
-  // Text aus Word/Excel: Bankverbindungen entfernen, Länge begrenzen
-  const block = alsText
-    ? { type: "text", text: `<datei art="${datei.art === "excel" ? "Excel-Tabelle" : "Word-Dokument"}">\n${kuerze(ohneIban(datei.text), 20000)}\n</datei>` }
-    : istPdf
-    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: datei.daten } }
-    : { type: "image", source: { type: "base64", media_type: datei.typ, data: datei.daten } };
+  const bloecke = alle.map(leseBlock);
   const hinweisName = name ? `\n\nDateiname auf dem Gerät (nur ein Hinweis, kann ungenau sein): ${name}` : "";
+  const auftrag = alle.length > 1
+    ? `Das sind ${alle.length} Dateien zum selben Vorgang (z. B. mehrere Fotos, ein Zettel, ein Schreiben). Lies alle zusammen und ordne den Vorgang als Ganzes ein: ` +
+      "Betreff, Text und Zusammenfassung beschreiben das Gesamtbild, Absender und Datum nimm aus dem aussagekräftigsten Schreiben."
+    : alsText ? "Lies die Datei (Tabellen: Zeilen mit Tabulatoren) und ordne sie ein." : "Lies das Schreiben und ordne es ein.";
   const { daten } = await claude({
     system: `Du liest Schreiben für eine Hausverwaltung ab und schlägst die Ablage vor. Heute ist ${heuteDE()}. ${KI_REGEL_FREMD} Antworte ausschließlich über das Werkzeug 'dokument'.`,
-    inhalt: [block, { type: "text", text: `${objekteText}\n\n${wohnungenText}\n\n${mieterText}${hinweisName}\n\n${alsText ? "Lies die Datei (Tabellen: Zeilen mit Tabulatoren) und ordne sie ein." : "Lies das Schreiben und ordne es ein."}` }],
+    inhalt: [...bloecke, { type: "text", text: `${objekteText}\n\n${wohnungenText}\n\n${mieterText}${hinweisName}\n\n${auftrag}` }],
     werkzeug,
     maxTokens: 4000,
   });

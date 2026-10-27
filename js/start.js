@@ -746,8 +746,8 @@ async function dateienAnNotiz(a, dateien, mieterL) {
   for (let i = 0; i < dateien.length; i++) {
     const r = await ablage.erfasse(dateien[i], { nurAblage: true, weiter: false, objektId: haus, nr: i + 1, von: dateien.length });
     if (r?.abbruch) break;
-    if (r?.dokument) {
-      await db.aendereDokument(r.dokument.id, { aufgabe_id: a.id }).catch((err) => melde(err.message, "fehler"));
+    for (const d of r?.dokumente || (r?.dokument ? [r.dokument] : [])) {
+      await db.aendereDokument(d.id, { aufgabe_id: a.id }).catch((err) => melde(err.message, "fehler"));
       n++;
     }
   }

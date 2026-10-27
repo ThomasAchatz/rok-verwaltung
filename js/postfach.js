@@ -947,7 +947,7 @@ function baueEntwurf(el, k) {
     // Datei vom Gerät: erst in die Ablage (Name und Ordner sichtbar, wie überall), dann anhängen
     try {
       const r = await ablage.erfasse(datei, { nurAblage: true, weiter: false, objektId: hausId() || undefined });
-      if (r?.dokument) fuegeAn(ablage.anhangVonDokument(r.dokument));
+      for (const d of r?.dokumente || (r?.dokument ? [r.dokument] : [])) fuegeAn(ablage.anhangVonDokument(d));
     } catch (err) { melde(err.message, "fehler"); }
   });
   zeigeAnhaenge();

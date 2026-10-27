@@ -4,7 +4,8 @@
 //   { aktion: "einordnen", nachricht_id }
 //   { aktion: "entwurf", nachricht_id?, mieter_id?, dienstleister_id?, kontakt_id?, kostentraeger_id?, objekt_id?, rundschreiben?, absender?, anweisung?, bisher?, aenderung? }
 //   { aktion: "auftrag", nachricht_id, dienstleister_id?, anweisung? }       → Auftrag an Handwerker
-//   { aktion: "brief_lesen", bild: { daten, typ } | datei_text: { text, art }, dateiname? } → Foto/PDF/Word/Excel lesen + Ablage vorschlagen
+//   { aktion: "brief_lesen", bild: { daten, typ } | datei_text: { text, art }, dateiname?, weitere? } → Foto/PDF/Word/Excel lesen + Ablage vorschlagen
+//                                                                           (weitere: bis zu 5 Dateien zum selben Vorgang, gleiche Form)
 //   { aktion: "ablage_vorschlag", titel, text, richtung, art?, gegenueber?, mieter_id?, objekt_id? } → Ordner für die Ablage
 //   { aktion: "wissen_ordnen", text, objekt_id? }                             → eingesprochenes Wissen ordnen
 //   { aktion: "notiz_pruefen", aufgabe_id }                                   → Notiz prüfen (z. B. Mieterhöhung)
@@ -54,10 +55,10 @@ export async function handler(req: Request): Promise<Response> {
         return json(await auftrag({ zugriff, nachrichtId: e.nachricht_id, dienstleisterId: e.dienstleister_id ?? null, anweisung: e.anweisung ?? null }));
       case "brief_lesen":
         if (typeof e.datei_text?.text === "string") {
-          return json(await liesDokument({ text: e.datei_text.text, art: e.datei_text.art }, zugriff, e.dateiname ?? null));
+          return json(await liesDokument({ text: e.datei_text.text, art: e.datei_text.art }, zugriff, e.dateiname ?? null, e.weitere ?? []));
         }
         if (!e.bild?.daten || !e.bild?.typ) throw new Fehler(400, "Foto oder PDF fehlt", "eingabe");
-        return json(await liesDokument(e.bild, zugriff, e.dateiname ?? null));
+        return json(await liesDokument(e.bild, zugriff, e.dateiname ?? null, e.weitere ?? []));
       case "ablage_vorschlag":
         return json(await ablageVorschlag({
           titel: e.titel, text: e.text, richtung: e.richtung, art: e.art ?? null, gegenueber: e.gegenueber ?? null,

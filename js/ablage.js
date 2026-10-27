@@ -316,6 +316,19 @@ export async function dokumentWaehlen({ objektId = null } = {}) {
 export async function erfasseAlle(dateien, optionen = {}) {
   const liste = [...(dateien || [])].filter(Boolean);
   if (liste.length <= 1) return erfasse(liste[0], optionen);
+  // Mehrere auf einmal: ein Vorgang (KI liest alles zusammen) oder jede Datei für sich?
+  const daten = await dialogFormular(`
+    <h2>${liste.length} Dateien ausgewählt</h2>
+    <p>Gehören sie zusammen, z. B. mehrere Fotos von einem Schaden und ein Zettel dazu?</p>
+    <ul class="erfass-namen">${liste.slice(0, 8).map((d) => `<li>${esc(d.name || "Datei")}</li>`).join("")}${liste.length > 8 ? `<li class="leise">… und ${liste.length - 8} weitere</li>` : ""}</ul>
+    <div class="knopfreihe">
+      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      <button class="knopf" value="einzeln">Jede einzeln erfassen</button>
+      <button class="knopf knopf--primaer" value="zusammen">Zusammen erfassen</button>
+    </div>`);
+  const wahl = daten?.get("_aktion");
+  if (!wahl) return null;
+  if (wahl === "zusammen") return erfasse(liste, optionen);
   let ziel = null, abgelegt = 0;
   for (let i = 0; i < liste.length; i++) {
     const r = await erfasse(liste[i], { ...optionen, nr: i + 1, von: liste.length, weiter: false });
@@ -323,145 +336,228 @@ export async function erfasseAlle(dateien, optionen = {}) {
     if (r?.ziel) { ziel = r.ziel; if (r.abgelegt) abgelegt++; }
   }
   if (abgelegt > 1) melde(`${abgelegt} Dateien abgelegt.`, "ok");
-  if (ziel) geheZu(ziel);
+  if (ziel && optionen.weiter !== false) geheZu(ziel);
+  return ziel ? { ziel, abgelegt: abgelegt > 0 } : null;
 }
 
 // ---------------------------------------------------------------------------
-// Foto, PDF, Word oder Excel erfassen: die KI liest, schlägt Ablage, Ordner und Dateinamen vor
+// Foto, PDF, Word oder Excel erfassen: die KI liest, schlägt Ablage, Ordner und Dateinamen vor.
+// Mehrere Dateien zu einem Vorgang (zweites Foto, ein Zettel …): die KI liest sie zusammen;
+// im Dialog lassen sich weitere hinzufügen („＋ Foto/Datei dazu“) oder wieder entfernen.
+// eingabe: eine Datei oder eine Liste (= ein Vorgang)
 // objektId: Haus vorbelegen (null = Allgemein), nurAblage: kein Postfach (z. B. auf der Seite eines Hauses)
-// nr/von: Position bei mehreren Dateien; weiter: false = nicht selbst weiterspringen (Rückgabe { ziel })
+// nr/von: Position bei mehreren einzeln erfassten Dateien; weiter: false = nicht selbst weiterspringen (Rückgabe { ziel })
 // ablageZiel: (objektId) => Seite nach dem Ablegen (Standard: Seite des Hauses)
+// Rückgabe beim Ablegen: { ziel, abgelegt, dokument (erstes), dokumente (alle) }
 // ---------------------------------------------------------------------------
-export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von = 1, weiter = true, ablageZiel = null } = {}) {
-  if (!datei) return null;
-  const vorname = von > 1 ? `„${datei.name || "Datei"}“: ` : "";
+const MAX_TEILE = 6;
+const MAX_KI_GESAMT = 14 * 1024 * 1024; // Base64 aller Dateien zusammen, die an die KI gehen
+const DAZU_TYPEN = "image/*,application/pdf,.pdf,.docx,.xlsx," + DOCX_TYP + "," + XLSX_TYP;
+
+/** Eine Datei vorbereiten (prüfen, Fotos verkleinern). Liefert einen „Teil“ oder null (mit Meldung). */
+async function bereiteTeil(datei, vorname = "") {
   if (datei.size > MAX_DATEI) { melde(vorname + "Die Datei ist zu groß (höchstens 15 MB).", "fehler"); return null; }
   const pdf = datei.type === "application/pdf" || /\.pdf$/i.test(datei.name || "");
-  // Word/Excel vom Gerät: nur in die Ablage; die KI liest den Text
   const office = /\.docx$/i.test(datei.name || "") || datei.type === DOCX_TYP ? DOCX_TYP
     : /\.xlsx$/i.test(datei.name || "") || datei.type === XLSX_TYP ? XLSX_TYP : null;
-  if (office) nurAblage = true;
   if (!pdf && !office && !/^image\//.test(datei.type || "") && !/\.(jpe?g|png|webp|heic)$/i.test(datei.name || "")) {
     melde(vorname + "Dieses Dateiformat geht nicht. Möglich sind Fotos, PDF, Word (.docx) und Excel (.xlsx).", "fehler");
     return null;
   }
-  let blob, base64 = null, vorschau = null;
   try {
     if (office) {
       const kopf = new Uint8Array(await datei.slice(0, 2).arrayBuffer());
-      if (kopf[0] !== 0x50 || kopf[1] !== 0x4b) return melde(vorname + "Die Datei ist beschädigt oder kein echtes Word/Excel-Dokument.", "fehler");
-      blob = new Blob([datei], { type: office });
-    } else if (pdf) {
-      if (!(await istPdfDatei(datei))) return melde(vorname + "Das ist keine gültige PDF-Datei.", "fehler");
-      blob = new Blob([datei], { type: "application/pdf" });
-      if (blob.size <= MAX_PDF_KI) base64 = await alsBase64(blob);
-    } else {
-      const bild = await verkleinere(datei, 2000);
-      ({ blob, base64 } = bild);
-      vorschau = bild.url;
+      if (kopf[0] !== 0x50 || kopf[1] !== 0x4b) { melde(vorname + "Die Datei ist beschädigt oder kein echtes Word/Excel-Dokument.", "fehler"); return null; }
+      return { datei, office, pdf: false, typ: office, blob: new Blob([datei], { type: office }), base64: null, vorschau: null };
     }
+    if (pdf) {
+      if (!(await istPdfDatei(datei))) { melde(vorname + "Das ist keine gültige PDF-Datei.", "fehler"); return null; }
+      const blob = new Blob([datei], { type: "application/pdf" });
+      return { datei, office: null, pdf: true, typ: "application/pdf", blob, base64: blob.size <= MAX_PDF_KI ? await alsBase64(blob) : null, vorschau: null };
+    }
+    const bild = await verkleinere(datei, 2000);
+    return { datei, office: null, pdf: false, typ: "image/jpeg", blob: bild.blob, base64: bild.base64, vorschau: bild.url };
   } catch (err) {
-    return melde(vorname + "Die Datei konnte nicht gelesen werden: " + err.message, "fehler");
+    melde(vorname + "Die Datei konnte nicht gelesen werden: " + err.message, "fehler");
+    return null;
   }
+}
 
-  let erkannt = {};
-  let kiHinweis = zustand.ki?.ki ? "Bitte die Angaben eintragen." : "Die KI ist noch nicht eingerichtet. Bitte die Angaben selbst eintragen.";
-  if (zustand.ki?.ki && (base64 || office)) {
-    const was = office === XLSX_TYP ? "die Excel-Datei" : office ? "das Word-Dokument" : pdf ? "das PDF" : "das Foto";
-    const warte = wartehinweis(`Die KI liest ${was} …`);
-    try {
-      const dateiname = String(datei.name || "").slice(0, 150) || null;
-      let anfrage = null;
-      if (office) {
-        const art = office === XLSX_TYP ? "excel" : "word";
-        const text = await officeText(blob, art).catch(() => "");
-        if (text.trim()) anfrage = { aktion: "brief_lesen", datei_text: { text, art }, dateiname };
-        else kiHinweis = "In der Datei steht kein lesbarer Text. Bitte die Angaben eintragen.";
-      } else {
-        anfrage = { aktion: "brief_lesen", bild: { daten: base64, typ: pdf ? "application/pdf" : "image/jpeg" }, dateiname };
-      }
-      if (anfrage) {
-        erkannt = await db.funktion("ki", anfrage);
-        if (erkannt.lesbar === false) melde("Schwer lesbar. Bitte die Angaben prüfen.", "info");
-      }
-    } catch (err) {
-      melde(err.message, "fehler");
-    } finally {
-      await warte.ende();
+/** Die KI liest alle Teile zusammen (ein Vorgang). Liefert { erkannt, hinweis } */
+async function liesTeile(teile) {
+  if (!zustand.ki?.ki) return { erkannt: {}, hinweis: "Die KI ist noch nicht eingerichtet. Bitte die Angaben selbst eintragen." };
+  const was = teile.length > 1 ? `${teile.length} Dateien zusammen`
+    : teile[0].office === XLSX_TYP ? "die Excel-Datei" : teile[0].office ? "das Word-Dokument" : teile[0].pdf ? "das PDF" : "das Foto";
+  const warte = wartehinweis(`Die KI liest ${was} …`);
+  let hinweis = "Bitte die Angaben eintragen.";
+  try {
+    const stuecke = [];
+    let summe = 0, ausgelassen = 0;
+    for (const t of teile) {
+      let s = null;
+      if (t.office) {
+        const text = await officeText(t.blob, t.office === XLSX_TYP ? "excel" : "word").catch(() => "");
+        if (text.trim()) s = { text, art: t.office === XLSX_TYP ? "excel" : "word" };
+      } else if (t.base64) s = { daten: t.base64, typ: t.pdf ? "application/pdf" : "image/jpeg" };
+      const groesse = s?.daten?.length || s?.text?.length || 0;
+      if (s && summe + groesse <= MAX_KI_GESAMT) { stuecke.push(s); summe += groesse; } else ausgelassen++;
     }
-  } else if (zustand.ki?.ki && pdf) {
-    kiHinweis = "Das PDF ist zu groß für die KI. Bitte die Angaben selbst eintragen.";
+    if (!stuecke.length) {
+      return { erkannt: {}, hinweis: teile.some((t) => t.pdf) ? "Das PDF ist zu groß für die KI. Bitte die Angaben selbst eintragen." : "In der Datei steht kein lesbarer Text. Bitte die Angaben eintragen." };
+    }
+    if (ausgelassen) melde(`${ausgelassen === 1 ? "Eine Datei war" : `${ausgelassen} Dateien waren`} zu groß für die KI und ${ausgelassen === 1 ? "wird" : "werden"} nur abgelegt.`, "info");
+    const dateiname = String(teile[0].datei.name || "").slice(0, 150) || null;
+    const erstes = stuecke[0];
+    const anfrage = { aktion: "brief_lesen", dateiname, ...(erstes.text !== undefined ? { datei_text: erstes } : { bild: erstes }) };
+    if (stuecke.length > 1) anfrage.weitere = stuecke.slice(1);
+    const erkannt = await db.funktion("ki", anfrage);
+    if (erkannt.lesbar === false) melde("Schwer lesbar. Bitte die Angaben prüfen.", "info");
+    return { erkannt, hinweis };
+  } catch (err) {
+    melde(err.message, "fehler");
+    return { erkannt: {}, hinweis };
+  } finally {
+    await warte.ende();
   }
-  const vonKi = !!erkannt.betreff;
+}
 
-  const [mieterL, ordnerL] = await Promise.all([mieterListe(), ordnerListe()]);
-  const ziel = nurAblage ? "dokument" : erkannt.eingang === "anfrage" ? "anfrage" : erkannt.eingang ? "dokument" : "anfrage";
-  // Haus: von der Seite vorgegeben, sonst das Haus der erkannten Mietpartei, sonst der Vorschlag der KI
-  const hausStart = objektId !== undefined ? objektId : hausVonMieter(mieterVon(erkannt.mieter_id)) || erkannt.objekt_id || null;
-  const datumStart = erkannt.datum || heuteISO();
-  const absenderStart = erkannt.absender_kurz || erkannt.absender_name || "";
-  const kiTeile = { thema: erkannt.thema || null, firma: absenderStart || null, betrag: erkannt.betrag || null, wohnungId: erkannt.wohnung_id || null };
-  const [symbol, symbolKlasse] = symbolVon(office || (pdf ? "application/pdf" : "image/jpeg"));
-  const artStart = erkannt.art || "Sonstiges";
-  const name = norm(erkannt.absender_name);
-  const mieterVermutet = erkannt.mieter_id ||
-    (name ? mieterL.find((m) => name.includes(norm(m.nachname)) && (!m.vorname || name.includes(norm(m.vorname))))?.id : null) || null;
-  // Fürs Postfach: Mietpartei – oder das ganze Haus, wenn die KI nur das Haus erkennt
-  const betrifftStart = mieterVermutet || (erkannt.objekt_id ? `h:${erkannt.objekt_id}` : null);
+function teileHtml(teile) {
+  const mehr = teile.length > 1;
+  return `<div class="erfass-teile${mehr ? "" : " erfass-teile--eins"}">${teile.map((t, i) => {
+    const [symbol, klasse] = symbolVon(t.typ);
+    return `<figure class="erfass-teil${t.vorschau ? " erfass-teil--bild" : ""}">
+      ${t.vorschau ? `<img class="${mehr ? "" : "fotovorschau"}" src="${t.vorschau}" alt="${esc(t.datei.name || "Foto")}">`
+        : `<span class="dateizeile"><span class="dok__icon ${klasse}">${symbol}</span> <span>${esc(t.datei.name || "Dokument")} <span class="leise">(${(t.blob.size / 1048576).toFixed(1).replace(".", ",")} MB)</span></span></span>`}
+      ${mehr ? `<button class="erfass-teil__weg" value="weg:${i}" formnovalidate aria-label="${esc(t.datei.name || "Datei")} entfernen" title="Entfernen">×</button>` : ""}
+    </figure>`;
+  }).join("")}</div>`;
+}
 
-  const daten = await dialogFormular(`
-    <h2>${office ? "Datei ablegen" : pdf ? "PDF erfassen" : "Foto erfassen"}${von > 1 ? ` <span class="leise">(${nr} von ${von})</span>` : ""}</h2>
-    ${vorschau ? `<img class="fotovorschau" src="${vorschau}" alt="Vorschau">` : `<p class="dateizeile"><span class="dok__icon ${symbolKlasse}">${symbol}</span> ${esc(datei.name || "Dokument")} <span class="leise">(${(blob.size / 1048576).toFixed(1).replace(".", ",")} MB)</span></p>`}
-    <p class="leise">${vonKi ? "Von der KI gelesen: Ordner, Art und Dateiname sind Vorschläge. Bitte kurz prüfen." : esc(kiHinweis)}</p>
-    ${nurAblage ? "" : `
-    <div class="wahl" role="radiogroup" aria-label="Wohin damit?">
-      <label><input type="radio" name="ziel" value="anfrage" ${ziel === "anfrage" ? "checked" : ""}> <span><strong>Ins Postfach</strong><br><span class="leise">Jemand will etwas, braucht eine Antwort</span></span></label>
-      <label><input type="radio" name="ziel" value="dokument" ${ziel === "dokument" ? "checked" : ""}> <span><strong>In die Ablage</strong><br><span class="leise">Rechnung, Vertrag, Bescheid …</span></span></label>
-    </div>`}
-    <fieldset class="gruppe" data-ziel="dokument">
-      <div class="formraster formraster--zwei">
-        <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(hausStart)}</select></label>
-        <label class="feld"><span>Mietpartei (optional)</span><select name="mieter_id">${mieterOptionen(mieterL, erkannt.mieter_id || null)}</select>
-          <span class="feldhinweis feldhinweis--warn" data-mieter-hinweis></span></label>
-        <label class="feld"><span>Ordner</span><select name="ordner" data-wunsch="${esc(erkannt.ordner || "")}">${ordnerOptionen(ordnerFuer(hausStart), passenderOrdner(erkannt.ordner, hausStart))}</select>
-          <span class="feldhinweis feldhinweis--leise" data-zielordner></span></label>
-        <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, artStart)}</select></label>
-        <label class="feld"><span>Details (für den Namen)</span><input name="details" value="${esc(detailsVorschlag({ mieterId: erkannt.mieter_id || null, art: artStart, ki: kiTeile }))}" maxlength="80" placeholder="z. B. Wasserschaden_WHG 1_2430,31"></label>
-        <label class="feld"><span>Datum des Schreibens</span><input type="date" name="datum" value="${esc(datumStart)}" required></label>
-      </div>
-      <label class="feld"><span>Dateiname</span><input name="titel" required maxlength="160" spellcheck="false">
-        ${vonKi ? `<span class="feldhinweis feldhinweis--leise">Vorschlag der KI nach dem Ablage-Schema, änderbar</span>` : ""}</label>
-      <label class="feld"><span>Kurz zusammengefasst</span><textarea name="zusammenfassung" rows="2">${esc(erkannt.zusammenfassung || "")}</textarea></label>
-    </fieldset>
-    ${nurAblage ? "" : `
-    <fieldset class="gruppe" data-ziel="anfrage">
-      <label class="feld"><span>Absender</span><input name="absender_voll" value="${esc(erkannt.absender_name || "")}"></label>
-      <label class="feld"><span>Betrifft</span><select name="betrifft">${betrifftOptionen(mieterL, betrifftStart)}</select>
-        <span class="feldhinweis feldhinweis--leise">Eine Mietpartei oder das ganze Haus (z. B. wenn unklar ist, wer es war)</span></label>
-      <label class="feld"><span>Betreff</span><input name="betreff" required value="${esc(erkannt.betreff || "")}"></label>
-      <label class="feld"><span>Text</span>
-        <span class="diktat"><textarea name="text" rows="7">${esc(erkannt.text || "")}</textarea>${mikroKnopf()}</span></label>
-    </fieldset>`}
-    <div class="knopfreihe">
-      ${nr < von ? `<button class="knopf" value="stopp" formnovalidate>Alle abbrechen</button>` : ""}
-      <button class="knopf" value="abbrechen" formnovalidate>${nr < von ? "Überspringen" : "Abbrechen"}</button>
-      <button class="knopf knopf--primaer" value="ok" data-sichtbar="dokument">Ablegen</button>
-      ${nurAblage ? "" : `<button class="knopf knopf--primaer" value="ok" data-sichtbar="anfrage">Ins Postfach</button>`}
-    </div>`, {
-    breit: true,
-    vorbereiten: (form) => {
-      verbindeDiktat(form);
-      const zeige = () => {
-        const z = nurAblage ? "dokument" : form.querySelector("[name=ziel]:checked")?.value || "anfrage";
-        for (const f of $$("fieldset[data-ziel]", form)) { f.disabled = f.dataset.ziel !== z; f.hidden = f.disabled; }
-        for (const k of $$("[data-sichtbar]", form)) k.hidden = k.dataset.sichtbar !== z;
-      };
-      for (const r of $$("[name=ziel]", form)) r.addEventListener("change", zeige);
-      zeige();
-      verbindeNamen($("fieldset[data-ziel=dokument]", form), { ki: kiTeile });
-    },
-  });
-  if (vorschau) setTimeout(() => URL.revokeObjectURL(vorschau), 5000);
+export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, von = 1, weiter = true, ablageZiel = null } = {}) {
+  const roh = (Array.isArray(eingabe) ? eingabe : [eingabe]).filter(Boolean);
+  if (!roh.length) return null;
+  const vorname = (d) => (von > 1 || roh.length > 1 ? `„${d.name || "Datei"}“: ` : "");
+  let teile = [];
+  for (const d of roh.slice(0, MAX_TEILE)) { const t = await bereiteTeil(d, vorname(d)); if (t) teile.push(t); }
+  if (roh.length > MAX_TEILE) melde(`Höchstens ${MAX_TEILE} Dateien zusammen – der Rest wurde weggelassen.`, "info");
+  if (!teile.length) return null;
+  const aufraeumen = () => { for (const t of teile) if (t.vorschau) setTimeout(() => URL.revokeObjectURL(t.vorschau), 5000); };
+
+  let { erkannt, hinweis: kiHinweis } = await liesTeile(teile);
+  let daten = null;
+  const [mieterL] = await Promise.all([mieterListe(), ordnerListe()]);
+  for (;;) {
+    const mehr = teile.length > 1;
+    // Word/Excel gehen nur in die Ablage (das Postfach nimmt Fotos und PDF)
+    const nurAb = nurAblage || teile.some((t) => t.office);
+    const vonKi = !!erkannt.betreff;
+    const ziel = nurAb ? "dokument" : erkannt.eingang === "anfrage" ? "anfrage" : erkannt.eingang ? "dokument" : "anfrage";
+    // Haus: von der Seite vorgegeben, sonst das Haus der erkannten Mietpartei, sonst der Vorschlag der KI
+    const hausStart = objektId !== undefined ? objektId : hausVonMieter(mieterVon(erkannt.mieter_id)) || erkannt.objekt_id || null;
+    const datumStart = erkannt.datum || heuteISO();
+    const absenderStart = erkannt.absender_kurz || erkannt.absender_name || "";
+    const kiTeile = { thema: erkannt.thema || null, firma: absenderStart || null, betrag: erkannt.betrag || null, wohnungId: erkannt.wohnung_id || null };
+    const artStart = erkannt.art || "Sonstiges";
+    const name = norm(erkannt.absender_name);
+    const mieterVermutet = erkannt.mieter_id ||
+      (name ? mieterL.find((m) => name.includes(norm(m.nachname)) && (!m.vorname || name.includes(norm(m.vorname))))?.id : null) || null;
+    // Fürs Postfach: Mietpartei – oder das ganze Haus, wenn die KI nur das Haus erkennt
+    const betrifftStart = mieterVermutet || (erkannt.objekt_id ? `h:${erkannt.objekt_id}` : null);
+    const titelH2 = mehr ? `${teile.length} Dateien erfassen <span class="leise">(ein Vorgang)</span>`
+      : teile[0].office ? "Datei ablegen" : teile[0].pdf ? "PDF erfassen" : "Foto erfassen";
+    let neueDateien = [];
+
+    daten = await dialogFormular(`
+      <h2>${titelH2}${von > 1 ? ` <span class="leise">(${nr} von ${von})</span>` : ""}</h2>
+      ${teileHtml(teile)}
+      ${teile.length < MAX_TEILE ? `<p class="erfass-dazu">
+        <label class="knopf knopf--klein">＋ Foto/Datei dazu<input type="file" data-dazu accept="${DAZU_TYPEN}" multiple hidden></label>
+        <span class="leise">z. B. ein zweites Foto oder einen Zettel – die KI liest dann alles zusammen.</span>
+        <button value="dazu" formnovalidate hidden data-dazu-senden></button></p>` : ""}
+      <p class="leise">${vonKi ? `Von der KI gelesen${mehr ? " (alle Dateien zusammen)" : ""}: Ordner, Art und Dateiname sind Vorschläge. Bitte kurz prüfen.` : esc(kiHinweis)}</p>
+      ${nurAb ? "" : `
+      <div class="wahl" role="radiogroup" aria-label="Wohin damit?">
+        <label><input type="radio" name="ziel" value="anfrage" ${ziel === "anfrage" ? "checked" : ""}> <span><strong>Ins Postfach</strong><br><span class="leise">Jemand will etwas, braucht eine Antwort</span></span></label>
+        <label><input type="radio" name="ziel" value="dokument" ${ziel === "dokument" ? "checked" : ""}> <span><strong>In die Ablage</strong><br><span class="leise">Rechnung, Vertrag, Bescheid …</span></span></label>
+      </div>`}
+      <fieldset class="gruppe" data-ziel="dokument">
+        <div class="formraster formraster--zwei">
+          <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(hausStart)}</select></label>
+          <label class="feld"><span>Mietpartei (optional)</span><select name="mieter_id">${mieterOptionen(mieterL, erkannt.mieter_id || null)}</select>
+            <span class="feldhinweis feldhinweis--warn" data-mieter-hinweis></span></label>
+          <label class="feld"><span>Ordner</span><select name="ordner" data-wunsch="${esc(erkannt.ordner || "")}">${ordnerOptionen(ordnerFuer(hausStart), passenderOrdner(erkannt.ordner, hausStart))}</select>
+            <span class="feldhinweis feldhinweis--leise" data-zielordner></span></label>
+          <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, artStart)}</select></label>
+          <label class="feld"><span>Details (für den Namen)</span><input name="details" value="${esc(detailsVorschlag({ mieterId: erkannt.mieter_id || null, art: artStart, ki: kiTeile }))}" maxlength="80" placeholder="z. B. Wasserschaden_WHG 1_2430,31"></label>
+          <label class="feld"><span>Datum des Schreibens</span><input type="date" name="datum" value="${esc(datumStart)}" required></label>
+        </div>
+        <label class="feld"><span>Dateiname</span><input name="titel" required maxlength="160" spellcheck="false">
+          ${vonKi ? `<span class="feldhinweis feldhinweis--leise">Vorschlag der KI nach dem Ablage-Schema, änderbar</span>` : ""}
+          ${mehr ? `<span class="feldhinweis feldhinweis--leise" data-gruppen-namen></span>` : ""}</label>
+        <label class="feld"><span>Kurz zusammengefasst</span><textarea name="zusammenfassung" rows="2">${esc(erkannt.zusammenfassung || "")}</textarea></label>
+      </fieldset>
+      ${nurAb ? "" : `
+      <fieldset class="gruppe" data-ziel="anfrage">
+        <label class="feld"><span>Absender</span><input name="absender_voll" value="${esc(erkannt.absender_name || "")}"></label>
+        <label class="feld"><span>Betrifft</span><select name="betrifft">${betrifftOptionen(mieterL, betrifftStart)}</select>
+          <span class="feldhinweis feldhinweis--leise">Eine Mietpartei oder das ganze Haus (z. B. wenn unklar ist, wer es war)</span></label>
+        <label class="feld"><span>Betreff</span><input name="betreff" required value="${esc(erkannt.betreff || "")}"></label>
+        <label class="feld"><span>Text</span>
+          <span class="diktat"><textarea name="text" rows="7">${esc(erkannt.text || "")}</textarea>${mikroKnopf()}</span></label>
+        ${mehr ? `<p class="feldhinweis feldhinweis--leise">Alle ${teile.length} Dateien hängen an der Nachricht.</p>` : ""}
+      </fieldset>`}
+      <div class="knopfreihe">
+        ${nr < von ? `<button class="knopf" value="stopp" formnovalidate>Alle abbrechen</button>` : ""}
+        <button class="knopf" value="abbrechen" formnovalidate>${nr < von ? "Überspringen" : "Abbrechen"}</button>
+        <button class="knopf knopf--primaer" value="ok" data-sichtbar="dokument">${mehr ? `${teile.length} Dateien ablegen` : "Ablegen"}</button>
+        ${nurAb ? "" : `<button class="knopf knopf--primaer" value="ok" data-sichtbar="anfrage">Ins Postfach</button>`}
+      </div>`, {
+      breit: true,
+      vorbereiten: (form) => {
+        verbindeDiktat(form);
+        const zeige = () => {
+          const z = nurAb ? "dokument" : form.querySelector("[name=ziel]:checked")?.value || "anfrage";
+          for (const f of $$("fieldset[data-ziel]", form)) { f.disabled = f.dataset.ziel !== z; f.hidden = f.disabled; }
+          for (const k of $$("[data-sichtbar]", form)) k.hidden = k.dataset.sichtbar !== z;
+        };
+        for (const r of $$("[name=ziel]", form)) r.addEventListener("change", zeige);
+        zeige();
+        verbindeNamen($("fieldset[data-ziel=dokument]", form), { ki: kiTeile });
+        // Weitere Dateien: Dialog schließt kurz, die KI liest alles zusammen neu
+        const dazu = $("[data-dazu]", form);
+        dazu?.addEventListener("change", () => {
+          neueDateien = [...dazu.files];
+          if (neueDateien.length) form.requestSubmit($("[data-dazu-senden]", form));
+        });
+        // Mehrere Dateien in der Ablage: Namen vorher zeigen (Dateiname_1, _2 …)
+        const namenHinweis = $("[data-gruppen-namen]", form);
+        if (namenHinweis) {
+          const zeigeNamen = () => {
+            const basis = String(form.titel.value || "").trim() || "Dateiname";
+            namenHinweis.textContent = `Abgelegt als ${teile.length} Dateien: ` + teile.map((t, i) => `${basis}_${i + 1}.${ENDUNG[t.typ]}`).join(", ");
+          };
+          const spaeter = () => setTimeout(zeigeNamen, 0);
+          form.addEventListener("input", spaeter);
+          form.addEventListener("change", spaeter);
+          spaeter();
+        }
+      },
+    });
+    const aktion = daten?.get("_aktion");
+    if (aktion === "dazu") {
+      for (const d of neueDateien.slice(0, MAX_TEILE - teile.length)) { const t = await bereiteTeil(d, `„${d.name || "Datei"}“: `); if (t) teile.push(t); }
+      if (neueDateien.length > MAX_TEILE - teile.length) melde(`Höchstens ${MAX_TEILE} Dateien zusammen.`, "info");
+      ({ erkannt, hinweis: kiHinweis } = await liesTeile(teile));
+      continue;
+    }
+    if (aktion?.startsWith("weg:")) {
+      const [weg] = teile.splice(Number(aktion.slice(4)), 1);
+      if (weg?.vorschau) URL.revokeObjectURL(weg.vorschau);
+      continue; // ohne neues Lesen: die Angaben bleiben
+    }
+    break;
+  }
+  aufraeumen();
   if (!daten) return null;
   if (daten.get("_aktion") === "stopp") return { abbruch: true };
   // Ziel anspringen (einzelne Datei) oder an erfasseAlle zurückgeben
@@ -469,35 +565,42 @@ export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von 
     if (weiter) geheZu(ziel);
     return { ziel, abgelegt };
   };
+  const nurAb = nurAblage || teile.some((t) => t.office);
+  const mehr = teile.length > 1;
 
-  const typ = office || (pdf ? "application/pdf" : "image/jpeg");
-  const endung = ENDUNG[typ];
-  if (nurAblage || daten.get("ziel") === "dokument") {
+  if (nurAb || daten.get("ziel") === "dokument") {
     const objekt_id = daten.get("objekt_id") || null;
+    const titel = String(daten.get("titel") || "").trim();
+    const kiTeile = { wohnungId: erkannt.wohnung_id || null };
+    const dokumente = [];
     try {
-      const neu = await db.legeDokumentAb({
-        objekt_id,
-        mieter_id: daten.get("mieter_id") || null,
-        ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: daten.get("mieter_id") || null, wohnungId: kiTeile.wohnungId, objektId: daten.get("objekt_id") || null }),
-        art: daten.get("art"),
-        absender: erkannt.absender_name || erkannt.absender_kurz || null,
-        details: String(daten.get("details") || "").trim() || null,
-        datum: daten.get("datum") || null,
-        titel: String(daten.get("titel") || "").trim(),
-        zusammenfassung: String(daten.get("zusammenfassung") || "").trim() || null,
-        pfad: `${objekt_id || "allgemein"}/${crypto.randomUUID()}.${endung}`,
-        typ, groesse: blob.size,
-      }, blob);
-      zustand.zuletztAbgelegt = neu?.id || null;
-      melde(von > 1 ? `Abgelegt: ${String(daten.get("titel") || "").trim()}` : "Abgelegt.", "ok");
-      return { ...fertig(ablageZiel ? ablageZiel(objekt_id) : `#/objekt/${objekt_id || "allgemein"}`, true), dokument: neu };
+      for (let i = 0; i < teile.length; i++) {
+        const t = teile[i];
+        const neu = await db.legeDokumentAb({
+          objekt_id,
+          mieter_id: daten.get("mieter_id") || null,
+          ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: daten.get("mieter_id") || null, wohnungId: kiTeile.wohnungId, objektId: objekt_id }),
+          art: daten.get("art"),
+          absender: erkannt.absender_name || erkannt.absender_kurz || null,
+          details: String(daten.get("details") || "").trim() || null,
+          datum: daten.get("datum") || null,
+          titel: mehr ? `${titel}_${i + 1}` : titel,
+          zusammenfassung: String(daten.get("zusammenfassung") || "").trim() || null,
+          pfad: `${objekt_id || "allgemein"}/${crypto.randomUUID()}.${ENDUNG[t.typ]}`,
+          typ: t.typ, groesse: t.blob.size,
+        }, t.blob);
+        dokumente.push(neu);
+      }
+      zustand.zuletztAbgelegt = dokumente[0]?.id || null;
+      melde(mehr ? `${dokumente.length} Dateien abgelegt: ${titel}` : von > 1 ? `Abgelegt: ${titel}` : "Abgelegt.", "ok");
+      return { ...fertig(ablageZiel ? ablageZiel(objekt_id) : `#/objekt/${objekt_id || "allgemein"}`, true), dokument: dokumente[0], dokumente };
     } catch (err) {
-      melde(err.message, "fehler");
+      melde(err.message + (dokumente.length ? ` (${dokumente.length} von ${teile.length} abgelegt)` : ""), "fehler");
     }
-    return null;
+    return dokumente.length ? { ziel: null, abgelegt: true, dokument: dokumente[0], dokumente } : null;
   }
 
-  // Ins Postfach
+  // Ins Postfach: eine Nachricht, alle Dateien hängen daran
   const betrifft = betrifftAus(daten.get("betrifft"));
   const m = mieterL.find((x) => x.id === betrifft.mieter_id);
   try {
@@ -512,13 +615,18 @@ export async function erfasse(datei, { objektId, nurAblage = false, nr = 1, von 
       betreff: String(daten.get("betreff") || "").trim(),
       text: String(daten.get("text") || "").trim(),
     });
-    const pfad = `${n.id}/1_brief.${endung}`;
+    const anhaenge = [];
     try {
-      await db.ladeFotoHoch(pfad, blob);
-      await db.aendereNachricht(n.id, { anhaenge: [{ name: `Brief.${endung}`, typ, groesse: blob.size, pfad }] });
+      for (let i = 0; i < teile.length; i++) {
+        const t = teile[i], endung = ENDUNG[t.typ];
+        const pfad = `${n.id}/${i + 1}_brief.${endung}`;
+        await db.ladeFotoHoch(pfad, t.blob);
+        anhaenge.push({ name: mehr ? `${t.pdf ? "Anlage" : "Foto"} ${i + 1}.${endung}` : `Brief.${endung}`, typ: t.typ, groesse: t.blob.size, pfad });
+      }
     } catch (err) {
       melde(err.message, "fehler");
     }
+    if (anhaenge.length) await db.aendereNachricht(n.id, { anhaenge }).catch((err) => melde(err.message, "fehler"));
     if (zustand.ki?.ki) {
       const warte = wartehinweis("Die KI ordnet die Nachricht ein …");
       try { await db.funktion("ki", { aktion: "einordnen", nachricht_id: n.id }); }
