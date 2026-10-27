@@ -1468,3 +1468,7 @@ body.datei-ueber::after {
   .hw-lang { display: none; }
   .hw-kurz { display: inline; }
 }
+/* Postfach: Haus/Wohnung bzw. „Allgemein“ neben dem Absender */
+.post__werort { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.6rem; min-width: 0; }
+.post__ort { font-size: 0.8rem; font-weight: 600; color: var(--messing-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.post__ort--allgemein { color: var(--text-leise); font-weight: 500; }

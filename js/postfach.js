@@ -209,14 +209,33 @@ function marken(n, { mitStatus = true } = {}) {
   ].join("");
 }
 
+// Wo gehört die Nachricht hin? Haus · Wohnung der Mietpartei, sonst „Haus · ganzes Haus“, sonst „Allgemein“
+const mieterOrte = new Map(); // Mieter-ID → { haus, wohnung } (gefüllt beim Laden der Postfach-Liste bzw. Akte)
+export function merkeMieterOrte(mieterL) {
+  for (const m of mieterL) {
+    const w = wohnungVon(m.wohnung_id);
+    const o = w && objektVon(w.objekt_id);
+    mieterOrte.set(m.id, { haus: o?.bezeichnung || "", wohnung: w?.bezeichnung || "" });
+  }
+}
+export function nachrichtOrt(n) {
+  if (n.mieter_id && mieterOrte.has(n.mieter_id)) {
+    const x = mieterOrte.get(n.mieter_id);
+    return [x.haus, x.wohnung].filter(Boolean).join(" · ") || "Allgemein";
+  }
+  if (n.objekt_id && objektVon(n.objekt_id)) return `${objektVon(n.objekt_id).bezeichnung} · ganzes Haus`;
+  return n.mieter_id ? "" : "Allgemein";
+}
+
 export function nachrichtZeile(n, namen = {}) {
   const wer = (n.mieter_id && namen[n.mieter_id]) || n.absender_name || n.absender_email || "Unbekannt";
+  const ort = nachrichtOrt(n);
   const vorschau = n.ki_zusammenfassung || kurz(n.text, 180);
   return `
     <a class="post ${n.status === "neu" ? "post--neu" : ""}" href="#/postfach/${esc(n.id)}" data-nachricht="${esc(n.id)}">
       <span class="post__punkt" aria-hidden="true"></span>
       <span class="post__haupt">
-        <span class="post__kopf"><span class="post__wer">${esc(wer)}</span><span class="post__wann">${esc(zeitDE(n.eingang_am))}</span></span>
+        <span class="post__kopf"><span class="post__werort"><span class="post__wer">${esc(wer)}</span>${ort ? `<span class="post__ort ${ort === "Allgemein" ? "post__ort--allgemein" : ""}">${esc(ort)}</span>` : ""}</span><span class="post__wann">${esc(zeitDE(n.eingang_am))}</span></span>
         <span class="post__betreff">${esc(n.betreff || "(ohne Betreff)")}</span>
         <span class="post__vorschau">${esc(vorschau)}</span>
         <span class="post__marken">${marken(n)}${n.ki_am ? "" : `<span class="post__ki" hidden>wird eingeordnet …</span>`}</span>
@@ -238,6 +257,7 @@ export async function zeigePostfach() {
     ladeKiStatus(),
   ]);
   const namen = Object.fromEntries(mieterL.map((m) => [m.id, mieterName(m)]));
+  merkeMieterOrte(mieterL);
   bereiteImHintergrundVor(liste).catch(() => null);
 
   inhalt().innerHTML = `

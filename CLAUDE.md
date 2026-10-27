@@ -244,3 +244,8 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   (über `ablage.erfasse`, Name sichtbar), abschliessen (auch ohne Rechnung), erinnern, anderer, abbrechen, wieder, loeschen, bearbeiten.
   `ueberfaellig(a)` → Kachel, Liste und To-dos der Übersicht (start.js `sammle({ auftraege })`). Postfach: `kastenFuerNachricht(n)` zeigt bei
   Nachrichten im Vorgang/vom Handwerker den Auftrag mit nächstem Schritt. Noch offen: KI liest Angebot/Termin aus der Antwort (eigene Function).
+- Postfach-Liste: neben dem Absender Haus · Wohnung (`nachrichtOrt(n)`, Cache `merkeMieterOrte(mieterL)` in postfach.js, gefüllt in
+  zeigePostfach und der Akte), „Haus · ganzes Haus“ bei `objekt_id`, sonst „Allgemein“.
+- Wissen hochladen (`wissenHochladen(dateien)` in ablage.js, Knopf `#hochladen` + Ziehen auf die Seite über `setzeSeitenAblage("#/wissen")`):
+  Word/Excel liest der Browser (`officeText`), Fotos/PDF bzw. lange Texte liest die KI (`brief_lesen`), dann `wissen_ordnen` → `bearbeiteWissen`
+  zum Prüfen; die Datei selbst wird nicht abgelegt. Briefvorlagen bleiben unter Einstellungen › Vorlagen.

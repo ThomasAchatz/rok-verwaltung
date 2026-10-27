@@ -305,6 +305,7 @@ async function zeigeAkte(id) {
   const summeOffen = offen.reduce((s, f) => s + Number(f.betrag), 0);
   const hatMahnung1 = vorgaenge.some((v) => v.typ === "mahnung_1");
 
+  postfach.merkeMieterOrte([mieter]);
   inhalt.innerHTML = `
     ${brotkrumen([...KRUMEN.mieter, { text: mieterName(mieter) }])}
     <div class="akte__kopf">

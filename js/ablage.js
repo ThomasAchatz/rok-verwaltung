@@ -810,6 +810,7 @@ export async function zeigeWissen() {
         <p>Das weiß die KI, wenn sie Antworten entwirft: Abläufe, Technik, Ansprechpartner. Je konkreter, desto besser.</p></div>
       <div class="knopfreihe">
         <button type="button" class="knopf knopf--primaer" id="sprechen">${ICON_KI} Einsprechen</button>
+        <label class="knopf" id="hochladen" title="Musterschreiben, Standards, Hausordnung … (PDF, Word, Excel, Foto) – die KI liest die Datei und macht daraus einen Eintrag">Datei hochladen<input type="file" accept="${DAZU_TYPEN}" multiple hidden></label>
         <button type="button" class="knopf" id="tippen">Eintrag tippen</button>
       </div>
     </div>
@@ -832,6 +833,11 @@ export async function zeigeWissen() {
   verbindeListen($("#inhalt"), { wissen: liste, dienstleister, nachher });
   $("#sprechen").addEventListener("click", () => wissenEinsprechen({ nachher }));
   $("#tippen").addEventListener("click", () => bearbeiteWissen(null, { nachher }));
+  const hoch = $("#hochladen input");
+  hoch.addEventListener("change", () => { const d = [...hoch.files]; hoch.value = ""; wissenHochladen(d, { nachher }); });
+  // Dateien auf die Seite ziehen: werden als Wissen gelesen (nicht in die Ablage)
+  setzeSeitenAblage("#/wissen", async (dateien) => { await wissenHochladen(dateien, { nachher }); return true; },
+    "Loslassen – die KI liest die Datei und macht daraus einen Wissens-Eintrag (zum Prüfen)");
   $("#dienst-neu").addEventListener("click", () => bearbeiteDienstleister(null, { nachher }));
 }
 
@@ -912,6 +918,56 @@ export async function wissenEinsprechen({ objektId = null, nachher = () => {} } 
   return bearbeiteWissen(r ? { ...r, aktiv: true } : { inhalt: text, objekt_id: objektId }, {
     nachher, hinweis: r ? "Von der KI geordnet. Bitte prüfen und speichern." : "",
   });
+}
+
+/**
+ * Wissen aus Dateien (Musterschreiben, Standards, Hausordnung, Abläufe …): die KI liest die Datei und schlägt
+ * Titel, Inhalt, Haus und Ordner vor; gespeichert wird erst nach „Speichern“. Die Datei selbst wird nicht abgelegt.
+ * Word/Excel liest der Browser (Text), Fotos/PDF liest die KI; Bankverbindungen entfernt der Server vor der KI.
+ */
+export async function wissenHochladen(dateien, { objektId = null, nachher = () => {} } = {}) {
+  const liste = [...(dateien || [])].filter(Boolean).slice(0, 10);
+  if (!liste.length) return;
+  if (!zustand.ki?.ki) { melde("Zum Lesen von Dateien muss die KI eingerichtet sein. Bitte den Eintrag tippen.", "info"); return; }
+  for (let i = 0; i < liste.length; i++) {
+    const datei = liste[i];
+    const vorname = liste.length > 1 ? `„${datei.name}“: ` : "";
+    const t = await bereiteTeil(datei, vorname);
+    if (!t) continue;
+    const warte = wartehinweis(`Die KI liest ${liste.length > 1 ? `Datei ${i + 1} von ${liste.length}` : "die Datei"} …`);
+    let r = null, hinweis = "";
+    try {
+      const vorgabe = `Inhalt der hochgeladenen Datei „${datei.name}“ (Vorlage, Standard oder Regel der Verwaltung). ` +
+        "Mach daraus einen Wissenseintrag. Regeln, Fristen, Zuständigkeiten, Abläufe und feste Formulierungen möglichst vollständig und wörtlich übernehmen, nichts dazuerfinden.\n\n";
+      let text = "";
+      if (t.office) {
+        text = await officeText(t.blob, t.office === XLSX_TYP ? "excel" : "word").catch(() => "");
+        if (!text.trim()) throw new Error("In der Datei steht kein lesbarer Text.");
+      }
+      if (!t.office && !t.base64) throw new Error("Die Datei ist zu groß für die KI (PDF höchstens ca. 8 MB).");
+      if (!t.office || text.length > 5500) {
+        // Fotos/PDF (oder lange Office-Texte): erst lesen lassen, dann ordnen
+        const gelesen = await db.funktion("ki", {
+          aktion: "brief_lesen", dateiname: String(datei.name || "").slice(0, 150),
+          ...(t.office ? { datei_text: { text, art: t.office === XLSX_TYP ? "excel" : "word" } } : { bild: { daten: t.base64, typ: t.typ } }),
+        });
+        if (gelesen.lesbar === false) melde(`${vorname}Schwer lesbar – bitte den Eintrag prüfen.`, "info");
+        if (!t.office || !text) text = [gelesen.betreff, gelesen.text].filter(Boolean).join("\n\n");
+        else hinweis = "Die Datei ist lang – die KI hat das Wesentliche übernommen. ";
+      }
+      r = await db.funktion("ki", { aktion: "wissen_ordnen", text: vorgabe + text.slice(0, 5500), objekt_id: objektId });
+    } catch (err) {
+      melde(vorname + err.message, "fehler");
+    } finally {
+      await warte.ende();
+    }
+    if (!r) continue;
+    await bearbeiteWissen({ ...r, aktiv: true }, {
+      nachher: () => {},
+      hinweis: `${hinweis}Aus „${datei.name}“ gelesen. Bitte prüfen und speichern.`,
+    });
+  }
+  nachher();
 }
 
 // ---------------------------------------------------------------------------
