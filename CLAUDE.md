@@ -166,6 +166,9 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   `css/design-b.css` (alle mit `.design-b` davor). Elemente nur für B haben `nur-design-b` (sonst versteckt), dazu `.nav-icon`,
   `#oberleiste` (fragt den Chat über `oeffneChat(frage)`), Route `#/rueckstaende` (Filter), `vorbereitetHtml()` in start.js
   („Die KI hat vorbereitet“, prüft die Klasse). Zurück zum alten Design: Klasse in index.html entfernen (oder Commit zurücknehmen).
+  Bis 900 px Burger-Menü: Knopf `#menue-knopf` (Zahl neuer Post in `#menue-zahl`, gesetzt in `postfach.aktualisiereZaehler()`), die `<nav id="hauptmenue">`
+  wird zur Schublade von links (`html.menue-offen`, Schleier `#menue-schleier`, unten `.menue__fuss` mit E-Mail + Abmelden); schließt bei Klick,
+  Escape, Tipp daneben und Seitenwechsel (app.js `menue()`). Alle Menüpunkte inkl. Mieteingänge/Handwerker; ab 901 px Seitenleiste wie bisher.
 - Ordner unter Allgemein (Migration `20261025120000_ordner_allgemein.sql`): `dokument_ordner.bereich` 'haus' (in jedem Haus gleich) |
   'allgemein' (frei angelegt, ohne Vorgabe, ohne Automatik; unique(bereich, name)). App: `ordnerListe(neu, bereich)`, `ordnerFuer(objektId)`,
   `passenderOrdner(name, objektId)`, Auswahl im Dialog folgt dem Haus (`verbindeOrdnerWahl`, merkt den KI-Wunsch in `data-wunsch`);
