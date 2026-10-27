@@ -40,7 +40,7 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   themen (E-Mail-Vorgänge: nachrichten/antworten.thema_id, Status offen|erledigt, Abschluss-PDF in dokument_id),
   dokument_ordner (bearbeitbare Ordnerliste, Unterordner mit „/“, „Sonstiges“ fest; KI liest sie über `dokumentOrdner()`;
   Spalte `bereich` 'haus' | 'allgemein', siehe „Ordner unter Allgemein“ unten),
-  zahlungen + mieteingang_status (siehe „Mieteingänge“ unten);
+  zahlungen + mieteingang_status (siehe „Mieteingänge“ unten), auftraege (siehe „Handwerker-Aufträge“ unten);
   View mieter_uebersicht (security_invoker); Buckets `vorlagen`, `schreiben`, `eingang`, `dokumente` (privat).
 - Edge Functions `ki`, `posteingang`, `versand`, `miete` (Quellen in `supabase/functions/`, gemeinsamer Code in
   `_shared/` (gemeinsam, fach, mieterhoehung, chat, notiz, miete), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
@@ -230,3 +230,17 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   auf der Seite selbst über `ablage.setzeSeitenAblage(hashAnfänge, fn, text)` – CSV/TXT/XLSX (`istImportDatei`) → `importStarten({ dateien })`,
   alles andere wie gewohnt in die Ablage. Der Dokument-weite Drop-Handler lässt Flächen in Dialogen in Ruhe (`dialogFlaeche`).
   Test-Dateien sind erfunden (Scratchpad), Roberts echte Exporte NICHT ins Repo/Testsystem.
+- Handwerker-Aufträge (Migration `20261027150000_auftraege.sql`, `js/handwerker.js`): Tabelle `auftraege` { art 'angebot'|'auftrag' (direkt),
+  status entwurf|angefragt|angebot|beauftragt|erledigt|abgeschlossen|abgebrochen, handwerker jsonb [{ dienstleister_id, antwort_id, thema_id,
+  status entwurf|angefragt|angebot|abgelehnt|beauftragen|beauftragt, betrag, datum, dokument_id, auftrag_antwort_id }], frist, termin,
+  kostenrahmen, betrag, rechnung_dokument_id, sichtbar { fotos, kontakt, zugang } }, `antworten.auftrag_id`. Seite `#/handwerker`
+  (Reiter laufend | `/abgeschlossen` | `/liste` = Handwerker-Karten; Kacheln; Filter Haus in `zustand.hwHaus`; am Handy Knopf `#hw-fab`),
+  Auftragsseite `#/auftrag/<id>`. Maske `anfrageDialog(v)`: Direkt beauftragen (Standard, ein Handwerker – z. B. Hausmeister) | Angebote einholen
+  (mehrere, Frist Pflicht); „Nur eintragen (schon vergeben)“ ohne Schreiben. Schreiben = Entwürfe: ohne Nachricht `schreibenAnlegen()` (KI `entwurf`
+  mit dienstleister_id, je Handwerker eigener Vorgang; Einsatzort/Kontakt/Zugang hängt die App an, nicht die KI), aus einer Nachricht wie bisher
+  art 'auftrag' (KI `auftrag`, Nachricht-Seite; `nachEntwurf` gibt KI-Hinweise an postfach). `abgleichen()` beim Laden: übernimmt antworten.art
+  'auftrag' ohne Auftrag (Postfach, „Ja und Ja“), setzt nach dem Senden angefragt/beauftragt, löscht Entwurfs-Aufträge ohne Schreiben (>10 min).
+  Aktionen `aktion(a, was)`: angebot, beauftragen (+ Absage-Entwürfe optional), termin, erledigt (optional gleich abschließen), rechnung
+  (über `ablage.erfasse`, Name sichtbar), abschliessen (auch ohne Rechnung), erinnern, anderer, abbrechen, wieder, loeschen, bearbeiten.
+  `ueberfaellig(a)` → Kachel, Liste und To-dos der Übersicht (start.js `sammle({ auftraege })`). Postfach: `kastenFuerNachricht(n)` zeigt bei
+  Nachrichten im Vorgang/vom Handwerker den Auftrag mit nächstem Schritt. Noch offen: KI liest Angebot/Termin aus der Antwort (eigene Function).

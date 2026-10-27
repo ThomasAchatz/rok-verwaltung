@@ -18,6 +18,7 @@ import * as objekte from "./objekte.js";
 import * as kontakte from "./kontakte.js";
 import * as themen from "./vorgaenge.js";
 import * as mieteingaenge from "./mieteingaenge.js";
+import * as handwerker from "./handwerker.js";
 import { oeffneChat } from "./chat.js";
 import {
   MONATE_KURZ, monatISO, letzteMonate, mietbuch, LEGENDE, naechsterSchritt, mieterZeile, schreibenKachel, oeffneSchreiben, emailDaten,
@@ -183,7 +184,7 @@ document.getElementById("oberleiste")?.addEventListener("submit", (e) => {
 async function route() {
   if ($("#app").hidden) return;
   const [, teil = "uebersicht", id] = (location.hash || "#/uebersicht").split("/");
-  const navTeil = { rueckstaende: "mieteingaenge", schreiben: "postfach", entwurf: "postfach", thema: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "objekte", ablage: "objekte", stammdaten: "mieter", kontakte: "mieter", kontakt: "mieter", handwerker: "mieter" }[teil] || teil;
+  const navTeil = { rueckstaende: "mieteingaenge", schreiben: "postfach", entwurf: "postfach", thema: "postfach", vorlagen: "einstellungen", briefkopf: "einstellungen", objekt: "objekte", ablage: "objekte", stammdaten: "mieter", kontakte: "mieter", kontakt: "mieter", auftrag: "handwerker" }[teil] || teil;
   for (const a of $$("[data-nav]")) {
     if (a.dataset.nav === navTeil) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -201,7 +202,8 @@ async function route() {
     else if (teil === "kontakte") await kontakte.zeigeKontakte();
     else if (teil === "kontakt" && id) await kontakte.zeigeKontakt(id);
     else if (teil === "thema" && id) await themen.zeigeThema(id);
-    else if (teil === "handwerker") await kontakte.zeigeHandwerker();
+    else if (teil === "handwerker") await handwerker.zeigeHandwerkerSeite(id || "laufend");
+    else if (teil === "auftrag" && id) await handwerker.zeigeAuftrag(id);
     else if (teil === "ablage" && id) await objekte.zeigeOrdner(id);
     else if (teil === "wissen") await ablage.zeigeWissen();
     else if (teil === "vorlagen") await zeigeVorlagen();
@@ -210,7 +212,7 @@ async function route() {
     else if (teil === "mieteingaenge" || teil === "rueckstaende") await mieteingaenge.zeigeMieteingaenge();
     else await start.zeigeStart();
     // Menü folgt den Brotkrumen (z. B. Vorgang einer Mietpartei → „Kontakte“, nicht „Postfach“)
-    const wurzel = { "#/mieter": "mieter", "#/objekte": "objekte", "#/postfach": "postfach", "#/einstellungen": "einstellungen" }[$(".brotkrumen li a")?.getAttribute("href")];
+    const wurzel = { "#/mieter": "mieter", "#/objekte": "objekte", "#/postfach": "postfach", "#/einstellungen": "einstellungen", "#/handwerker": "handwerker", "#/handwerker/liste": "handwerker" }[$(".brotkrumen li a")?.getAttribute("href")];
     if (wurzel) for (const a of $$("[data-nav]")) {
       if (a.dataset.nav === wurzel) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");

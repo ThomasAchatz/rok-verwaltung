@@ -76,7 +76,7 @@ export const kontaktVon = (id) => (id ? (zustand.kontakte || []).find((k) => k.i
 // --- Reiter über den Listen: Mieter | Handwerker | Sonstige -------------------------
 export function reiterHtml(aktiv) {
   const r = (ziel, text, key) => `<a class="reiter__knopf" href="${ziel}" ${aktiv === key ? `aria-current="page"` : ""}>${text}</a>`;
-  return `<nav class="reiter reiter--seiten" aria-label="Bereiche">${r("#/mieter", "Mieter", "mieter")}${r("#/handwerker", "Handwerker", "handwerker")}${r("#/kontakte", "Sonstige", "kontakte")}</nav>`;
+  return `<nav class="reiter reiter--seiten" aria-label="Bereiche">${r("#/mieter", "Mieter", "mieter")}${r("#/handwerker/liste", "Handwerker", "handwerker")}${r("#/kontakte", "Sonstige", "kontakte")}</nav>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,23 +209,6 @@ export async function zeigeKontakt(id) {
   $("#eintrag-neu").addEventListener("click", () => verlaufDialog({ kontakt_id: id }, { nachher: neuLaden }));
   $("#bearbeiten").addEventListener("click", () => kontaktDialog(k, { nachher: neuLaden, nachLoeschen: () => geheZu("#/kontakte") }));
   $("#todo-neu").addEventListener("click", () => start.aufgabeDialog({ kontakt_id: id }, { nachher: neuLaden }));
-}
-
-// ---------------------------------------------------------------------------
-// Handwerker (eigene Liste, wie bisher; hier alle Häuser auf einen Blick)
-// ---------------------------------------------------------------------------
-export async function zeigeHandwerker() {
-  const liste = await db.ladeDienstleister().catch(() => []);
-  const neuLaden = () => zeigeHandwerker();
-  inhalt().innerHTML = `
-    ${reiterHtml("handwerker")}
-    <div class="kopf">
-      <div><h1>Handwerker</h1><p>Handwerker und Dienstleister aller Häuser</p></div>
-      <div class="knopfreihe"><button type="button" class="knopf" id="dienst-neu">${ICON_PLUS} Hinzufügen</button></div>
-    </div>
-    <section class="flaeche">${ablage.dienstleisterListe(liste)}</section>`;
-  ablage.verbindeListen(inhalt(), { dienstleister: liste, nachher: neuLaden });
-  $("#dienst-neu").addEventListener("click", () => ablage.bearbeiteDienstleister(null, { nachher: neuLaden }));
 }
 
 // ---------------------------------------------------------------------------

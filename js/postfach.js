@@ -561,6 +561,8 @@ export async function zeigeNachricht(id) {
   const vorbelegt = zustand.vorbelegung?.nachricht_id === id ? zustand.vorbelegung.anweisung : null;
   zustand.vorbelegung = null;
   const vorgangKasten = await vorgaenge.vorgangKastenHtml(n).catch(() => "");
+  // Nachricht gehört zu einem Handwerker-Auftrag (gleicher Vorgang oder vom Handwerker): Status und nächster Schritt
+  const hwKasten = await import("./handwerker.js").then((m) => m.kastenFuerNachricht(n)).catch(() => ({ html: "", verbinde: () => {} }));
 
   inhalt().innerHTML = `
     ${brotkrumen([...KRUMEN.postfach, { text: n.betreff || "(ohne Betreff)" }])}
@@ -593,6 +595,7 @@ export async function zeigeNachricht(id) {
         ${fertige.length ? `<section class="flaeche"><div class="flaeche__kopf"><h2>Bisher erledigt</h2></div>${fertige.map((a) => antwortEintrag(a, abgelegtVon(a.id))).join("")}</section>` : ""}
       </div>
       <div class="stapel">
+        ${hwKasten.html}
         ${vorgangKasten}
         ${fristHtml(n)}
         <section class="flaeche" id="einordnung">${einordnungHtml(n)}</section>
@@ -632,6 +635,7 @@ export async function zeigeNachricht(id) {
     hinweisSpeicher.delete(a.id);
   }
   verbindeSchritte(n, antworten, erledigt, neu);
+  hwKasten.verbinde(inhalt(), neu);
 
   for (const a of $$("[data-datei]")) {
     db.dateiAdresse("eingang", a.dataset.datei).then((url) => {
@@ -731,83 +735,18 @@ async function fristSetzen(n, art, nachher) {
   }
 }
 
-// Auftrag an einen Handwerker: Firma und Fotos wählen, die KI schreibt das Briefing
+// Auftrag an einen Handwerker: dieselbe Maske wie auf der Seite „Handwerker“ (direkt beauftragen oder Angebote einholen),
+// vorbelegt mit Mietpartei, Haus und Fotos der Nachricht; die KI schreibt das Briefing aus Meldung und Fotos.
 async function auftragStarten(n, mieter, bilder, objekt) {
-  const alle = (await db.ladeDienstleister().catch(() => [])).filter((d) => d.aktiv);
-  // Vorauswahl: Gewerk, das zum Text passt (Heizung, Wasser, Strom …); Robert kann frei wählen
-  const text = norm(`${n.betreff || ""} ${n.text || ""} ${n.ki_zusammenfassung || ""}`);
-  const PASST = [
-    [/heiz|warmwasser|therme|kalt/, /heiz|sanit/], [/wasser|rohr|tropf|abfluss|verstopf|wc|toilette|dusche|bad|feucht|schimmel/, /sanit|heiz/],
-    [/strom|licht|steckdose|sicherung|elektr|kabel/, /elektr/], [/schluessel|schloss|tuer|ausgesperrt/, /schluess|schloss/],
-    [/dach|regen|undicht|ziegel/, /dach/], [/wand|farbe|tapete|streichen/, /maler/],
-  ];
-  const punkte = (d) => {
-    const g = norm(d.gewerk);
-    return PASST.reduce((s, [t, gw]) => s + (t.test(text) && gw.test(g) ? 1 : 0), 0) * 10 + (objekt && d.objekt_id === objekt.id ? 1 : 0);
-  };
-  const passend = alle.filter((d) => !objekt || !d.objekt_id || d.objekt_id === objekt.id)
-    .sort((a, b) => punkte(b) - punkte(a) || String(a.gewerk).localeCompare(String(b.gewerk)));
-  if (!passend.length) {
-    return melde("Noch keine Handwerker eingetragen. Unter Wissen → Handwerker & Dienstleister hinzufügen.", "fehler");
-  }
-  const kiDa = !!zustand.ki?.ki;
-  const daten = await dialogFormular(`
-    <h2>Handwerker beauftragen</h2>
-    ${suchauswahlHtml({ label: "Wer soll kommen?", placeholder: "Handwerker suchen …", wert: passend[0].name, name: "dienstleister_id", versteckt: passend[0].id, inline: true })}
-    ${bilder.length ? `<fieldset class="gruppe"><legend>Fotos mitschicken</legend>
-      <div class="fotowahl">${bilder.map((a, i) => `<label><input type="checkbox" name="foto" value="${i}" checked><img data-datei="${esc(a.pfad)}" alt="${esc(a.name || "Foto")}"></label>`).join("")}</div>
-    </fieldset>` : `<p class="leise">Zu dieser Nachricht gibt es keine Fotos.</p>`}
-    <label class="feld"><span>Hinweis an die KI (optional)</span>
-      <span class="diktat"><textarea name="anweisung" rows="2" placeholder="z. B. Termin bitte direkt mit der Mieterin absprechen."></textarea>${mikroKnopf()}</span></label>
-    <p class="leise">Der Handwerker erfährt nur Adresse, Wohnung, Name und Telefon der Mietpartei, die Schadensbeschreibung und die Fotos.
-      Keine Miete, keine Rückstände, keine Bankdaten.</p>
-    <div class="knopfreihe">
-      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
-      <button class="knopf knopf--primaer" value="ok">${kiDa ? `${ICON_KI} Auftrag entwerfen` : "Auftrag schreiben"}</button>
-    </div>`, {
-    breit: true,
-    vorbereiten: (form) => {
-      verbindeDiktat(form);
-      // Suche statt langer Auswahlliste; passende Gewerke stehen oben
-      verbindeSuchauswahl($(".suchauswahl", form), passend.map((d) => ({
-        wert: d.id, name: d.name, gruppe: punkte(d) >= 10 ? "Passt zur Meldung" : "Weitere Handwerker",
-        zusatz: [d.gewerk, d.email ? "" : "keine E-Mail"].filter(Boolean).join(" · "),
-      })));
-      form.addEventListener("submit", (e) => {
-        if (e.submitter?.value === "ok" && !form.dienstleister_id.value) { e.preventDefault(); $(".suchauswahl input", form).focus(); }
-      });
-      for (const img of $$("img[data-datei]", form)) db.dateiAdresse("eingang", img.dataset.datei).then((u) => (img.src = u)).catch(() => {});
+  const { anfrageDialog } = await import("./handwerker.js");
+  await anfrageDialog({
+    nachricht: n, mieter, bilder, objektId: objekt?.id || null, mieterId: mieter?.id || null,
+    nachEntwurf: async (liste) => {
+      for (const a of liste) if (a.hinweise?.length) hinweisSpeicher.set(a.id, a.hinweise);
+      await zeigeNachricht(n.id);
+      if (liste[0]) $(`[data-auftrag="${liste[0].id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     },
   });
-  if (!daten) return;
-  const d = passend.find((x) => x.id === daten.get("dienstleister_id"));
-  const fotos = daten.getAll("foto").map((i) => bilder[Number(i)]).filter(Boolean);
-  const anweisung = String(daten.get("anweisung") || "").trim();
-  let r = { betreff: `Auftrag: ${n.betreff || "Reparatur"}`.slice(0, 200), text: "Sehr geehrte Damen und Herren,\n\n", hinweise: [] };
-  if (kiDa) {
-    const warte = wartehinweis("Die KI schreibt den Auftrag …");
-    try {
-      r = await db.funktion("ki", { aktion: "auftrag", nachricht_id: n.id, dienstleister_id: d.id, anweisung: anweisung || null });
-    } catch (err) {
-      melde(err.message, "fehler");
-    } finally {
-      await warte.ende();
-    }
-  }
-  try {
-    const thema = await vorgaenge.themaFuerNachricht(n).catch(() => null);
-    const a = await db.speichereAntwort(null, {
-      thema_id: thema, art: "auftrag", nachricht_id: n.id, mieter_id: mieter?.id || null, dienstleister_id: d.id,
-      empfaenger_email: d.email || null, empfaenger_name: d.name, betreff: r.betreff, text: r.text,
-      anweisung: anweisung || null, ki_modell: r.modell || null,
-      anhaenge: fotos.map((f) => ({ bucket: "eingang", pfad: f.pfad, name: f.name || "Foto.jpg" })),
-    });
-    if (r.hinweise?.length) hinweisSpeicher.set(a.id, r.hinweise);
-    await zeigeNachricht(n.id);
-    $(`[data-auftrag="${a.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (err) {
-    melde(err.message, "fehler");
-  }
 }
 
 // ---------------------------------------------------------------------------

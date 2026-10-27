@@ -367,6 +367,33 @@ export async function loescheVerlauf(id) {
 }
 
 // --- Handwerker und Dienstleister ------------------------------------------
+// --- Handwerker-Aufträge (Angebote einholen / direkt beauftragen) ---
+export async function ladeAuftraege() {
+  return pruefe(await sb.from("auftraege").select("*").order("erstellt_am", { ascending: false }).limit(1000));
+}
+export async function ladeAuftrag(id) {
+  return pruefe(await sb.from("auftraege").select("*").eq("id", id).single());
+}
+export async function speichereAuftrag(id, felder) {
+  if (!id) return pruefe(await sb.from("auftraege").insert(felder).select().single());
+  return pruefe(await sb.from("auftraege").update(felder).eq("id", id).select().single());
+}
+export async function loescheAuftrag(id) {
+  pruefe(await sb.from("auftraege").delete().eq("id", id));
+}
+/** Schreiben an Handwerker: Aufträge (art = auftrag) und alle, die an einem Auftrag hängen */
+export async function ladeHandwerkerSchreiben() {
+  return pruefe(await sb.from("antworten")
+    .select("id,art,status,auftrag_id,dienstleister_id,mieter_id,nachricht_id,thema_id,objekt_id,betreff,empfaenger_name,empfaenger_email,gesendet_am,erstellt_am,anhaenge")
+    .or("art.eq.auftrag,auftrag_id.not.is.null").order("erstellt_am", { ascending: false }).limit(1000));
+}
+/** Nachrichten in bestimmten Vorgängen (Antworten der Handwerker) */
+export async function ladeNachrichtenZuThemen(ids) {
+  const liste = [...new Set(ids.filter(Boolean))];
+  if (!liste.length) return [];
+  return pruefe(await sb.from("nachrichten").select("id,thema_id,absender_name,absender_email,betreff,eingang_am,status,anhaenge")
+    .in("thema_id", liste).order("eingang_am", { ascending: false }).limit(500));
+}
 export async function ladeDienstleister() {
   return pruefe(await sb.from("dienstleister").select("*").order("gewerk").order("name"));
 }

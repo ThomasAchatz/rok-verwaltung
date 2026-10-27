@@ -10,6 +10,7 @@ import {
 import { letzteMonate, mieterZeile, LEGENDE, naechsterSchritt, schreibenKachel, oeffneSchreiben } from "./bausteine.js";
 import * as ablage from "./ablage.js";
 import * as kontakte from "./kontakte.js";
+import { ueberfaellig as auftragUeberfaellig } from "./handwerker.js";
 import * as postfach from "./postfach.js"; // nur zur Laufzeit benutzt (Kreis start↔postfach)
 
 const inhalt = () => $("#inhalt");
@@ -42,7 +43,7 @@ export const fristVon = (n) => (n.frist_bestaetigt ? n.frist : n.frist || n.ki_f
 // Was ist zu tun? Alles aus Nachrichten, Notizen, Rückständen und Entwürfen, nach Dringlichkeit
 // ---------------------------------------------------------------------------
 // stufe 0 = überfällig/sehr knapp, 1 = bald/dringend, 2 = normal, 3 = wenn Zeit ist
-function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = [], entwuerfe = [], namen = {}, kontaktListe = [], orte = {} }) {
+function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = [], entwuerfe = [], namen = {}, kontaktListe = [], orte = {}, auftraege = [] }) {
   const heute = heuteISO();
   const jetzt = [], spaeter = [], rueck = [];
   // Wo spielt es? Haus und Wohnung der Mietpartei, sonst das Haus, sonst „Allgemein“
@@ -122,6 +123,17 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
       href: a.nachricht_id ? `#/postfach/${a.nachricht_id}` : `#/entwurf/${a.id}`,
       titel: a.betreff || "(ohne Betreff)", unter: a.art === "auftrag" ? `an ${a.empfaenger_name || "Handwerker"}, noch nicht gesendet` : "liegt bereit, noch nicht gesendet",
       marken: "", wann: "",
+    });
+  }
+
+  // Handwerker-Aufträge, bei denen etwas fehlt (keine Rückmeldung, Frist vorbei, Termin vorbei); Entwürfe stehen schon oben
+  for (const a of auftraege) {
+    if (!["angefragt", "angebot", "beauftragt"].includes(a.status)) continue;
+    const grund = auftragUeberfaellig(a, heute);
+    if (!grund) continue;
+    jetzt.push({
+      ort: ortVon({ mieterId: a.mieter_id, objektId: a.objekt_id }), art: "Handwerker", stufe: 1, datum: heute, href: `#/auftrag/${a.id}`,
+      titel: a.titel, unter: grund, marken: "", wann: "",
     });
   }
 
@@ -285,7 +297,7 @@ function verbindeTodos(root, { aufgaben, nachher }) {
 // ---------------------------------------------------------------------------
 export async function zeigeStart() {
   const monate = letzteMonate(4);
-  const [liste, forderungen, vorgaenge, nachrichten, aufgaben, antworten, mieterL, kontaktListe] = await Promise.all([
+  const [liste, forderungen, vorgaenge, nachrichten, aufgaben, antworten, mieterL, kontaktListe, auftraege] = await Promise.all([
     db.ladeUebersicht(),
     db.ladeForderungen({ abMonat: monate[0] }),
     db.ladeVorgaenge({ anzahl: 200 }),
@@ -294,6 +306,7 @@ export async function zeigeStart() {
     db.ladeAntworten({ anzahl: 50 }).catch(() => []),
     mieterListe(),
     kontakte.kontakteListe(true),
+    db.ladeAuftraege().catch(() => []),
   ]);
   const namen = Object.fromEntries(mieterL.map((m) => [m.id, mieterName(m)]));
   const rueckstand = liste.filter((m) => Number(m.offen_summe) > 0).sort((a, b) => b.offen_summe - a.offen_summe);
@@ -302,7 +315,7 @@ export async function zeigeStart() {
   const orte = Object.fromEntries(liste.map((m) => [m.id, [m.objekt, m.wohnung].filter(Boolean).join(", ")]));
   // Neue Schadensmeldungen: Antwort und Handwerker-Auftrag im Hintergrund vorbereiten („Ja und Ja“)
   postfach.bereiteImHintergrundVor(nachrichten).catch(() => null);
-  const todos = sammle({ nachrichten, aufgaben, rueckstand, vorgaenge, entwuerfe, namen, kontaktListe, orte });
+  const todos = sammle({ nachrichten, aufgaben, rueckstand, vorgaenge, entwuerfe, namen, kontaktListe, orte, auftraege });
   const dringend = todos.jetzt.filter((t) => t.stufe <= 1).length;
   const wiedervorlagen = [...todos.jetzt.filter((t) => t.art === "Wiedervorlage" || t.art === "To-do"), ...todos.spaeter]
     .sort((x, y) => String(x.datum).localeCompare(String(y.datum)));

@@ -79,7 +79,7 @@ export function brotkrumen(teile) {
 export const KRUMEN = {
   mieter: [{ text: "Kontakte", href: "#/mieter" }, { text: "Mieter", href: "#/mieter" }],
   sonstige: [{ text: "Kontakte", href: "#/mieter" }, { text: "Sonstige", href: "#/kontakte" }],
-  handwerker: [{ text: "Kontakte", href: "#/mieter" }, { text: "Handwerker", href: "#/handwerker" }],
+  handwerker: [{ text: "Handwerker", href: "#/handwerker/liste" }],
   objekte: [{ text: "Objekte", href: "#/objekte" }],
   postfach: [{ text: "Postfach", href: "#/postfach" }],
   einstellungen: [{ text: "Einstellungen", href: "#/einstellungen" }],

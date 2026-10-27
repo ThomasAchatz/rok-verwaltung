@@ -1350,3 +1350,121 @@ body.datei-ueber::after {
 .erfass-dazu label.knopf { cursor: pointer; }
 .erfass-namen { margin: 0.4rem 0 1rem; padding-left: 1.2rem; overflow-wrap: anywhere; }
 .zi-ablage { margin: 0 0 0.75rem; }
+
+/* Handwerker: Aufträge, Angebote, Handwerker-Liste (js/handwerker.js) */
+.hw-kacheln { display: grid; grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.hw-kachel { display: block; background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius); padding: 0.8rem 1rem; color: var(--text); text-decoration: none; box-shadow: var(--schatten); }
+.hw-kachel:hover { border-color: var(--tinte-hell); }
+.hw-kachel small { display: block; font-size: 0.78rem; font-weight: 600; color: var(--text-leise); }
+.hw-kachel b { display: block; font-size: 1.6rem; line-height: 1.25; }
+.hw-kachel span { font-size: 0.8rem; color: var(--text-leise); }
+.hw-kachel--rot b { color: var(--offen); }
+.hw-leiste { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-bottom: 0.7rem; }
+.hw-leiste .reiter { margin: 0; }
+.hw-filter { margin-left: auto; }
+.hw-filter select { min-width: 0; max-width: 100%; }
+.hw-zahl { opacity: 0.7; margin-left: 0.15rem; font-weight: 500; }
+.hw-flaeche { overflow: hidden; }
+.hw-liste { display: grid; }
+.hw-zeile {
+  display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 1.3fr) auto; gap: 0.5rem 1rem; align-items: center;
+  padding: 0.85rem 1.1rem; border-top: 1px solid var(--linie);
+}
+.hw-zeile:first-child { border-top: 0; }
+.hw-zeile > * { min-width: 0; }
+.hw-zeile__was { display: grid; gap: 0.1rem; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+.hw-zeile__was:hover .hw-titel { text-decoration: underline; }
+.hw-ort { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--messing-text); }
+.hw-titel { font-weight: 700; }
+.hw-zeile__was .leise { font-size: 0.83rem; }
+.hw-wer { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.hw-person { font-size: 0.82rem; border: 1px solid var(--linie); border-radius: 999px; padding: 0.1rem 0.55rem; overflow-wrap: anywhere; }
+.hw-person--gewaehlt { border-color: var(--bezahlt); background: var(--bezahlt-zart); }
+.hw-stand { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; font-size: 0.85rem; }
+.hw-post { font-size: 0.8rem; font-weight: 600; }
+.hw-aktion { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
+.hw-chip { display: inline-block; padding: 0.08rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; background: var(--tinte-zart); color: var(--tinte); }
+.hw-chip--entwurf { background: var(--flaeche-zart); color: var(--text-leise); border: 1px dashed var(--rand); }
+.hw-chip--angebot { background: var(--teil-zart); color: #8a5d0d; }
+.hw-chip--beauftragt, .hw-chip--beauftragen { background: var(--messing-zart); color: var(--messing-text); }
+.hw-chip--erledigt, .hw-chip--abgeschlossen { background: var(--bezahlt-zart); color: var(--bezahlt); }
+.hw-chip--abgebrochen, .hw-chip--abgelehnt { background: var(--flaeche-zart); color: var(--text-leise); }
+.hw-chip--rot { background: var(--offen-zart); color: var(--offen); }
+.hw-schritte { display: inline-flex; gap: 3px; flex-basis: 100%; }
+.hw-schritte i { width: 1.9rem; height: 4px; border-radius: 2px; background: var(--linie); }
+.hw-schritte i.an { background: var(--tinte); }
+.flaeche__kopf .hw-schritte { flex-basis: auto; }
+.hw-summe { margin: 0; padding: 0.8rem 1.1rem 0; color: var(--text-leise); font-size: 0.9rem; }
+.hw-legende { margin: 0.6rem 0.2rem 0; font-size: 0.82rem; }
+.hw-warnung { margin: 0 0 1rem; padding: 0.6rem 0.9rem; border-radius: var(--radius); background: var(--offen-zart); color: var(--offen); font-weight: 600; }
+.hw-karten { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 0.75rem; padding: 1rem; }
+.hw-karte { border: 1px solid var(--linie); border-radius: var(--radius); padding: 0.8rem 0.9rem; display: grid; gap: 0.5rem; align-content: start; min-width: 0; }
+.hw-karte--aus { opacity: 0.6; }
+.hw-karte__kopf { all: unset; cursor: pointer; display: flex; gap: 0.6rem; align-items: center; min-width: 0; }
+.hw-karte__kopf > span:last-child { display: grid; min-width: 0; overflow-wrap: anywhere; }
+.hw-karte__kopf .leise { font-size: 0.82rem; }
+.hw-karte__kopf:focus-visible { outline: 2px solid var(--fokus); border-radius: 6px; }
+.hw-karte__zahlen { margin: 0; font-size: 0.85rem; }
+.hw-ini { flex: none; width: 2.1rem; height: 2.1rem; border-radius: 50%; background: var(--tinte-zart); color: var(--tinte); display: inline-flex; align-items: center; justify-content: center; font-size: 0.78rem; font-weight: 800; }
+.hw-fab { display: none; }
+.hw-beteiligt { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 0.5rem 1rem; align-items: center; padding: 0.75rem 0; border-top: 1px solid var(--linie); overflow-wrap: anywhere; }
+.hw-beteiligt:first-child { border-top: 0; padding-top: 0; }
+.hw-beteiligt--gewaehlt { background: linear-gradient(90deg, var(--bezahlt-zart), transparent 70%); border-radius: 6px; padding-left: 0.5rem; }
+.hw-betrag { font-weight: 700; margin-top: 0.2rem; }
+.hw-schritte-knoepfe { display: grid; gap: 0.5rem; }
+.hw-kasten { border-color: var(--messing-rand); }
+.zeile--einfach { display: flex; justify-content: space-between; gap: 1rem; padding: 0.7rem 1.1rem; border-top: 1px solid var(--linie); color: var(--text); text-decoration: none; }
+.zeile--einfach:first-child { border-top: 0; }
+/* Maske */
+.hw-seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--rand); border-radius: 10px; overflow: hidden; margin-bottom: 0.4rem; }
+.hw-seg label { position: relative; cursor: pointer; }
+.hw-seg input { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; margin: 0; left: 0; top: 0; }
+.hw-seg span { display: block; padding: 0.65rem 0.5rem; text-align: center; font-weight: 700; color: var(--text-leise); }
+.hw-seg input:checked + span { background: var(--tinte-zart); color: var(--tinte); box-shadow: inset 0 -3px 0 var(--tinte); }
+.hw-seg input:focus-visible + span { outline: 2px solid var(--fokus); outline-offset: -2px; }
+.hw-suche { width: 100%; margin-bottom: 0.4rem; }
+.hw-wahlliste { max-height: 15rem; overflow-y: auto; border: 1px solid var(--linie); border-radius: 8px; }
+.hw-wahl { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.55rem 0.7rem; border-top: 1px solid var(--linie); cursor: pointer; overflow-wrap: anywhere; }
+.hw-wahl:first-child { border-top: 0; }
+.hw-wahl:has(input:checked) { background: var(--tinte-zart); }
+.hw-wahl input { margin-top: 0.2rem; flex: none; }
+.hw-wahl .marker { margin-left: 0.3rem; }
+.hw-anhaenge { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0; }
+.hw-anhaenge:empty { display: none; }
+.datei-chip-x { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.82rem; border: 1px solid var(--rand); border-radius: 999px; padding: 0.1rem 0.25rem 0.1rem 0.6rem; max-width: 100%; overflow-wrap: anywhere; }
+.datei-chip-x button { border: 0; background: none; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.3rem; color: var(--text-leise); }
+.hw-ablagewahl { width: auto; max-width: 100%; }
+.hw-anhaenge + .knopfreihe, fieldset .knopfreihe--eng { justify-content: flex-start; }
+@media (max-width: 1000px) {
+  .hw-zeile { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .hw-zeile__was { grid-column: 1 / -1; }
+  .hw-aktion { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (max-width: 720px) {
+  .hw-kacheln { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+  .hw-kachel { padding: 0.65rem 0.75rem; }
+  .hw-kachel b { font-size: 1.35rem; }
+  .hw-filter { margin-left: 0; width: 100%; }
+  .hw-filter select { width: 100%; }
+  .hw-leiste .reiter { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .hw-leiste .reiter__knopf { text-align: center; padding-left: 0.3rem; padding-right: 0.3rem; }
+  .hw-zeile { grid-template-columns: minmax(0, 1fr); padding: 0.8rem 0.9rem; }
+  .hw-beteiligt { grid-template-columns: minmax(0, 1fr); }
+  .hw-karten { padding: 0.75rem; }
+  .kopf .knopfreihe #hw-anfragen { display: none; }
+  .hw-fab {
+    display: inline-flex; align-items: center; gap: 0.35rem; position: fixed; z-index: 20;
+    right: calc(1rem + env(safe-area-inset-right, 0px)); bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    border: 0; border-radius: 999px; padding: 0.8rem 1.15rem; background: var(--tinte); color: #fff; font: inherit; font-weight: 700;
+    box-shadow: 0 6px 16px rgba(20, 30, 50, 0.3); cursor: pointer;
+  }
+  .hw-flaeche { margin-bottom: 4.5rem; }
+}
+.hw-kurz { display: none; }
+@media (max-width: 720px) {
+  .hw-leiste .reiter__knopf { white-space: nowrap; font-size: 0.9rem; }
+}
+@media (max-width: 440px) {
+  .hw-lang { display: none; }
+  .hw-kurz { display: inline; }
+}
