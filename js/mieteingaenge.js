@@ -258,7 +258,7 @@ function zeichne(e, d) {
       <div><h1>Mieteingänge</h1>
         <p>Soll und Ist der Mieten je Monat. ${SICHT_NAME[e.sicht]}${e.haus === "alle" ? ", alle Häuser" : `, ${esc(objektVon(e.haus)?.bezeichnung || "")}`}.</p></div>
       <div class="knopfreihe">
-        <button type="button" class="knopf" id="me-import" title="Kontoauszug (CSV) oder immocloud-Excel einlesen">Kontoauszug / Excel einlesen</button>
+        <button type="button" class="knopf" id="me-import" title="Kontoauszug (CSV) oder immocloud-Excel einlesen – oder die Datei einfach auf die Seite ziehen">Kontoauszug / Excel einlesen</button>
         ${zustand.ki?.ki ? `<button type="button" class="knopf knopf--ki" id="me-ki">${ICON_KI} Vorschläge der KI</button>` : ""}
       </div>
     </div>
@@ -416,6 +416,14 @@ function verbinde(e, d, leute, historie) {
     const { importStarten } = await import("./zahlungsimport.js");
     importStarten({ nachher: neu });
   });
+  // Kontoauszug/Excel einfach auf die Seite ziehen: direkt zur Vorschau (Fotos usw. gehen wie gewohnt zur Ablage)
+  import("./ablage.js").then(({ setzeSeitenAblage }) => setzeSeitenAblage(["#/mieteingaenge", "#/rueckstaende"], async (dateien) => {
+    const { importStarten, istImportDatei } = await import("./zahlungsimport.js");
+    const passend = dateien.filter(istImportDatei);
+    if (!passend.length) return false;
+    await importStarten({ nachher: neu, dateien: passend });
+    return true;
+  }, "Loslassen – der Kontoauszug bzw. die Excel-Datei wird eingelesen (erst Vorschau, dann übernehmen)"));
 }
 
 // ---------------------------------------------------------------------------

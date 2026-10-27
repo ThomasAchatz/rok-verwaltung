@@ -243,10 +243,22 @@ async function verteile(dateien, optionen = {}) {
 const hatDateien = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
 const aktiveFlaeche = () => $("[data-ablegeflaeche]");
 let ziehTiefe = 0;
+/**
+ * Eine Seite kann hineingezogene Dateien selbst annehmen (z. B. Mieteingänge: Kontoauszug → Import).
+ * fn(dateien) liefert true, wenn sie die Dateien übernommen hat, sonst geht es wie gewohnt weiter.
+ * Gilt nur, solange die Seite (gleicher Hash-Anfang) offen ist. text: Hinweis beim Darüberziehen.
+ */
+let seitenAblage = null;
+export function setzeSeitenAblage(hashAnfang, fn, text = "") { seitenAblage = { hashAnfang, fn, text }; }
+const seitenAblageAktiv = () => (seitenAblage && [seitenAblage.hashAnfang].flat().some((h) => location.hash.startsWith(h)) ? seitenAblage : null);
+// Ablagefläche in einem Dialog (z. B. „Zahlungen importieren“): dort darf man auch bei offenem Dialog fallen lassen
+const dialogFlaeche = (e) => e.target?.closest?.("dialog[open] [data-dialog-ablage]");
 // Ohne Ablagefläche (z. B. Übersicht, Postfach): ganze Seite nimmt die Dateien an, die KI entscheidet Postfach oder Ablage
 const markiere = (an) => {
   const el = aktiveFlaeche();
   if (el) el.classList.toggle("ablegeflaeche--aktiv", an);
+  const seite = seitenAblageAktiv();
+  if (seite?.text) document.body.dataset.ablageText = seite.text; else delete document.body.dataset.ablageText;
   document.body.classList.toggle("datei-ueber", an && !el && !$("dialog[open]") && !$("#app")?.hidden);
 };
 document.addEventListener("dragenter", (e) => { if (hatDateien(e)) { ziehTiefe++; markiere(true); } });
@@ -254,17 +266,21 @@ document.addEventListener("dragleave", (e) => { if (hatDateien(e) && --ziehTiefe
 document.addEventListener("dragover", (e) => {
   if (!hatDateien(e)) return;
   e.preventDefault();
-  e.dataTransfer.dropEffect = !$("dialog[open]") && !$("#app")?.hidden ? "copy" : "none";
+  e.dataTransfer.dropEffect = dialogFlaeche(e) || (!$("dialog[open]") && !$("#app")?.hidden) ? "copy" : "none";
 });
-document.addEventListener("drop", (e) => {
+document.addEventListener("drop", async (e) => {
   if (!hatDateien(e)) return;
   e.preventDefault();
   ziehTiefe = 0; markiere(false);
+  if (dialogFlaeche(e)) return; // nimmt die Fläche im Dialog selbst an
   const el = aktiveFlaeche();
   if ($("dialog[open]")) return;
   if ($("#app")?.hidden) return; // nicht angemeldet
   const dateien = [...e.dataTransfer.files];
-  if (dateien.length) verteile(dateien, (el && flaechenOptionen.get(el)) || {});
+  if (!dateien.length) return;
+  const seite = seitenAblageAktiv();
+  if (seite && await seite.fn(dateien)) return;
+  verteile(dateien, (el && flaechenOptionen.get(el)) || {});
 });
 
 // ---------------------------------------------------------------------------

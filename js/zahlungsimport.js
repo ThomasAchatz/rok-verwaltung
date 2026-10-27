@@ -15,37 +15,79 @@ const MAX_DATEI = 10 * 1024 * 1024;
 const anzahl = (n, eins, mehr) => `${n} ${n === 1 ? eins : mehr}`;
 const SICHERHEIT = { sicher: "passt", pruefen: "bitte prüfen", unklar: "unklar" };
 
-/** Startpunkt (Knopf „Importieren“ auf der Seite Mieteingänge) */
-export async function importStarten({ nachher = null } = {}) {
-  const daten = await dialogFormular(`
-    <h2>Zahlungen importieren</h2>
-    <ul class="zi-wege">
-      <li><b>Kontoauszug als CSV</b> – im Online-Banking die Umsätze des Mietkontos als CSV exportieren.
-        Eingänge werden Mietparteien und Monaten zugeordnet, Ausgänge übersprungen.</li>
-      <li><b>immocloud-Mietübersicht (Excel)</b> – Export „Mietübersicht“ eines Hauses. Übernimmt die Monatsbeträge je Mietpartei.</li>
-    </ul>
-    <label class="feld"><span>Datei</span>
-      <input type="file" name="datei" required accept=".csv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
-    <p class="leise">Erst kommt eine Vorschau; gespeichert wird nur, was du dort bestätigst. Kontonummern (IBAN) werden nicht übernommen.
-      PDF-Kontoauszüge gehen nicht – bitte CSV nehmen.</p>
-    <div class="knopfreihe">
-      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
-      <button class="knopf knopf--primaer" value="weiter">Weiter zur Vorschau</button>
-    </div>`);
-  const datei = daten?.get("datei");
-  if (!datei || !datei.size) return;
+const IMPORT_TYPEN = ".csv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+/** Passt die Datei zum Zahlungsimport? (CSV, TXT, Excel; PDF wird abgefangen und erklärt) */
+export const istImportDatei = (d) => /\.(csv|txt|xlsx|pdf)$/i.test(d?.name || "") || /^text\/(csv|plain)$/.test(d?.type || "");
+
+/**
+ * Startpunkt: Knopf „Kontoauszug / Excel einlesen“ (Dialog mit Ablagefläche) oder Dateien,
+ * die auf die Seite Mieteingänge gezogen wurden (dateien: dann ohne Auswahldialog direkt zur Vorschau).
+ */
+export async function importStarten({ nachher = null, dateien = null } = {}) {
+  let liste = dateien ? [...dateien] : null;
+  if (!liste) {
+    const daten = await dialogFormular(`
+      <h2>Zahlungen importieren</h2>
+      <ul class="zi-wege">
+        <li><b>Kontoauszug als CSV</b> – im Online-Banking die Umsätze des Mietkontos als CSV exportieren.
+          Eingänge werden Mietparteien und Monaten zugeordnet, Ausgänge übersprungen.</li>
+        <li><b>immocloud-Mietübersicht (Excel)</b> – Export „Mietübersicht“ eines Hauses. Übernimmt die Monatsbeträge je Mietpartei.</li>
+      </ul>
+      <label class="ablegeflaeche ablegeflaeche--klein zi-ablage" data-dialog-ablage>
+        <input type="file" name="datei" accept="${IMPORT_TYPEN}" multiple hidden>
+        <span class="ablegeflaeche__text"><strong class="nur-maus">CSV oder Excel hierher ziehen</strong> <span class="nur-maus">oder</span>
+          <span class="knopf knopf--klein ablegeflaeche__knopf">Datei auswählen</span></span>
+        <span class="ablegeflaeche__hinweis leise" data-dateiname>Auch mehrere Dateien (z. B. zwei Konten) – sie werden nacheinander eingelesen.</span>
+      </label>
+      <p class="leise">Erst kommt eine Vorschau; gespeichert wird nur, was du dort bestätigst. Kontonummern (IBAN) werden nicht übernommen.
+        PDF-Kontoauszüge gehen nicht – bitte CSV nehmen.</p>
+      <p class="oz-fehler" data-fehler role="alert" hidden></p>
+      <div class="knopfreihe">
+        <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+        <button class="knopf knopf--primaer" value="weiter">Weiter zur Vorschau</button>
+      </div>`, {
+      vorbereiten: (form) => {
+        const flaeche = $("[data-dialog-ablage]", form), input = form.datei;
+        const weiter = () => form.requestSubmit(form.querySelector("button[value=weiter]"));
+        // Ausgewählt oder hineingezogen: gleich weiter zur Vorschau
+        input.addEventListener("change", () => { if (input.files.length) weiter(); });
+        let tiefe = 0;
+        flaeche.addEventListener("dragenter", (e) => { e.preventDefault(); tiefe++; flaeche.classList.add("ablegeflaeche--aktiv"); });
+        flaeche.addEventListener("dragleave", () => { if (--tiefe <= 0) { tiefe = 0; flaeche.classList.remove("ablegeflaeche--aktiv"); } });
+        flaeche.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+        flaeche.addEventListener("drop", (e) => {
+          e.preventDefault();
+          tiefe = 0; flaeche.classList.remove("ablegeflaeche--aktiv");
+          if (!e.dataTransfer?.files?.length) return;
+          input.files = e.dataTransfer.files;
+          weiter();
+        });
+        form.addEventListener("submit", (e) => {
+          if (e.submitter?.value !== "weiter" || input.files.length) return;
+          e.preventDefault();
+          const p = $("[data-fehler]", form);
+          p.textContent = "Bitte eine Datei auswählen oder hineinziehen."; p.hidden = false;
+        });
+      },
+    });
+    liste = daten ? daten.getAll("datei").filter((d) => d && d.size) : [];
+  }
+  if (!liste.length) return;
   nachherAktuell = nachher;
-  if (/\.pdf$/i.test(datei.name) || datei.type === "application/pdf") return melde("PDF-Kontoauszüge kann ich nicht lesen. Bitte im Online-Banking die Umsätze als CSV exportieren.", "fehler");
-  if (datei.size > MAX_DATEI) return melde("Die Datei ist zu groß (höchstens 10 MB).", "fehler");
-  try {
-    const bytes = new Uint8Array(await datei.arrayBuffer());
-    const fertig = bytes[0] === 0x50 && bytes[1] === 0x4b
-      ? await excelImport(datei, datei.name)
-      : await bankImport(L.textDekodieren(bytes));
-    if (fertig) await nachher?.();
-  } catch (err) {
-    console.error(err);
-    melde(`Import fehlgeschlagen: ${err.message}`, "fehler");
+  for (const datei of liste.slice(0, 10)) {
+    const vorname = liste.length > 1 ? `„${datei.name}“: ` : "";
+    if (/\.pdf$/i.test(datei.name) || datei.type === "application/pdf") { melde(vorname + "PDF-Kontoauszüge kann ich nicht lesen. Bitte im Online-Banking die Umsätze als CSV exportieren.", "fehler"); continue; }
+    if (datei.size > MAX_DATEI) { melde(vorname + "Die Datei ist zu groß (höchstens 10 MB).", "fehler"); continue; }
+    try {
+      const bytes = new Uint8Array(await datei.arrayBuffer());
+      const fertig = bytes[0] === 0x50 && bytes[1] === 0x4b
+        ? await excelImport(datei, datei.name)
+        : await bankImport(L.textDekodieren(bytes));
+      if (fertig) await nachher?.();
+    } catch (err) {
+      console.error(err);
+      melde(`${vorname}Import fehlgeschlagen: ${err.message}`, "fehler");
+    }
   }
 }
 

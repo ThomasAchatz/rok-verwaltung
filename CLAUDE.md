@@ -226,4 +226,7 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   `excel:<mieter>:<monat>`, erneuter Import überschreibt; Kontoauszug/Hand gehen vor, ersetzen Excel-Beträge). Immer Vorschau,
   gespeichert wird erst nach „Übernehmen“; Kontoauszug-Import mit „Rückgängig“. KI (Function `miete`) nur auf Klick:
   `mieteingang_vorschlaege` (nur Zahlen, keine Namen) und `buchungen_zuordnen` (nur unklare Eingänge, ohne IBAN).
+  Drag & Drop: im Import-Dialog Ablagefläche `[data-dialog-ablage]` (Auswahl/Hineinziehen geht gleich weiter, mehrere Dateien nacheinander);
+  auf der Seite selbst über `ablage.setzeSeitenAblage(hashAnfänge, fn, text)` – CSV/TXT/XLSX (`istImportDatei`) → `importStarten({ dateien })`,
+  alles andere wie gewohnt in die Ablage. Der Dokument-weite Drop-Handler lässt Flächen in Dialogen in Ruhe (`dialogFlaeche`).
   Test-Dateien sind erfunden (Scratchpad), Roberts echte Exporte NICHT ins Repo/Testsystem.

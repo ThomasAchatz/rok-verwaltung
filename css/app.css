@@ -1170,6 +1170,9 @@ a.reiter__knopf { text-decoration: none; display: inline-block; }
 /* Dateien vom PC auf eine Seite ohne Ablagefläche ziehen (Übersicht, Postfach …) */
 body.datei-ueber::after {
   content: "Loslassen – die KI liest die Datei und schlägt vor, ob sie ins Postfach oder in die Ablage gehört";
+}
+body.datei-ueber[data-ablage-text]::after { content: attr(data-ablage-text); }
+body.datei-ueber::after {
   position: fixed; inset: 0.75rem; z-index: 60; pointer-events: none;
   display: flex; align-items: center; justify-content: center; text-align: center; padding: 2rem;
   font-size: 1.15rem; font-weight: 600; color: var(--tinte);
@@ -1346,3 +1349,4 @@ body.datei-ueber::after {
 .erfass-dazu .leise { font-size: 0.85rem; }
 .erfass-dazu label.knopf { cursor: pointer; }
 .erfass-namen { margin: 0.4rem 0 1rem; padding-left: 1.2rem; overflow-wrap: anywhere; }
+.zi-ablage { margin: 0 0 0.75rem; }
