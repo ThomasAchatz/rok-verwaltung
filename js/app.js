@@ -123,6 +123,29 @@ $("#anmeldeformular").addEventListener("submit", async (e) => {
   }
 });
 
+// Burger-Menü (Design B, nur schmale Bildschirme): Schublade mit allen Menüpunkten
+const HANDY_MENUE = window.matchMedia("(max-width: 900px)");
+function menueOffen() { return document.documentElement.classList.contains("menue-offen"); }
+function menue(auf) {
+  const knopf = $("#menue-knopf"), schleier = $("#menue-schleier");
+  if (!knopf) return;
+  if (auf && (!HANDY_MENUE.matches || !document.documentElement.classList.contains("design-b"))) return;
+  document.documentElement.classList.toggle("menue-offen", auf);
+  knopf.setAttribute("aria-expanded", String(auf));
+  knopf.setAttribute("aria-label", auf ? "Menü schließen" : "Menü öffnen");
+  schleier.hidden = !auf;
+  const mail = $("#hauptmenue [data-email]");
+  if (auf && mail) mail.textContent = zustand.nutzer?.email || "";
+  if (auf) ($("#hauptmenue a[aria-current=page]") || $("#hauptmenue a"))?.focus();
+  else if (document.activeElement?.closest?.("#hauptmenue")) knopf.focus();
+}
+$("#menue-knopf")?.addEventListener("click", () => menue(!menueOffen()));
+$("#menue-schleier")?.addEventListener("click", () => menue(false));
+$("#hauptmenue")?.addEventListener("click", (e) => { if (e.target.closest("a, button")) menue(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && menueOffen()) menue(false); });
+window.addEventListener("hashchange", () => { if (menueOffen()) menue(false); });
+HANDY_MENUE.addEventListener("change", () => { if (!HANDY_MENUE.matches) menue(false); });
+
 document.addEventListener("click", async (e) => {
   if (e.target.closest("[data-aktion=chat]")) return oeffneChat();
   if (e.target.closest("[data-aktion=abmelden]")) {

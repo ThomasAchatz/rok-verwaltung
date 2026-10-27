@@ -187,6 +187,8 @@ export async function aktualisiereZaehler() {
     el.textContent = n > 99 ? "99+" : String(n);
     el.hidden = n === 0;
     el.setAttribute("aria-label", `${n} neue Nachrichten`);
+    const burger = $("#menue-zahl");
+    if (burger) { burger.textContent = el.textContent; burger.hidden = n === 0; }
   } catch {
     el.hidden = true;
   }

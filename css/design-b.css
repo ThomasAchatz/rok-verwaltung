@@ -85,6 +85,50 @@
 @media (min-width: 901px) and (max-width: 1280px) {
   .design-b .zeile { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "wer betrag" "buch buch"; row-gap: 0.55rem; }
 }
+/* Handy/Tablet: Burger-Menü statt Menüleiste. Alle Punkte (auch Mieteingänge, Handwerker) in einer Schublade von links. */
+.menue-knopf, .menue-schleier, .menue__fuss { display: none; }
+@media (max-width: 900px) {
+  .design-b .leiste { flex-wrap: nowrap; align-items: center; gap: 0.5rem; }
+  .design-b .menue-knopf {
+    display: inline-flex; align-items: center; justify-content: center; position: relative; flex: none;
+    width: 44px; height: 44px; margin-left: -0.5rem; border: 0; border-radius: 10px; background: transparent; color: #ffffff; cursor: pointer;
+  }
+  .design-b .menue-knopf:hover, .design-b .menue-knopf:focus-visible { background: var(--leiste-aktiv); }
+  .design-b .menue-knopf__zahl {
+    position: absolute; top: 4px; right: 2px; min-width: 1.05rem; height: 1.05rem; padding: 0 0.25rem; border-radius: 999px;
+    background: #c9a56b; color: #16243a; font-size: 0.65rem; font-weight: 800; line-height: 1.05rem; text-align: center;
+  }
+  .design-b .marke { margin-right: auto; min-width: 0; }
+  .design-b .leiste__konto [data-aktion="abmelden"], .design-b .leiste__email { display: none; }
+  .design-b .navigation {
+    position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; width: min(82vw, 300px); order: 0; flex-basis: auto;
+    display: flex; flex-direction: column; justify-content: flex-start; gap: 0.15rem; overflow-y: auto; overscroll-behavior: contain;
+    padding: calc(1rem + env(safe-area-inset-top, 0px)) 0.75rem calc(1rem + env(safe-area-inset-bottom, 0px)) calc(0.75rem + env(safe-area-inset-left, 0px));
+    background: var(--leiste); box-shadow: 4px 0 24px rgba(10, 20, 35, 0.35);
+    transform: translateX(-105%); visibility: hidden; transition: transform 0.22s ease, visibility 0s linear 0.22s;
+  }
+  .design-b.menue-offen .navigation { transform: none; visibility: visible; transition: transform 0.22s ease; }
+  .design-b .navigation a, .design-b .navigation a.nur-design-b {
+    display: flex; align-items: center; gap: 0.8rem; min-height: 46px; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 1rem;
+  }
+  .design-b .navigation .nav-icon { display: block; flex: none; }
+  .design-b .navigation .nav-lang { display: inline !important; }
+  .design-b .navigation .nav-kurz { display: none !important; }
+  .design-b .navigation .nav-zahl { position: static; margin-left: auto; min-width: 1.4rem; height: 1.4rem; font-size: 0.75rem; }
+  .design-b .navigation a[data-nav="einstellungen"] { margin-top: 0.6rem; border-top: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0 0 8px 8px; padding-top: 0.9rem; }
+  .design-b .menue__fuss {
+    display: flex; flex-direction: column; gap: 0.4rem; margin-top: auto; padding: 1rem 0.5rem 0; color: #b9c7da; font-size: 0.8rem;
+  }
+  .design-b .menue__email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .design-b .menue__fuss .knopf { color: var(--leiste-text); justify-content: center; }
+  .design-b .menue-schleier:not([hidden]) {
+    display: block; position: fixed; inset: 0; z-index: 59; background: rgba(10, 20, 35, 0.45);
+  }
+  .design-b.menue-offen body { overflow: hidden; }
+}
+@media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+  .design-b .navigation, .design-b.menue-offen .navigation { transition: none; }
+}
 /* Handy/Tablet: Suchleiste unter dem Kopf, schmaler */
 @media (max-width: 900px) {
   .design-b .oberleiste { display: flex; padding: 0.6rem calc(1rem + env(safe-area-inset-right, 0px)) 0.6rem calc(1rem + env(safe-area-inset-left, 0px)); }
