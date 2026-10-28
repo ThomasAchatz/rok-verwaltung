@@ -199,6 +199,7 @@ async function route() {
     else if (teil === "entwurf" && id) await postfach.zeigeNeuesSchreiben(null, id);
     else if (teil === "objekt" && id) await start.zeigeObjekt(id);
     else if (teil === "objekte") await objekte.zeigeObjekte();
+    else if (teil === "kontakte" && id === "handwerker") await kontakte.zeigeHandwerkerKontakte();
     else if (teil === "kontakte") await kontakte.zeigeKontakte();
     else if (teil === "kontakt" && id) await kontakte.zeigeKontakt(id);
     else if (teil === "thema" && id) await themen.zeigeThema(id);
@@ -212,7 +213,7 @@ async function route() {
     else if (teil === "mieteingaenge" || teil === "rueckstaende") await mieteingaenge.zeigeMieteingaenge();
     else await start.zeigeStart();
     // Menü folgt den Brotkrumen (z. B. Vorgang einer Mietpartei → „Kontakte“, nicht „Postfach“)
-    const wurzel = { "#/mieter": "mieter", "#/objekte": "objekte", "#/postfach": "postfach", "#/einstellungen": "einstellungen", "#/handwerker": "handwerker", "#/handwerker/liste": "handwerker" }[$(".brotkrumen li a")?.getAttribute("href")];
+    const wurzel = { "#/mieter": "mieter", "#/objekte": "objekte", "#/postfach": "postfach", "#/einstellungen": "einstellungen", "#/handwerker": "handwerker", "#/handwerker/liste": "handwerker", "#/kontakte/handwerker": "mieter" }[$(".brotkrumen li a")?.getAttribute("href")];
     if (wurzel) for (const a of $$("[data-nav]")) {
       if (a.dataset.nav === wurzel) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
@@ -230,8 +231,8 @@ async function route() {
 // Mieterliste
 // ---------------------------------------------------------------------------
 async function zeigeMieterliste() {
-  const monate = letzteMonate(6);
-  const [liste, forderungen] = await Promise.all([db.ladeUebersicht(), db.ladeForderungen({ abMonat: monate[0] })]);
+  // Nur Kontakte: Name, Wohnung, Kostenträger. Zahlungen stehen in der Akte (und unter Mieteingänge).
+  const liste = await db.ladeUebersicht();
   const gruppen = new Map();
   for (const m of liste) {
     const k = m.objekt_id || "";
@@ -249,14 +250,17 @@ async function zeigeMieterliste() {
         <input type="search" id="suche" placeholder="Name, Wohnung oder Aktenzeichen"></label>
     </div>
     <section class="flaeche">
-      <div class="flaeche__kopf"><h2>Zahlungen der letzten 6 Monate</h2>${LEGENDE}</div>
       <div id="mieterliste">
         ${[...gruppen.entries()].map(([objektId, mieter]) => `
           <div class="objektgruppe">
             <h3 class="objektgruppe__titel">${objektId ? `<a href="#/objekt/${esc(objektId)}">${esc(mieter[0].objekt)}</a>` : "Ohne Haus"} <span class="leise">${mieter.length} Mietparteien</span></h3>
             <div class="zeilen">
               ${mieter.map((m) => `<div data-suche="${esc([mieterName(m), m.wohnung, m.objekt, m.aktenzeichen, m.kostentraeger].join(" ").toLowerCase())}">
-                ${mieterZeile(m, forderungen, monate)}</div>`).join("")}
+                <a class="zeile zeile--einfach zeile--kontakt" href="#/mieter/${esc(m.id)}">
+                  <span class="zeile__wer"><span class="zeile__name">${esc(mieterName(m))}</span>
+                    <span class="zeile__ort">${esc(m.wohnung || "")}${m.kostentraeger ? ` <span class="marker marker--messing">${esc(m.kostentraeger)}</span>` : ""}</span></span>
+                  <span class="zeile__pfeil" aria-hidden="true">›</span>
+                </a></div>`).join("")}
             </div>
           </div>`).join("")}
         <div class="leer" id="keintreffer" hidden>Keine Mietpartei gefunden.</div>

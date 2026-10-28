@@ -644,7 +644,7 @@ function ortBlock(a, mieterL, { kontakt = true, zugang = false, hausmeister = nu
   if (zugang && hausmeister) z.push(`Zugang / Schlüssel: ${hausmeister.name}${hausmeister.telefon ? `, Tel. ${hausmeister.telefon}` : ""}`);
   return z.join("\n");
 }
-async function schreibenAnlegen(a, d, { anweisung, betreff, mieterL, anhaenge = null, anhaengeUebernehmen = false, ohneOrt = false, themaVon = null, sichtbar = null, hausmeister = null }) {
+async function schreibenAnlegen(a, d, { anweisung, anzeige = null, betreff, mieterL, anhaenge = null, anhaengeUebernehmen = false, ohneOrt = false, themaVon = null, sichtbar = null, hausmeister = null }) {
   const sicht = sichtbar || a.sichtbar || {};
   const ort = ohneOrt ? "" : ortBlock(a, mieterL, { kontakt: sicht.kontakt !== false, zugang: !!sicht.zugang, hausmeister });
   let betr = betreff, text = "Sehr geehrte Damen und Herren,\n\n" + anweisung, modell = null;
@@ -670,7 +670,7 @@ async function schreibenAnlegen(a, d, { anweisung, betreff, mieterL, anhaenge = 
   return db.speichereAntwort(null, {
     art: "antwort", status: "entwurf", auftrag_id: a.id, thema_id: thema, dienstleister_id: d.id, objekt_id: a.objekt_id || null,
     empfaenger_email: d.email || null, empfaenger_name: d.name, betreff: String(betr || "").slice(0, 200), text,
-    anweisung: anweisung.slice(0, 2000), ki_modell: modell, anhaenge: anh || [],
+    anweisung: (anzeige ?? anweisung).slice(0, 2000) || null, ki_modell: modell, anhaenge: anh || [],
   });
 }
 
@@ -900,9 +900,23 @@ export async function anfrageDialog(v = {}) {
       ? `Bitte um ein Angebot (Kostenvoranschlag) bis ${datumDE(frist)} – noch KEIN Auftrag.`
       : `Direkter Auftrag${frist ? `, bitte erledigen bis ${datumDE(frist)}` : ""}${kostenrahmen ? `. Kostenrahmen bis ${betragFeld(kostenrahmen)} € – darüber bitte vorher Rücksprache` : ""}. Bitte um kurze Bestätigung mit Terminvorschlag.`;
     const anweisung = [`Thema: ${titel}`, kopf, beschreibung ? `Was zu tun ist: ${beschreibung}` : "", anhaenge.length ? `Im Anhang: ${anhaenge.length} ${anhaenge.length === 1 ? "Datei" : "Dateien"} (Fotos/Unterlagen).` : ""].filter(Boolean).join("\n");
+    // Sichtbar im Feld „Hinweis an die KI“: nur, was Robert selbst eingegeben hat (plus Art des Schreibens)
+    const kurzAnweisung = [art === "angebot" ? `Nur ein Angebot anfragen (bis ${datumDE(frist)}), noch kein Auftrag.` : "", beschreibung].filter(Boolean).join("\n").slice(0, 2000);
     const hw = [];
     const neueSchreiben = [];
     let themaGemeinsam = null;
+    // Aus einer Nachricht: ein noch nicht gesendeter Auftrags-Entwurf (z. B. von der KI vorbereitet) wird ersetzt – nie zwei
+    if (n) {
+      const alt = (await db.ladeAntworten({ nachrichtId: n.id }).catch(() => [])).filter((x) => x.art === "auftrag" && x.status === "entwurf");
+      for (const x of alt) {
+        await db.loescheAntwort(x.id).catch(() => {});
+        if (x.auftrag_id) {
+          const altA = await db.ladeAuftrag(x.auftrag_id).catch(() => null);
+          if (altA && altA.status === "entwurf" && altA.id !== a.id) await db.loescheAuftrag(altA.id).catch(() => {});
+        }
+      }
+      if (alt.length) melde(`Der vorbereitete Auftrag an ${[...new Set(alt.map((x) => x.empfaenger_name || "Handwerker"))].join(", ")} wurde ersetzt.`, "info");
+    }
     // Aus einer Nachricht: Auftrag wie bisher an der Nachricht (die KI kennt Meldung und Fotos), ein Vorgang
     if (n) themaGemeinsam = await vorgaenge.themaFuerNachricht(n).catch(() => null);
     const ergebnisse = await Promise.all(gewaehlteHw.map(async (d) => {
@@ -920,16 +934,19 @@ export async function anfrageDialog(v = {}) {
         if (sichtbar.zugang && hausmeister) text = `${text.trim()}\n\nZugang / Schlüssel: ${hausmeister.name}${hausmeister.telefon ? `, Tel. ${hausmeister.telefon}` : ""}`;
         const s = await db.speichereAntwort(null, {
           thema_id: themaGemeinsam, art: "auftrag", nachricht_id: n.id, mieter_id: mieterId, dienstleister_id: d.id, auftrag_id: a.id,
-          empfaenger_email: d.email || null, empfaenger_name: d.name, betreff: r.betreff, text, anweisung: anweisung.slice(0, 2000),
+          empfaenger_email: d.email || null, empfaenger_name: d.name, betreff: r.betreff, text, anweisung: kurzAnweisung || null,
           ki_modell: r.modell || null, anhaenge,
         });
         return { d, s: { ...s, hinweise: r.hinweise || [] } };
       }
-      const s = await schreibenAnlegen(a, d, { anweisung, betreff: `${art === "angebot" ? "Anfrage" : "Auftrag"}: ${titel}`, mieterL, anhaenge, sichtbar, hausmeister, themaVon: { dienstleister_id: d.id } });
+      const s = await schreibenAnlegen(a, d, { anweisung, anzeige: kurzAnweisung, betreff: `${art === "angebot" ? "Anfrage" : "Auftrag"}: ${titel}`, mieterL, anhaenge, sichtbar, hausmeister, themaVon: { dienstleister_id: d.id } });
       return { d, s };
     }));
     for (const { d, s } of ergebnisse) { hw.push({ dienstleister_id: d.id, antwort_id: s.id, thema_id: s.thema_id || null, status: "entwurf" }); neueSchreiben.push(s); }
     a = await db.speichereAuftrag(a.id, { handwerker: hw, thema_id: themaGemeinsam || hw[0]?.thema_id || null });
+    if (n?.ki_schritte?.auftrag_id && neueSchreiben[0]) {
+      await db.aendereNachricht(n.id, { ki_schritte: { ...n.ki_schritte, auftrag_id: neueSchreiben[0].id, dienstleister: { id: gewaehlteHw[0].id, name: gewaehlteHw[0].name, gewerk: gewaehlteHw[0].gewerk || null, email: gewaehlteHw[0].email || null } } }).catch(() => {});
+    }
     await warte?.ende();
     if (n) {
       melde(neueSchreiben.length > 1 ? `${neueSchreiben.length} Entwürfe angelegt – bitte prüfen und senden.` : "Entwurf angelegt – bitte prüfen und senden.", "ok");

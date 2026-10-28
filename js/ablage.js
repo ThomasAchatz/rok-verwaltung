@@ -148,6 +148,53 @@ export function zielOrdner(basis, { datum = null, mieterId = null, wohnungId = n
 /** Haus der Mietpartei (über die Wohnung) */
 const hausVonMieter = (m) => (m?.wohnung_id ? wohnungVon(m.wohnung_id)?.objekt_id || null : null);
 
+// ---------------------------------------------------------------------------
+// „Betrifft“ einer Datei: Mietpartei, Kontakt („k:<id>“) oder Handwerker („d:<id>“) – eine Liste, nach Gruppen getrennt.
+// Das Feld heißt weiter „mieter_id“ (Haus folgt der Mietpartei, Details/Ordner nutzen nur echte Mieter-IDs).
+// ---------------------------------------------------------------------------
+async function betrifftListen() {
+  const [kontakte, dienst] = await Promise.all([
+    zustand.kontakte ? Promise.resolve(zustand.kontakte) : db.ladeKontakte().catch(() => []),
+    db.ladeDienstleister().catch(() => []),
+  ]);
+  if (!zustand.kontakte) zustand.kontakte = kontakte;
+  return { kontakte, dienst: dienst.filter((d) => d.aktiv !== false) };
+}
+const kontaktAnzeige = (k) => [[k.vorname, k.nachname].filter(Boolean).join(" "), k.firma].filter(Boolean).join(" · ") || "Kontakt";
+export function betrifftDokOptionen(mieterL, { kontakte = [], dienst = [] }, gewaehlt, objektId = null) {
+  const opt = (wert, text) => `<option value="${esc(wert)}" ${wert === gewaehlt ? "selected" : ""}>${esc(text)}</option>`;
+  const imHaus = objektId ? mieterL.filter((m) => hausVonMieter(m) === objektId) : [];
+  const andere = mieterL.filter((m) => !imHaus.includes(m));
+  const ort = (m) => { const w = wohnungVon(m.wohnung_id); const o = w && objektVon(w.objekt_id); return [o?.bezeichnung, w?.bezeichnung].filter(Boolean).join(", "); };
+  const mieterOpt = (l) => l.map((m) => opt(m.id, `${mieterName(m)}${ort(m) ? ` – ${ort(m)}` : ""}`)).join("");
+  return `<option value="">– niemand bestimmtes –</option>
+    ${imHaus.length ? `<optgroup label="Mieter · ${esc(objektVon(objektId)?.bezeichnung || "dieses Haus")}">${mieterOpt(imHaus)}</optgroup>` : ""}
+    ${andere.length ? `<optgroup label="${imHaus.length ? "Weitere Mieter" : "Mieter"}">${mieterOpt(andere)}</optgroup>` : ""}
+    ${kontakte.length ? `<optgroup label="Sonstige">${kontakte.map((k) => opt(`k:${k.id}`, `${kontaktAnzeige(k)}${k.rolle ? ` (${k.rolle})` : ""}`)).join("")}</optgroup>` : ""}
+    ${dienst.length ? `<optgroup label="Handwerker">${dienst.map((d) => opt(`d:${d.id}`, `${d.name}${d.gewerk ? ` (${d.gewerk})` : ""}`)).join("")}</optgroup>` : ""}`;
+}
+/** Wert des Feldes → { mieter_id, kontakt_id, dienstleister_id } */
+export function betrifftDok(wert) {
+  const w = String(wert || "");
+  return {
+    mieter_id: w && !/^[kd]:/.test(w) ? w : null,
+    kontakt_id: w.startsWith("k:") ? w.slice(2) : null,
+    dienstleister_id: w.startsWith("d:") ? w.slice(2) : null,
+  };
+}
+/** Vorschlag: Kontakt/Handwerker, dessen Firma oder Nachname im Text vorkommt (nur wenn eindeutig) */
+function betrifftVorschlag(text, { kontakte = [], dienst = [] }) {
+  const t = ` ${norm(text).replace(/[^a-z0-9äöüß]+/g, " ")} `;
+  if (t.trim().length < 3) return null;
+  const passt = (wort) => { const n = norm(wort || "").replace(/[^a-z0-9äöüß]+/g, " ").trim(); return n.length >= 4 && t.includes(` ${n} `); };
+  const treffer = [
+    ...kontakte.filter((k) => passt(k.firma) || passt(k.nachname) || passt([k.vorname, k.nachname].filter(Boolean).join(" "))).map((k) => `k:${k.id}`),
+    ...dienst.filter((d) => passt(d.name) || passt(String(d.name || "").split(/\s+/)[0])).map((d) => `d:${d.id}`),
+  ];
+  return treffer.length === 1 ? treffer[0] : null;
+}
+const betrifftGewaehlt = (b) => (b?.mieter_id || (b?.kontakt_id ? `k:${b.kontakt_id}` : b?.dienstleister_id ? `d:${b.dienstleister_id}` : null));
+
 // Name nach dem Schema, bis Robert ihn selbst ändert; Details folgen der Mietpartei; Zielordner wird angezeigt.
 // Das Haus folgt der gewählten Mietpartei; passen beide nicht zusammen, steht ein Hinweis da.
 function verbindeNamen(bereich, { ki = {} } = {}) {
@@ -461,7 +508,7 @@ export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, vo
 
   let { erkannt, hinweis: kiHinweis } = await liesTeile(teile);
   let daten = null;
-  const [mieterL] = await Promise.all([mieterListe(), ordnerListe()]);
+  const [mieterL, , leute] = await Promise.all([mieterListe(), ordnerListe(), betrifftListen()]);
   for (;;) {
     const mehr = teile.length > 1;
     // Word/Excel gehen nur in die Ablage (das Postfach nimmt Fotos und PDF)
@@ -499,7 +546,7 @@ export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, vo
       <fieldset class="gruppe" data-ziel="dokument">
         <div class="formraster formraster--zwei">
           <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(hausStart)}</select></label>
-          <label class="feld"><span>Mietpartei (optional)</span><select name="mieter_id">${mieterOptionen(mieterL, erkannt.mieter_id || null)}</select>
+          <label class="feld"><span>Betrifft (optional)</span><select name="mieter_id">${betrifftDokOptionen(mieterL, leute, erkannt.mieter_id || (hausStart ? null : betrifftVorschlag([erkannt.absender_name, erkannt.absender_kurz, erkannt.betreff, erkannt.zusammenfassung].filter(Boolean).join(" "), leute)), hausStart)}</select>
             <span class="feldhinweis feldhinweis--warn" data-mieter-hinweis></span></label>
           <label class="feld"><span>Ordner</span><select name="ordner" data-wunsch="${esc(erkannt.ordner || "")}">${ordnerOptionen(ordnerFuer(hausStart), passenderOrdner(erkannt.ordner, hausStart))}</select>
             <span class="feldhinweis feldhinweis--leise" data-zielordner></span></label>
@@ -594,8 +641,8 @@ export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, vo
         const t = teile[i];
         const neu = await db.legeDokumentAb({
           objekt_id,
-          mieter_id: daten.get("mieter_id") || null,
-          ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: daten.get("mieter_id") || null, wohnungId: kiTeile.wohnungId, objektId: objekt_id }),
+          ...betrifftDok(daten.get("mieter_id")),
+          ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: betrifftDok(daten.get("mieter_id")).mieter_id, wohnungId: kiTeile.wohnungId, objektId: objekt_id }),
           art: daten.get("art"),
           absender: erkannt.absender_name || erkannt.absender_kurz || null,
           details: String(daten.get("details") || "").trim() || null,
@@ -733,7 +780,7 @@ export function verbindeListen(root, { dokumente = [], wissen = [], dienstleiste
 // ---------------------------------------------------------------------------
 export async function oeffneDokument(d, { nachher = () => {} } = {}) {
   if (!d) return;
-  const [mieterL, ordnerL] = await Promise.all([mieterListe(), ordnerListe()]);
+  const [mieterL, ordnerL, leute] = await Promise.all([mieterListe(), ordnerListe(), betrifftListen()]);
   const pdf = d.typ === "application/pdf";
   const bild = /^image\//.test(d.typ || "");
   const daten = await dialogFormular(`
@@ -749,7 +796,7 @@ export async function oeffneDokument(d, { nachher = () => {} } = {}) {
       <div class="formraster formraster--zwei">
         <label class="feld breit"><span>Name</span><input name="titel" required maxlength="160" value="${esc(d.titel)}"></label>
         <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(d.objekt_id)}</select></label>
-        <label class="feld"><span>Mietpartei</span><select name="mieter_id">${mieterOptionen(mieterL, d.mieter_id)}</select></label>
+        <label class="feld"><span>Betrifft</span><select name="mieter_id">${betrifftDokOptionen(mieterL, leute, betrifftGewaehlt(d), d.objekt_id || null)}</select></label>
         <label class="feld"><span>Ordner</span><select name="ordner">${ordnerOptionen(ordnerFuer(d.objekt_id), d.ordner)}</select></label>
         <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, d.art || "Sonstiges")}</select></label>
         <label class="feld"><span>Datum</span><input type="date" name="datum" value="${esc(d.datum || "")}"></label>
@@ -783,9 +830,9 @@ export async function oeffneDokument(d, { nachher = () => {} } = {}) {
       await db.aendereDokument(d.id, {
         titel: String(daten.get("titel")).trim() || d.titel,
         objekt_id: daten.get("objekt_id") || null,
-        mieter_id: daten.get("mieter_id") || null,
+        ...betrifftDok(daten.get("mieter_id")),
         ordner: daten.get("ordner") === d.ordner ? d.ordner
-          : zielOrdner(daten.get("ordner"), { datum: daten.get("datum") || d.datum, mieterId: daten.get("mieter_id") || null, objektId: daten.get("objekt_id") || null }),
+          : zielOrdner(daten.get("ordner"), { datum: daten.get("datum") || d.datum, mieterId: betrifftDok(daten.get("mieter_id")).mieter_id, objektId: daten.get("objekt_id") || null }),
         art: daten.get("art"),
         datum: daten.get("datum") || null,
         absender: String(daten.get("absender") || "").trim() || null,
@@ -976,8 +1023,10 @@ export async function wissenHochladen(dateien, { objektId = null, nachher = () =
 export async function bearbeiteDienstleister(d, { nachher = () => {}, objektId = null } = {}) {
   d = d || { objekt_id: objektId };
   const neu = !d.id;
+  const docs = neu ? [] : await db.ladeDokumente({ dienstleisterId: d.id }).catch(() => []);
   const daten = await dialogFormular(`
     <h2>${neu ? "Handwerker hinzufügen" : esc(d.name)}</h2>
+    ${docs.length ? `<div class="hw-doks"><span class="leise">Dokumente zu diesem Handwerker:</span>${docs.slice(0, 8).map((x) => `<button type="button" class="textknopf" data-hw-dok="${esc(x.id)}">${esc(x.titel)}</button>`).join("")}</div>` : ""}
     <div class="formraster formraster--zwei">
       <label class="feld"><span>Name / Firma</span><input name="name" required maxlength="120" value="${esc(d.name || "")}"></label>
       <label class="feld"><span>Gewerk</span><input name="gewerk" list="gewerke" maxlength="60" value="${esc(d.gewerk || "")}" placeholder="z. B. Heizung &amp; Sanitär"></label>
@@ -993,7 +1042,14 @@ export async function bearbeiteDienstleister(d, { nachher = () => {}, objektId =
       <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
       ${neu ? "" : `<button class="knopf" value="schreiben" formnovalidate>Schreiben</button>`}
       <button class="knopf knopf--primaer" value="ok">Speichern</button>
-    </div>`, { breit: true });
+    </div>`, { breit: true, vorbereiten: (form) => {
+    for (const b of $$("[data-hw-dok]", form)) {
+      b.addEventListener("click", () => {
+        $("#dialog").close();
+        setTimeout(() => oeffneDokument(docs.find((x) => x.id === b.dataset.hwDok), { nachher }), 0);
+      });
+    }
+  } });
   if (!daten) return;
   if (daten.get("_aktion") === "schreiben") return geheZu(`#/schreiben/d-${d.id}`);
   let gespeichert = null;
@@ -1425,6 +1481,8 @@ async function legeEintragAb(e, f) {
   return db.legeDokumentAb({
     objekt_id,
     mieter_id: f.mieter_id || null,
+    kontakt_id: f.kontakt_id || null,
+    dienstleister_id: f.dienstleister_id || null,
     nachricht_id: e.quelle?.nachricht_id || null,
     antwort_id: e.quelle?.antwort_id || null,
     aufgabe_id: e.quelle?.aufgabe_id || null,
@@ -1504,7 +1562,7 @@ export async function automatischAblegen(e, { meldung = true, nachher = () => {}
   try {
     const r = await (vorgabe?.vorschlag || nameVorschlag(e));
     const doc = await legeEintragAb(e, {
-      objekt_id: e.objektId, mieter_id: e.mieterId, ordner: r.ordner, art: r.art,
+      objekt_id: e.objektId, mieter_id: e.mieterId, kontakt_id: e.kontaktId || null, dienstleister_id: e.dienstleisterId || null, ordner: r.ordner, art: r.art,
       absender: e.gegenueber || kurzName(e, r.v), details: r.details, datum: r.datum,
       titel: namensTeil(vorgabe?.titel || "") || r.titel,
       zusammenfassung: e.zusammenfassung || r.v.zusammenfassung,
@@ -1569,14 +1627,18 @@ export async function frageMitAblage(titel, html, jaText, e) {
 /** Von Hand ablegen: Dialog mit Vorschlag (Ordner von der KI, Name nach Schema) */
 export async function inAblageDialog(e, { nachher = () => {}, schon = [] } = {}) {
   const warte = zustand.ki?.ki ? wartehinweis("Die KI sucht den passenden Ordner …") : null;
-  let v, mieterL, ordnerL;
+  let v, mieterL, ordnerL, leute;
   try {
-    [v, mieterL, ordnerL] = await Promise.all([vorschlagFuer(e), mieterListe(), ordnerListe()]);
+    [v, mieterL, ordnerL, leute] = await Promise.all([vorschlagFuer(e), mieterListe(), ordnerListe(), betrifftListen()]);
   } finally {
     await warte?.ende();
   }
   const mitAnhang = (e.anhaenge || []).filter((a) => a.pfad);
   const datum = e.datum || heuteISO();
+  const vorgabeBetrifft = e.mieterId || (e.kontaktId ? `k:${e.kontaktId}` : e.dienstleisterId ? `d:${e.dienstleisterId}` : null);
+  const textFuerVorschlag = [e.titel, e.thema, e.gegenueber, e.zusammenfassung, v.zusammenfassung, e.beschreibung].filter(Boolean).join(" ");
+  const betrifftVorgeschlagen = !vorgabeBetrifft && !e.objektId ? betrifftVorschlag(textFuerVorschlag, leute) : null;
+  const betrifftWahl = vorgabeBetrifft || betrifftVorgeschlagen;
   const daten = await dialogFormular(`
     <h2>In die Ablage</h2>
     ${e.beschreibung ? `<p class="leise">${esc(e.beschreibung)}</p>` : ""}
@@ -1586,7 +1648,8 @@ export async function inAblageDialog(e, { nachher = () => {}, schon = [] } = {})
         ${v.vonKi ? `<span class="feldhinweis">Vorschlag der KI</span>` : ""}
         <span class="feldhinweis feldhinweis--leise" data-zielordner></span></label>
       <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(e.objektId || null)}</select></label>
-      <label class="feld"><span>Mietpartei (optional)</span><select name="mieter_id">${mieterOptionen(mieterL, e.mieterId || null)}</select>
+      <label class="feld"><span>Betrifft (optional)</span><select name="mieter_id">${betrifftDokOptionen(mieterL, leute, betrifftWahl, e.objektId || null)}</select>
+        ${betrifftVorgeschlagen ? `<span class="feldhinweis">Vorschlag aus dem Text</span>` : ""}
         <span class="feldhinweis feldhinweis--warn" data-mieter-hinweis></span></label>
       <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, v.art)}</select></label>
       <label class="feld"><span>Details (für den Namen)</span>
@@ -1601,10 +1664,11 @@ export async function inAblageDialog(e, { nachher = () => {}, schon = [] } = {})
       <button class="knopf knopf--primaer" value="ok">Ablegen</button>
     </div>`, { breit: true, vorbereiten: (form) => verbindeNamen(form, { ki: kiTeileVon(e, v) }) });
   if (!daten) return null;
+  const bt = betrifftDok(daten.get("mieter_id"));
   const f = {
     objekt_id: daten.get("objekt_id") || null,
-    mieter_id: daten.get("mieter_id") || null,
-    ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: daten.get("mieter_id") || null, wohnungId: v.wohnung_id || null, objektId: daten.get("objekt_id") || null }),
+    ...bt,
+    ordner: zielOrdner(daten.get("ordner"), { datum: daten.get("datum"), mieterId: bt.mieter_id, wohnungId: v.wohnung_id || null, objektId: daten.get("objekt_id") || null }),
     art: daten.get("art"),
     absender: e.gegenueber || kurzName(e, v) || null,
     details: String(daten.get("details") || "").trim() || null,

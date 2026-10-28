@@ -94,7 +94,8 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Ordner-Editor `ordnerBearbeiten()`: Modell mit `eltern`-Verweis (voller Name = Eltern + "/" + teil), neu zeichnen nur bei
   Struktur-Änderungen (beim Umbenennen nicht, sonst geht der nächste Klick verloren). Löschen kaskadiert auf Unterordner.
   `wieWohnung()` erkennt von Hand angelegte Wohnungsordner. Fehler stehen im Dialog (`[data-fehler]`), nicht als Meldung.
-- Kontakte: `js/kontakte.js` (Routen `#/kontakte`, `#/kontakt/<id>`, `#/handwerker`; Reiter via `reiterHtml()`, Menüpunkt
+- Kontakte: `js/kontakte.js` (Routen `#/kontakte`, `#/kontakt/<id>`, Reiter Handwerker = `#/kontakte/handwerker` (`zeigeHandwerkerKontakte()`,
+  nur die Kontaktliste; Aufträge bleiben unter `#/handwerker`); Reiter via `reiterHtml()`, Menüpunkt
   „Kontakte“ = data-nav "mieter"). Tabellen `kontakte` (Geburtstag als Tag/Monat/Jahr?, `geburtstag_erledigt` = Jahr),
   `verlauf` (kontakt_id ODER mieter_id), `aufgaben.kontakt_id`, `dokumente.verlauf_id`. KI-Aktion `notiz_lesen`
   (`_shared/notiz.ts`) liefert nur Vorschläge, IDs werden gegen die Listen geprüft. Geburtstage: `geburtstagTodos()`
@@ -249,3 +250,13 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Wissen hochladen (`wissenHochladen(dateien)` in ablage.js, Knopf `#hochladen` + Ziehen auf die Seite über `setzeSeitenAblage("#/wissen")`):
   Word/Excel liest der Browser (`officeText`), Fotos/PDF bzw. lange Texte liest die KI (`brief_lesen`), dann `wissen_ordnen` → `bearbeiteWissen`
   zum Prüfen; die Datei selbst wird nicht abgelegt. Briefvorlagen bleiben unter Einstellungen › Vorlagen.
+- Mieterliste (`zeigeMieterliste` in app.js): nur Name + Wohnung (+ Kostenträger-Marker), nach Haus gruppiert, ohne Beträge/Monats-Chips;
+  Zahlungen stehen nur in der Akte bzw. unter Mieteingänge.
+- Auftrag aus einer Nachricht (`anfrageDialog` mit `nachricht`): ungesendete Auftrags-Entwürfe dieser Nachricht (z. B. von „Ja und Ja“) werden ersetzt,
+  nicht verdoppelt; `antworten.anweisung` zeigt nur Roberts eigenen Text (`kurzAnweisung`), die lange KI-Anweisung bleibt intern (`schreibenAnlegen({ anzeige })`).
+- Schreibstil je Empfängergruppe (Migration `20261028230000_dokument_kontakt_tonfall.sql`): `vermieter_profil.ki_tonfall_gruppen` { mieter, handwerker,
+  sonstige } (Einstellungen › Antworten und E-Mails › „Je nach Empfänger“). Server (`entwurfKontext`, `auftrag()` in fach.ts): Handwerker = dienstleister,
+  Sonstige = Kontakt/Kostenträger/Nachricht ohne Mietpartei (Absender-E-Mail eines Handwerkers → Handwerker), sonst Mieter; Zeile „Stil für … (hat Vorrang)“.
+- Ablage „Betrifft“: ein Feld (`name=mieter_id`) mit Gruppen Mieter (· Haus) | Sonstige (`k:<id>`) | Handwerker (`d:<id>`), `betrifftDokOptionen()` /
+  `betrifftDok()` in ablage.js, Vorschlag aus dem Text (`betrifftVorschlag`, nur eindeutige Firma/Nachname). Spalten `dokumente.kontakt_id/dienstleister_id`;
+  Kontaktseite zeigt „Dokumente“ (`#kontakt-dokumente`), Handwerker-Dialog die Dateien des Handwerkers (`.hw-doks`).

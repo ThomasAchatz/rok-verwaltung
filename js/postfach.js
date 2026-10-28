@@ -147,6 +147,7 @@ function eintragAntwort(a, { nachricht = null, mieter = null, objektId = null, k
     art, artFest: true,
     datum: isoTag(a.gesendet_am),
     objektId, mieterId: art === "Auftrag" ? null : mieter?.id || null,
+    kontaktId: a.kontakt_id || null, dienstleisterId: a.dienstleister_id || null,
     gegenueber: empfaenger,
     gegenueberKurz: anMieter ? mieter.nachname : null,
     kiText: { titel: a.betreff || "", text: a.text || "" },
@@ -1836,8 +1837,18 @@ export async function zeigeEinstellungen() {
       <section class="flaeche">
         <div class="flaeche__kopf"><h2>Antworten und E-Mails</h2></div>
         <form class="flaeche__inhalt" id="antwortformular">
-          <label class="feld"><span>So soll die KI schreiben</span>
+          <label class="feld"><span>So soll die KI schreiben <span class="leise">(für alle)</span></span>
             <textarea name="ki_tonfall" rows="3" placeholder="z. B. Sie-Form, freundlich, kurz. Keine Zusagen zu Geld oder Terminen.">${esc(p.ki_tonfall || "")}</textarea></label>
+          ${(() => { const tg = p.ki_tonfall_gruppen || {}; return `
+          <fieldset class="gruppe"><legend>Je nach Empfänger</legend>
+            <label class="feld"><span>An Mieter</span>
+              <textarea name="ton_mieter" rows="2" placeholder="z. B. Förmlich: Sie-Form, höflich, klar.">${esc(tg.mieter || "")}</textarea></label>
+            <label class="feld"><span>An Handwerker</span>
+              <textarea name="ton_handwerker" rows="2" placeholder="z. B. Klar und direkt, kurze Sätze, das Wichtigste in Stichpunkten.">${esc(tg.handwerker || "")}</textarea></label>
+            <label class="feld"><span>An Sonstige <span class="leise">(Kontakte, Ämter, Jobcenter, Interessenten)</span></span>
+              <textarea name="ton_sonstige" rows="2" placeholder="z. B. Förmlich und professionell, sachlich.">${esc(tg.sonstige || "")}</textarea></label>
+            <p class="feldhinweis feldhinweis--leise">Gilt zusätzlich zu „So soll die KI schreiben“ – passend zum Empfänger des Schreibens.</p>
+          </fieldset>`; })()}
           <label class="feld"><span>Signatur unter E-Mails</span>
             <textarea name="email_signatur" rows="4" placeholder="${esc([p.inhaber, p.firma].filter(Boolean).join("\n"))}">${esc(p.email_signatur || "")}</textarea></label>
           <label class="feld"><span>Antworten der Empfänger gehen an</span>
@@ -1945,7 +1956,18 @@ export async function zeigeEinstellungen() {
     }
   });
   speichernMit("#profilformular", ["firma", "inhaber", "strasse", "plz", "ort", "telefon", "email", "web"], "Briefkopf gespeichert.");
-  speichernMit("#antwortformular", ["ki_tonfall", "email_signatur", "antwort_email"], "Gespeichert.");
+  $("#antwortformular").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const t = (k) => String(fd.get(k) || "").trim();
+    try {
+      zustand.profil = await db.speichereProfil({
+        ki_tonfall: t("ki_tonfall") || null, email_signatur: t("email_signatur") || null, antwort_email: t("antwort_email") || null,
+        ki_tonfall_gruppen: { mieter: t("ton_mieter").slice(0, 600), handwerker: t("ton_handwerker").slice(0, 600), sonstige: t("ton_sonstige").slice(0, 600) },
+      });
+      melde("Gespeichert.", "ok");
+    } catch (err) { melde(err.message, "fehler"); }
+  });
 
   $("#postfachformular").addEventListener("submit", async (e) => {
     e.preventDefault();

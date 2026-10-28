@@ -76,7 +76,7 @@ export const kontaktVon = (id) => (id ? (zustand.kontakte || []).find((k) => k.i
 // --- Reiter über den Listen: Mieter | Handwerker | Sonstige -------------------------
 export function reiterHtml(aktiv) {
   const r = (ziel, text, key) => `<a class="reiter__knopf" href="${ziel}" ${aktiv === key ? `aria-current="page"` : ""}>${text}</a>`;
-  return `<nav class="reiter reiter--seiten" aria-label="Bereiche">${r("#/mieter", "Mieter", "mieter")}${r("#/handwerker/liste", "Handwerker", "handwerker")}${r("#/kontakte", "Sonstige", "kontakte")}</nav>`;
+  return `<nav class="reiter reiter--seiten" aria-label="Bereiche">${r("#/mieter", "Mieter", "mieter")}${r("#/kontakte/handwerker", "Handwerker", "handwerker")}${r("#/kontakte", "Sonstige", "kontakte")}</nav>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,12 +144,13 @@ export async function zeigeKontakte() {
 // Seite eines Kontakts: Kontaktdaten, Verlauf, To-dos
 // ---------------------------------------------------------------------------
 export async function zeigeKontakt(id) {
-  const [k, verlauf, aufgaben, , schrift] = await Promise.all([
+  const [k, verlauf, aufgaben, , schrift, dokumente] = await Promise.all([
     db.ladeKontakt(id).catch(() => null),
     db.ladeVerlauf({ kontaktId: id }).catch(() => []),
     db.ladeAufgaben({ kontaktId: id }).catch(() => []),
     kontakteListe(),
     vorgaenge.ladeListe({ kontaktId: id }),
+    db.ladeDokumente({ kontaktId: id }).catch(() => []),
   ]);
   if (!k) throw new Error("Diesen Kontakt gibt es nicht (mehr).");
   const g = naechsterGeburtstag(k);
@@ -181,6 +182,10 @@ export async function zeigeKontakt(id) {
           <div class="flaeche__kopf"><h2>Schriftverkehr</h2></div>
           ${vorgaenge.vorgaengeListeHtml(schrift.themen, schrift.zahlen)}
         </section>` : ""}
+        ${dokumente.length ? `<section class="flaeche" id="kontakt-dokumente">
+          <div class="flaeche__kopf"><h2>Dokumente</h2><span class="leise">${dokumente.length}</span></div>
+          ${ablage.dokumentListe(dokumente)}
+        </section>` : ""}
       </div>
       <div class="stapel">
         <section class="flaeche">
@@ -205,10 +210,28 @@ export async function zeigeKontakt(id) {
 
   verbindeVerlauf($("#verlauf"), { verlauf, nachher: neuLaden });
   start.verbindeTodos($("#todos"), { aufgaben, nachher: neuLaden });
+  if (dokumente.length) ablage.verbindeListen($("#kontakt-dokumente"), { dokumente, nachher: neuLaden });
   $("#einsprechen").addEventListener("click", () => notizEinsprechen({ kontaktId: id }));
   $("#eintrag-neu").addEventListener("click", () => verlaufDialog({ kontakt_id: id }, { nachher: neuLaden }));
   $("#bearbeiten").addEventListener("click", () => kontaktDialog(k, { nachher: neuLaden, nachLoeschen: () => geheZu("#/kontakte") }));
   $("#todo-neu").addEventListener("click", () => start.aufgabeDialog({ kontakt_id: id }, { nachher: neuLaden }));
+}
+
+// ---------------------------------------------------------------------------
+// Handwerker als Kontakte (Reiter „Handwerker“ unter Kontakte; Aufträge/Angebote gibt es unter dem Menüpunkt „Handwerker“)
+// ---------------------------------------------------------------------------
+export async function zeigeHandwerkerKontakte() {
+  const liste = await db.ladeDienstleister().catch(() => []);
+  const neuLaden = () => zeigeHandwerkerKontakte();
+  inhalt().innerHTML = `
+    ${reiterHtml("handwerker")}
+    <div class="kopf">
+      <div><h1>Handwerker</h1><p>Handwerker und Dienstleister aller Häuser · Aufträge und Angebote unter <a href="#/handwerker">Handwerker</a></p></div>
+      <div class="knopfreihe"><button type="button" class="knopf" id="dienst-neu">${ICON_PLUS} Hinzufügen</button></div>
+    </div>
+    <section class="flaeche">${ablage.dienstleisterListe(liste)}</section>`;
+  ablage.verbindeListen(inhalt(), { dienstleister: liste, nachher: neuLaden });
+  $("#dienst-neu").addEventListener("click", () => ablage.bearbeiteDienstleister(null, { nachher: neuLaden }));
 }
 
 // ---------------------------------------------------------------------------

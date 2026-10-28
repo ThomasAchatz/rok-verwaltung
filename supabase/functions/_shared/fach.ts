@@ -299,7 +299,7 @@ const REGELN_ENTWURF =
 // deno-lint-ignore no-explicit-any
 export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: string; text: string; mieterId: string | null; bilder: any[]; hinweise: string[] }> {
   const { zugriff } = o;
-  const [profil] = await rest("vermieter_profil?id=eq.1&select=firma,inhaber,ki_tonfall", zugriff);
+  const [profil] = await rest("vermieter_profil?id=eq.1&select=firma,inhaber,ki_tonfall,ki_tonfall_gruppen", zugriff);
   let nachricht = null;
   if (o.nachrichtId) {
     [nachricht] = await rest(`nachrichten?id=eq.${enc(o.nachrichtId)}&select=*`, zugriff);
@@ -407,11 +407,24 @@ export async function entwurfKontext(o: EntwurfAuftrag): Promise<{ system: strin
     ? "Entwirf ein Rundschreiben an alle Mieterinnen und Mieter des Hauses nach der Anweisung von Robert."
     : "Entwirf ein Schreiben nach der Anweisung von Robert.";
   const privat = o.absender?.name ? String(o.absender.name).slice(0, 80) : null;
+  // Schreibstil je Empfängergruppe (Einstellungen): Mieter | Handwerker | Sonstige (Kontakte, Ämter, Interessenten)
+  let gruppe: "mieter" | "handwerker" | "sonstige" = "mieter";
+  if (dienstleister) gruppe = "handwerker";
+  else if (kontakt || kostentraeger) gruppe = "sonstige";
+  else if (nachricht && !nachricht.mieter_id && !nachricht.objekt_id) {
+    const email = String(nachricht.absender_email ?? "").toLowerCase();
+    const [hw] = email ? await rest(`dienstleister?email=ilike.${enc(email)}&select=id&limit=1`, zugriff).catch(() => []) : [];
+    gruppe = hw ? "handwerker" : "sonstige";
+  }
+  const tonGruppe = String(profil?.ki_tonfall_gruppen?.[gruppe] ?? "").trim().slice(0, 600);
+  const GRUPPE_NAME = { mieter: "Mieter", handwerker: "Handwerker", sonstige: "Geschäftskontakte, Ämter und Interessenten" };
   const system =
     (privat
       ? `Du schreibst im Namen von ${privat} als Privatperson (nicht als Firma oder Hausverwaltung; die Firma ${profil?.firma ?? ""} nicht erwähnen). Ich-Form statt „wir“.\n`
       : `Du schreibst im Namen von ${profil?.inhaber ?? "der Verwaltung"} (${profil?.firma ?? "Hausverwaltung"}) an Mieter, Ämter, Interessenten und Handwerker.\n`) +
-    `Tonfall: ${profil?.ki_tonfall || "Sie-Form, freundlich, klar und kurz."}\n\nRegeln:\n` + REGELN_ENTWURF +
+    `Tonfall: ${profil?.ki_tonfall || "Sie-Form, freundlich, klar und kurz."}\n` +
+    (tonGruppe ? `Stil für ${GRUPPE_NAME[gruppe]} (hat Vorrang beim Ton): ${tonGruppe}\n` : "") +
+    `\nRegeln:\n` + REGELN_ENTWURF +
     (dienstleister
       ? "\n- Dieses Schreiben geht an einen Handwerker/Dienstleister: sachlich und geschäftlich, Anrede „Sehr geehrte Damen und Herren,“. " +
         "Nenne nur, was Robert angibt (Ort, Auftrag, Termin, Kontakt). Keine Angaben zu Mieten, Rückständen, Kostenträgern oder Bankdaten."
@@ -450,7 +463,7 @@ export async function auftrag(o: { zugriff: Zugriff; nachrichtId: string; dienst
   const { zugriff } = o;
   const [nachricht] = await rest(`nachrichten?id=eq.${enc(o.nachrichtId)}&select=*`, zugriff);
   if (!nachricht) throw new Fehler(404, "Nachricht nicht gefunden.", "nicht_gefunden");
-  const [profil] = await rest("vermieter_profil?id=eq.1&select=firma,inhaber,telefon,email", zugriff);
+  const [profil] = await rest("vermieter_profil?id=eq.1&select=firma,inhaber,telefon,email,ki_tonfall_gruppen", zugriff);
   let dienstleister = null;
   if (o.dienstleisterId) [dienstleister] = await rest(`dienstleister?id=eq.${enc(o.dienstleisterId)}&select=name,gewerk`, zugriff);
   // Nur was der Handwerker braucht: Name, Adresse, Wohnung, Kontakt. Keine Rückstände, kein Kostenträger, keine Bankdaten.
@@ -486,6 +499,7 @@ export async function auftrag(o: { zugriff: Zugriff; nachrichtId: string; dienst
     "- Keine Beträge, Fristen oder Zusagen erfinden. Keine Angaben zu Miete, Rückständen, Jobcenter oder Bankdaten.\n" +
     "- " + KI_REGEL_FREMD + "\n" +
     "- Anrede „Sehr geehrte Damen und Herren,“ (oder den Namen, falls bekannt), kurze Absätze, keine Grußformel, keine Unterschrift.\n" +
+    (String(profil?.ki_tonfall_gruppen?.handwerker ?? "").trim() ? `- Stil für Handwerker: ${String(profil.ki_tonfall_gruppen.handwerker).trim().slice(0, 600)}\n` : "") +
     "- Antworte ausschließlich über das Werkzeug 'entwurf'.";
   const { daten, modell } = await claude({ system, inhalt: [...bilder, { type: "text", text }], werkzeug: WERKZEUG_ENTWURF, maxTokens: 2000 });
   return {

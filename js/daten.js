@@ -432,11 +432,13 @@ export async function neuerMieter(felder) {
 }
 
 // --- Dokumentenablage (privater Bucket "dokumente") -------------------------
-export async function ladeDokumente({ objektId, mieterId = null } = {}) {
+export async function ladeDokumente({ objektId, mieterId = null, kontaktId = null, dienstleisterId = null } = {}) {
   let q = sb.from("dokumente").select("*").order("datum", { ascending: false, nullsFirst: false }).order("erstellt_am", { ascending: false }).limit(500);
   if (objektId === null) q = q.is("objekt_id", null);
   else if (objektId) q = q.eq("objekt_id", objektId);
   if (mieterId) q = q.eq("mieter_id", mieterId);
+  if (kontaktId) q = q.eq("kontakt_id", kontaktId);
+  if (dienstleisterId) q = q.eq("dienstleister_id", dienstleisterId);
   return pruefe(await q);
 }
 /** Nur Haus und Ordner aller Dokumente (für die Zahlen in der Objektübersicht) */

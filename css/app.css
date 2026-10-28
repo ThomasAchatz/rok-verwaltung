@@ -1472,3 +1472,7 @@ body.datei-ueber::after {
 .post__werort { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.6rem; min-width: 0; }
 .post__ort { font-size: 0.8rem; font-weight: 600; color: var(--messing-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .post__ort--allgemein { color: var(--text-leise); font-weight: 500; }
+.zeile--kontakt { align-items: center; }
+.zeile--kontakt .zeile__wer { display: grid; gap: 0.1rem; min-width: 0; }
+.zeile__pfeil { color: var(--text-leise); font-size: 1.3rem; line-height: 1; }
+.hw-doks { display: grid; gap: 0.2rem; justify-items: start; margin: 0 0 0.8rem; overflow-wrap: anywhere; }
