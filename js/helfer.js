@@ -2,6 +2,8 @@
 
 export const $ = (sel, el = document) => el.querySelector(sel);
 export const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
+// Touch-Gerät (Handy/Tablet): Felder nicht von selbst fokussieren, sonst springt die Tastatur auf und die Seite verrutscht.
+export const TOUCH = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 export const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -48,7 +50,7 @@ export function dialogFormular(html, { breit = false, vorbereiten = null } = {})
   dlg.innerHTML = `<form method="dialog">${html}</form>`;
   const form = $("form", dlg);
   dlg.showModal();
-  $("input:not([type=hidden]):not([readonly]), select, textarea", form)?.focus();
+  if (!TOUCH) $("input:not([type=hidden]):not([readonly]), select, textarea", form)?.focus();
   vorbereiten?.(form);
   // Erst nach dem close-Ereignis auflösen: Sonst landet es beim nächsten Dialog und schließt ihn sofort.
   return new Promise((fertig) => {

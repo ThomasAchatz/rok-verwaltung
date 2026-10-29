@@ -465,6 +465,63 @@ export async function aktion(a, was, { dienst = null, mieterL = null, dienstleis
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Hochgeladene Rechnung / hochgeladenes Angebot einem laufenden Auftrag zuordnen (Vorschlag im Erfassen-Dialog).
+// Passt, wenn der Handwerker des Auftrags im Absender/Text vorkommt (Name oder E-Mail) und das Haus nicht widerspricht.
+// ---------------------------------------------------------------------------
+const ALLGEMEIN_WORT = new Set(["gmbh", "co", "kg", "ug", "ohg", "gbr", "ag", "ek", "firma", "und", "der", "die", "das", "service", "services",
+  "haustechnik", "gebaeudetechnik", "sanitaer", "heizung", "elektro", "elektrotechnik", "installation", "meisterbetrieb", "malerbetrieb",
+  "maler", "dach", "bau", "hausmeister", "hausmeisterservice", "garten", "schluesseldienst", "reinigung", "technik"]);
+function handwerkerImText(d, text, email) {
+  if (!d) return false;
+  if (email && d.email && norm(d.email) === norm(email)) return true;
+  const voll = norm(d.name || "").replace(/[^a-z0-9äöüß]+/g, " ").trim();
+  if (voll.length >= 4 && text.includes(` ${voll} `)) return true;
+  return voll.split(" ").some((w) => w.length >= 4 && !ALLGEMEIN_WORT.has(w.replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")) && text.includes(` ${w} `));
+}
+/** { Rechnung: [...], Angebot: [...] } mit { a, did, name, betrag, text } – leer, wenn nichts passt */
+export async function auftragsKandidaten(erkannt = {}, { objektId = null } = {}) {
+  const leer = { Rechnung: [], Angebot: [] };
+  const roh = [erkannt.absender_name, erkannt.absender_kurz, erkannt.absender_email, erkannt.betreff, erkannt.zusammenfassung].filter(Boolean).join(" ");
+  if (!roh.trim()) return leer;
+  const text = ` ${norm(roh).replace(/[^a-z0-9äöüß]+/g, " ")} `;
+  const [auftraege, dienst] = await Promise.all([db.ladeAuftraege().catch(() => []), db.ladeDienstleister().catch(() => [])]);
+  const passt = (did) => handwerkerImText(dienst.find((x) => x.id === did), text, erkannt.absender_email);
+  const hausOk = (a) => !objektId || !a.objekt_id || a.objekt_id === objektId;
+  const eintrag = (a, did) => ({ a, did, name: hwName(dienst, did), text: `${a.titel}${a.objekt_id ? ` · ${objektVon(a.objekt_id)?.bezeichnung || ""}` : ""}` });
+  const out = { Rechnung: [], Angebot: [] };
+  for (const a of auftraege) {
+    if (!hausOk(a)) continue;
+    if (["beauftragt", "erledigt"].includes(a.status)) {
+      const did = a.dienstleister_id || (a.handwerker || []).find((h) => ["beauftragt", "beauftragen"].includes(h.status))?.dienstleister_id;
+      if (did && passt(did)) out.Rechnung.push(eintrag(a, did));
+    }
+    if (["angefragt", "angebot"].includes(a.status)) {
+      const h = (a.handwerker || []).find((x) => ["angefragt", "angebot"].includes(x.status) && passt(x.dienstleister_id));
+      if (h) out.Angebot.push(eintrag(a, h.dienstleister_id));
+    }
+  }
+  return out;
+}
+/** Abgelegtes Dokument am Auftrag vermerken: Rechnung (Betrag, ggf. abschließen) oder Angebot (beim Handwerker). */
+export async function dokumentZuAuftrag(auftragId, did, art, { dokumentId, betrag = null, datum = null, abschliessen = false } = {}) {
+  const a = await db.ladeAuftrag(auftragId);
+  const b = zahl(betrag);
+  if (art === "Rechnung") {
+    const heute = heuteISO();
+    await db.speichereAuftrag(a.id, {
+      rechnung_dokument_id: dokumentId, betrag: b || a.betrag || null,
+      ...(abschliessen ? { status: "abgeschlossen", abgeschlossen_am: heute, erledigt_am: a.erledigt_am || heute }
+        : a.status === "beauftragt" ? { status: "erledigt", erledigt_am: a.erledigt_am || heute } : {}),
+    });
+    return `Rechnung am Auftrag „${a.titel}“ vermerkt${abschliessen ? " – Auftrag abgeschlossen" : ""}.`;
+  }
+  const liste = (a.handwerker || []).map((h) => (h.dienstleister_id === did
+    ? { ...h, status: h.status === "beauftragen" ? h.status : "angebot", ...(b ? { betrag: b } : {}), datum: datum || h.datum || heuteISO(), dokument_id: dokumentId } : h));
+  await db.speichereAuftrag(a.id, { handwerker: liste, status: a.status === "angefragt" ? "angebot" : a.status });
+  return `Angebot${b ? ` über ${euro(b)}` : ""} am Auftrag „${a.titel}“ eingetragen.`;
+}
+
 async function angebotEintragen(a, dienst, dienstleisterId) {
   const hwL = (a.handwerker || []).filter((h) => h.status !== "abgelehnt");
   if (!hwL.length) return melde("Bei diesem Auftrag ist kein Handwerker angefragt.", "info"), false;
@@ -487,7 +544,7 @@ async function angebotEintragen(a, dienst, dienstleisterId) {
   const datei = d.get("datei");
   let dokumentId = null;
   if (datei && datei.size) {
-    const r = await ablage.erfasse(datei, { objektId: a.objekt_id || null, nurAblage: true, weiter: false });
+    const r = await ablage.erfasse(datei, { objektId: a.objekt_id || null, nurAblage: true, weiter: false, ohneAuftrag: true });
     dokumentId = r?.dokument?.id || null;
   }
   const liste = (a.handwerker || []).map((h) => (h.dienstleister_id === did ? { ...h, status: h.status === "beauftragen" ? h.status : "angebot", betrag, datum: d.get("datum") || heuteISO(), notiz: String(d.get("notiz") || "").trim() || null, ...(dokumentId ? { dokument_id: dokumentId } : {}) } : h));
@@ -564,7 +621,7 @@ async function rechnungAblegen(a) {
   const datei = d.get("datei");
   let dokumentId = a.rechnung_dokument_id || null;
   if (datei && datei.size) {
-    const r = await ablage.erfasse(datei, { objektId: a.objekt_id || null, nurAblage: true, weiter: false });
+    const r = await ablage.erfasse(datei, { objektId: a.objekt_id || null, nurAblage: true, weiter: false, ohneAuftrag: true });
     if (!r?.dokument) return melde("Die Rechnung wurde nicht abgelegt.", "info"), false;
     dokumentId = r.dokument.id;
   }

@@ -161,17 +161,38 @@ async function betrifftListen() {
   return { kontakte, dienst: dienst.filter((d) => d.aktiv !== false) };
 }
 const kontaktAnzeige = (k) => [[k.vorname, k.nachname].filter(Boolean).join(" "), k.firma].filter(Boolean).join(" · ") || "Kontakt";
-export function betrifftDokOptionen(mieterL, { kontakte = [], dienst = [] }, gewaehlt, objektId = null) {
-  const opt = (wert, text) => `<option value="${esc(wert)}" ${wert === gewaehlt ? "selected" : ""}>${esc(text)}</option>`;
+/** Gleiche Liste als Suchfeld (bei vielen Kontakten): tippen filtert, Wert landet im versteckten Feld „mieter_id“. */
+const betrifftEintraege = new Map();
+let betrifftNr = 0;
+function betrifftFeldHtml(mieterL, { kontakte = [], dienst = [] }, gewaehlt, objektId = null, { label = "Betrifft (optional)", extra = "" } = {}) {
   const imHaus = objektId ? mieterL.filter((m) => hausVonMieter(m) === objektId) : [];
   const andere = mieterL.filter((m) => !imHaus.includes(m));
   const ort = (m) => { const w = wohnungVon(m.wohnung_id); const o = w && objektVon(w.objekt_id); return [o?.bezeichnung, w?.bezeichnung].filter(Boolean).join(", "); };
-  const mieterOpt = (l) => l.map((m) => opt(m.id, `${mieterName(m)}${ort(m) ? ` – ${ort(m)}` : ""}`)).join("");
-  return `<option value="">– niemand bestimmtes –</option>
-    ${imHaus.length ? `<optgroup label="Mieter · ${esc(objektVon(objektId)?.bezeichnung || "dieses Haus")}">${mieterOpt(imHaus)}</optgroup>` : ""}
-    ${andere.length ? `<optgroup label="${imHaus.length ? "Weitere Mieter" : "Mieter"}">${mieterOpt(andere)}</optgroup>` : ""}
-    ${kontakte.length ? `<optgroup label="Sonstige">${kontakte.map((k) => opt(`k:${k.id}`, `${kontaktAnzeige(k)}${k.rolle ? ` (${k.rolle})` : ""}`)).join("")}</optgroup>` : ""}
-    ${dienst.length ? `<optgroup label="Handwerker">${dienst.map((d) => opt(`d:${d.id}`, `${d.name}${d.gewerk ? ` (${d.gewerk})` : ""}`)).join("")}</optgroup>` : ""}`;
+  const hausName = objektVon(objektId)?.bezeichnung || "dieses Haus";
+  const eintraege = [
+    { wert: "", name: "– niemand bestimmtes –", gruppe: "" },
+    ...imHaus.map((m) => ({ wert: m.id, name: mieterName(m), zusatz: ort(m), gruppe: `Mieter · ${hausName}` })),
+    ...andere.map((m) => ({ wert: m.id, name: mieterName(m), zusatz: ort(m), gruppe: imHaus.length ? "Weitere Mieter" : "Mieter" })),
+    ...kontakte.map((k) => ({ wert: `k:${k.id}`, name: kontaktAnzeige(k), zusatz: [k.rolle, k.email].filter(Boolean).join(" · "), gruppe: "Sonstige" })),
+    ...dienst.map((d) => ({ wert: `d:${d.id}`, name: d.name || "Handwerker", zusatz: d.gewerk || "", gruppe: "Handwerker" })),
+  ];
+  const nr = String(++betrifftNr);
+  betrifftEintraege.set(nr, eintraege);
+  const start = eintraege.find((e) => e.wert && e.wert === gewaehlt);
+  return `<div class="betrifft-feld" data-betrifft="${nr}">
+    ${suchauswahlHtml({ label, placeholder: "Name, Firma oder Haus tippen …", wert: start?.name || "", name: "mieter_id", versteckt: start?.wert || "", inline: true })}
+    ${extra}</div>`;
+}
+function verbindeBetrifft(root) {
+  for (const box of $$("[data-betrifft]", root)) {
+    if (box.dataset.verbunden) continue;
+    box.dataset.verbunden = "1";
+    const eintraege = betrifftEintraege.get(box.dataset.betrifft) || [];
+    betrifftEintraege.delete(box.dataset.betrifft);
+    verbindeSuchauswahl($(".suchauswahl", box), eintraege, () => {}, { max: 400 });
+    // Enter im Suchfeld schickt nie das Formular ab (sonst greift der erste Knopf, z. B. „Löschen“)
+    $("input[type=search]", box).addEventListener("keydown", (ev) => { if (ev.key === "Enter") ev.preventDefault(); });
+  }
 }
 /** Wert des Feldes → { mieter_id, kontakt_id, dienstleister_id } */
 export function betrifftDok(wert) {
@@ -198,6 +219,7 @@ const betrifftGewaehlt = (b) => (b?.mieter_id || (b?.kontakt_id ? `k:${b.kontakt
 // Name nach dem Schema, bis Robert ihn selbst ändert; Details folgen der Mietpartei; Zielordner wird angezeigt.
 // Das Haus folgt der gewählten Mietpartei; passen beide nicht zusammen, steht ein Hinweis da.
 function verbindeNamen(bereich, { ki = {} } = {}) {
+  verbindeBetrifft(bereich);
   const feld = (n) => $(`[name=${n}]`, bereich);
   const titel = feld("titel"), details = feld("details");
   let titelVonHand = false, detailsVonHand = false;
@@ -484,6 +506,59 @@ async function liesTeile(teile) {
   }
 }
 
+// Rechnung/Angebot → laufender Auftrag: ein Block je Art, sichtbar nur bei passender „Art“; Häkchen ist vorbelegt.
+function auftragBlockHtml(kandidaten, betrag) {
+  const block = (art, liste) => {
+    if (!liste.length) return "";
+    const k0 = liste[0];
+    const wahl = liste.length > 1
+      ? `<label class="feld"><span>Welcher Auftrag?</span><select name="auftrag_wahl">${liste.map((k) => `<option value="${esc(`${k.a.id}|${k.did}`)}">${esc(`${k.text} – ${k.name}`)}</option>`).join("")}</select></label>`
+      : `<input type="hidden" name="auftrag_wahl" value="${esc(`${k0.a.id}|${k0.did}`)}">`;
+    return `<div class="auftrag-treffer" data-auftrag-fuer="${art}" hidden>
+      <label class="checkfeld"><input type="checkbox" name="auftrag_an" checked>
+        <span>${liste.length > 1 ? `Gehört zu einem laufenden Auftrag (${liste.length} passen)` : `Gehört zum Auftrag „${esc(k0.a.titel)}“ (${esc(k0.name)})`} – als ${art} eintragen</span></label>
+      <div data-auftrag-felder>
+        ${wahl}
+        <label class="feld"><span>${art === "Rechnung" ? "Rechnungsbetrag" : "Angebotssumme"} (brutto) in €</span><input name="auftrag_betrag" inputmode="decimal" placeholder="0,00" value="${esc(betrag || "")}"></label>
+        ${art === "Rechnung" ? `<label class="checkfeld"><input type="checkbox" name="auftrag_fertig"> Auftrag danach abschließen</label>` : ""}
+      </div>
+    </div>`;
+  };
+  return block("Rechnung", kandidaten?.Rechnung || []) + block("Angebot", kandidaten?.Angebot || []);
+}
+function verbindeAuftragBlock(form) {
+  const art = $("[name=art]", form);
+  if (!art || !$("[data-auftrag-fuer]", form)) return;
+  const zeige = () => {
+    for (const b of $$("[data-auftrag-fuer]", form)) {
+      const an = b.dataset.auftragFuer === art.value;
+      b.hidden = !an;
+      for (const f of $$("input, select", b)) f.disabled = !an;
+      if (an) {
+        const haken = $("[name=auftrag_an]", b);
+        for (const f of $$("[data-auftrag-felder] input, [data-auftrag-felder] select", b)) f.disabled = !haken.checked;
+        $("[data-auftrag-felder]", b).hidden = !haken.checked;
+      }
+    }
+  };
+  art.addEventListener("change", zeige);
+  for (const h of $$("[name=auftrag_an]", form)) h.addEventListener("change", zeige);
+  zeige();
+}
+async function auftragVermerken(daten, dokument) {
+  if (!dokument || !daten.get("auftrag_an") || !daten.get("auftrag_wahl")) return;
+  const [auftragId, did] = String(daten.get("auftrag_wahl")).split("|");
+  try {
+    const hw = await import("./handwerker.js");
+    const text = await hw.dokumentZuAuftrag(auftragId, did, daten.get("art"), {
+      dokumentId: dokument.id, betrag: daten.get("auftrag_betrag"), datum: daten.get("datum") || null, abschliessen: !!daten.get("auftrag_fertig"),
+    });
+    // Ohne andere Zuordnung hängt die Datei am Handwerker (erscheint bei seinen Dateien)
+    if (!dokument.mieter_id && !dokument.kontakt_id && !dokument.dienstleister_id) await db.aendereDokument(dokument.id, { dienstleister_id: did }).catch(() => {});
+    melde(text, "ok");
+  } catch (err) { melde("Am Auftrag nicht vermerkt: " + err.message, "fehler"); }
+}
+
 function teileHtml(teile) {
   const mehr = teile.length > 1;
   return `<div class="erfass-teile${mehr ? "" : " erfass-teile--eins"}">${teile.map((t, i) => {
@@ -496,7 +571,7 @@ function teileHtml(teile) {
   }).join("")}</div>`;
 }
 
-export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, von = 1, weiter = true, ablageZiel = null } = {}) {
+export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, von = 1, weiter = true, ablageZiel = null, ohneAuftrag = false } = {}) {
   const roh = (Array.isArray(eingabe) ? eingabe : [eingabe]).filter(Boolean);
   if (!roh.length) return null;
   const vorname = (d) => (von > 1 || roh.length > 1 ? `„${d.name || "Datei"}“: ` : "");
@@ -507,6 +582,10 @@ export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, vo
   const aufraeumen = () => { for (const t of teile) if (t.vorschau) setTimeout(() => URL.revokeObjectURL(t.vorschau), 5000); };
 
   let { erkannt, hinweis: kiHinweis } = await liesTeile(teile);
+  // Rechnung/Angebot zu einem laufenden Handwerker-Auftrag? (Vorschlag, Robert bestätigt per Häkchen)
+  const kandidatenFuer = async (e) => (ohneAuftrag ? { Rechnung: [], Angebot: [] }
+    : (await import("./handwerker.js")).auftragsKandidaten(e, { objektId: objektId || null }).catch(() => ({ Rechnung: [], Angebot: [] })));
+  let kandidaten = await kandidatenFuer(erkannt);
   let daten = null;
   const [mieterL, , leute] = await Promise.all([mieterListe(), ordnerListe(), betrifftListen()]);
   for (;;) {
@@ -546,8 +625,8 @@ export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, vo
       <fieldset class="gruppe" data-ziel="dokument">
         <div class="formraster formraster--zwei">
           <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(hausStart)}</select></label>
-          <label class="feld"><span>Betrifft (optional)</span><select name="mieter_id">${betrifftDokOptionen(mieterL, leute, erkannt.mieter_id || (hausStart ? null : betrifftVorschlag([erkannt.absender_name, erkannt.absender_kurz, erkannt.betreff, erkannt.zusammenfassung].filter(Boolean).join(" "), leute)), hausStart)}</select>
-            <span class="feldhinweis feldhinweis--warn" data-mieter-hinweis></span></label>
+          ${betrifftFeldHtml(mieterL, leute, erkannt.mieter_id || (hausStart ? null : betrifftVorschlag([erkannt.absender_name, erkannt.absender_kurz, erkannt.betreff, erkannt.zusammenfassung].filter(Boolean).join(" "), leute)), hausStart,
+            { extra: `<span class="feldhinweis feldhinweis--warn" data-mieter-hinweis></span>` })}
           <label class="feld"><span>Ordner</span><select name="ordner" data-wunsch="${esc(erkannt.ordner || "")}">${ordnerOptionen(ordnerFuer(hausStart), passenderOrdner(erkannt.ordner, hausStart))}</select>
             <span class="feldhinweis feldhinweis--leise" data-zielordner></span></label>
           <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, artStart)}</select></label>
@@ -558,6 +637,7 @@ export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, vo
           ${vonKi ? `<span class="feldhinweis feldhinweis--leise">Vorschlag der KI nach dem Ablage-Schema, änderbar</span>` : ""}
           ${mehr ? `<span class="feldhinweis feldhinweis--leise" data-gruppen-namen></span>` : ""}</label>
         <label class="feld"><span>Kurz zusammengefasst</span><textarea name="zusammenfassung" rows="2">${esc(erkannt.zusammenfassung || "")}</textarea></label>
+        ${auftragBlockHtml(kandidaten, erkannt.betrag)}
       </fieldset>
       ${nurAb ? "" : `
       <fieldset class="gruppe" data-ziel="anfrage">
@@ -586,6 +666,7 @@ export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, vo
         for (const r of $$("[name=ziel]", form)) r.addEventListener("change", zeige);
         zeige();
         verbindeNamen($("fieldset[data-ziel=dokument]", form), { ki: kiTeile });
+        verbindeAuftragBlock(form);
         // Weitere Dateien: Dialog schließt kurz, die KI liest alles zusammen neu
         const dazu = $("[data-dazu]", form);
         dazu?.addEventListener("change", () => {
@@ -611,6 +692,7 @@ export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, vo
       for (const d of neueDateien.slice(0, MAX_TEILE - teile.length)) { const t = await bereiteTeil(d, `„${d.name || "Datei"}“: `); if (t) teile.push(t); }
       if (neueDateien.length > MAX_TEILE - teile.length) melde(`Höchstens ${MAX_TEILE} Dateien zusammen.`, "info");
       ({ erkannt, hinweis: kiHinweis } = await liesTeile(teile));
+      kandidaten = await kandidatenFuer(erkannt);
       continue;
     }
     if (aktion?.startsWith("weg:")) {
@@ -655,6 +737,7 @@ export async function erfasse(eingabe, { objektId, nurAblage = false, nr = 1, vo
         dokumente.push(neu);
       }
       zustand.zuletztAbgelegt = dokumente[0]?.id || null;
+      await auftragVermerken(daten, dokumente[0]);
       melde(mehr ? `${dokumente.length} Dateien abgelegt: ${titel}` : von > 1 ? `Abgelegt: ${titel}` : "Abgelegt.", "ok");
       return { ...fertig(ablageZiel ? ablageZiel(objekt_id) : `#/objekt/${objekt_id || "allgemein"}`, true), dokument: dokumente[0], dokumente };
     } catch (err) {
@@ -796,7 +879,7 @@ export async function oeffneDokument(d, { nachher = () => {} } = {}) {
       <div class="formraster formraster--zwei">
         <label class="feld breit"><span>Name</span><input name="titel" required maxlength="160" value="${esc(d.titel)}"></label>
         <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(d.objekt_id)}</select></label>
-        <label class="feld"><span>Betrifft</span><select name="mieter_id">${betrifftDokOptionen(mieterL, leute, betrifftGewaehlt(d), d.objekt_id || null)}</select></label>
+        ${betrifftFeldHtml(mieterL, leute, betrifftGewaehlt(d), d.objekt_id || null, { label: "Betrifft" })}
         <label class="feld"><span>Ordner</span><select name="ordner">${ordnerOptionen(ordnerFuer(d.objekt_id), d.ordner)}</select></label>
         <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, d.art || "Sonstiges")}</select></label>
         <label class="feld"><span>Datum</span><input type="date" name="datum" value="${esc(d.datum || "")}"></label>
@@ -811,6 +894,7 @@ export async function oeffneDokument(d, { nachher = () => {} } = {}) {
     breit: true,
     vorbereiten: async (form) => {
       verbindeOrdnerWahl(form);
+      verbindeBetrifft(form);
       try {
         const [ansehen, laden] = await Promise.all([db.dateiAdresse("dokumente", d.pfad), db.dateiAdresse("dokumente", d.pfad, { download: `${sichererDateiname(d.titel)}.${endungVon(d)}` })]);
         for (const a of $$("[data-ansehen]", form)) a.href = ansehen;
@@ -1648,9 +1732,8 @@ export async function inAblageDialog(e, { nachher = () => {}, schon = [] } = {})
         ${v.vonKi ? `<span class="feldhinweis">Vorschlag der KI</span>` : ""}
         <span class="feldhinweis feldhinweis--leise" data-zielordner></span></label>
       <label class="feld"><span>Haus</span><select name="objekt_id">${hausOptionen(e.objektId || null)}</select></label>
-      <label class="feld"><span>Betrifft (optional)</span><select name="mieter_id">${betrifftDokOptionen(mieterL, leute, betrifftWahl, e.objektId || null)}</select>
-        ${betrifftVorgeschlagen ? `<span class="feldhinweis">Vorschlag aus dem Text</span>` : ""}
-        <span class="feldhinweis feldhinweis--warn" data-mieter-hinweis></span></label>
+      ${betrifftFeldHtml(mieterL, leute, betrifftWahl, e.objektId || null,
+        { extra: `${betrifftVorgeschlagen ? `<span class="feldhinweis">Vorschlag aus dem Text</span>` : ""}<span class="feldhinweis feldhinweis--warn" data-mieter-hinweis></span>` })}
       <label class="feld"><span>Art</span><select name="art">${optionen(DOKUMENT_ARTEN, v.art)}</select></label>
       <label class="feld"><span>Details (für den Namen)</span>
         <input name="details" value="${esc(detailsVorschlag({ mieterId: e.mieterId, art: v.art, ki: kiTeileVon(e, v) }))}" maxlength="80"></label>

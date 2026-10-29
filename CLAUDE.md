@@ -268,3 +268,12 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   „Schreib … an“ bleibt `entwurf`.
 - Vereinbarungen (Ratenzahlung, Stundung) stehen in der Akte (Verlauf, Notiz, Dokument); `vereinbarungen()` in `_shared/miete.ts` sucht sie (Stichwörter,
   13 Monate, Name ersetzt, ohne IBAN) und gibt sie `mieteingang_vorschlaege` mit – die KI nennt sie im Text der rechten Spalte. Kein eigener Ratenplan.
+- Handy/iOS (rok-v51): Felder auf Touch-Geräten mindestens 16 px (`@media (pointer: coarse)` in app.css, sonst zoomt Safari hinein und es „fetzt“
+  beim Scrollen), `.dialog` scrollt selbst (`overflow-y: auto`, `overscroll-behavior: contain`, Höhe in `svh`), `html:has(dialog[open])` sperrt die Seite
+  dahinter, `dialogFormular` fokussiert auf Touch-Geräten nichts (`TOUCH` in helfer.js). Test: `ui_feinschliff.py` (iPhone-Emulation).
+- „Betrifft“ in Erfassen/Ablage/Dokument ist ein Suchfeld: `betrifftFeldHtml()` + `verbindeBetrifft()` (ablage.js, inline-Liste, verstecktes Feld
+  `mieter_id` mit Werten Mieter-ID | `k:<id>` | `d:<id>`, change-Ereignis wie vorher). Enter im Suchfeld schickt nie ab.
+- Rechnung/Angebot → laufender Auftrag: `auftragsKandidaten(erkannt, { objektId })` (handwerker.js, Handwerker-Name/E-Mail im Absender/Text, Haus
+  widerspricht nicht; Rechnung: beauftragt|erledigt, Angebot: angefragt|angebot) → Block `[data-auftrag-fuer=Rechnung|Angebot]` im Erfassen-Dialog
+  (sichtbar je „Art“, Häkchen `auftrag_an`, Betrag, optional abschließen) → nach dem Ablegen `dokumentZuAuftrag()`. Datei ohne andere Zuordnung bekommt
+  `dienstleister_id`. Aufrufe aus dem Auftrag selbst übergeben `ohneAuftrag: true`. Reine App-Logik, keine KI-Änderung.
