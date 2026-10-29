@@ -42,10 +42,11 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   Spalte `bereich` 'haus' | 'allgemein', siehe „Ordner unter Allgemein“ unten),
   zahlungen + mieteingang_status (siehe „Mieteingänge“ unten), auftraege (siehe „Handwerker-Aufträge“ unten);
   View mieter_uebersicht (security_invoker); Buckets `vorlagen`, `schreiben`, `eingang`, `dokumente` (privat).
-- Edge Functions `ki`, `posteingang`, `versand`, `miete`, `schaden` (Quellen in `supabase/functions/`, gemeinsamer Code in
-  `_shared/` (gemeinsam, fach, mieterhoehung, chat, notiz, miete, schaden), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
-  Postfach-Token). Beim Deploy über MCP alle importierten `_shared`-Dateien mitschicken (ki: alle fünf = 6 Dateien mit index,
-  posteingang: gemeinsam + fach + mieterhoehung, versand: gemeinsam, miete: gemeinsam + miete = 3 Dateien, schaden: gemeinsam + schaden = 3 Dateien).
+- Edge Functions `ki`, `posteingang`, `versand`, `miete`, `schaden`, `recherche` (Quellen in `supabase/functions/`, gemeinsamer Code in
+  `_shared/` (gemeinsam, fach, mieterhoehung, chat, notiz, miete, schaden, recherche), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
+  Postfach-Token). Beim Deploy über MCP alle importierten `_shared`-Dateien mitschicken (ki: gemeinsam, fach, mieterhoehung, chat, notiz, recherche = 7 Dateien mit index,
+  posteingang: gemeinsam + fach + mieterhoehung, versand: gemeinsam, miete: gemeinsam + miete = 3 Dateien, schaden: gemeinsam + schaden = 3 Dateien, recherche: gemeinsam + recherche = 3 Dateien).
+  Achtung: In `_shared/recherche.ts` steht die Umlaut-Regex mit echten Kombinationszeichen (wie deployt), nicht als `\u0300`.
   Neue KI-Bereiche lieber als eigene kleine Function (wie `miete`) statt `ki` zu vergrößern – der Deploy bleibt klein und prüfbar.
   service_role hat nur die Rechte aus `20261015010200_rechte_server.sql` (Projekt vergibt keine automatischen Grants).
   Nach jedem Deploy prüfen: `get_edge_function` holen und jede Datei mit dem Repo vergleichen (nie Platzhalter mitschicken).
@@ -277,3 +278,13 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   widerspricht nicht; Rechnung: beauftragt|erledigt, Angebot: angefragt|angebot) → Block `[data-auftrag-fuer=Rechnung|Angebot]` im Erfassen-Dialog
   (sichtbar je „Art“, Häkchen `auftrag_an`, Betrag, optional abschließen) → nach dem Ablegen `dokumentZuAuftrag()`. Datei ohne andere Zuordnung bekommt
   `dienstleister_id`. Aufrufe aus dem Auftrag selbst übergeben `ohneAuftrag: true`. Reine App-Logik, keine KI-Änderung.
+- Recherche im Internet (Function `recherche`, `_shared/recherche.ts`, Migration `20261030090000_recherchen.sql`): eingebaute Websuche der
+  Claude-Schnittstelle (`web_search_20250305`, `max_uses`, `pause_turn` wird fortgesetzt). Quellen nur aus den Suchergebnissen (`quellenAus`,
+  `pruefeAbschnitt`). Ins Internet geht nur Roberts Eingabe; `pruefeSuchanfrage()` lehnt Nachnamen von Mietparteien, Vor+Nachname von Kontakten,
+  E-Mail, Telefon, IBAN ab. Standort-Check: Seite `js/recherche.js` (Route `#/recherche`, `#/recherche/<id>`, Menüpunkt „Recherche“), vier Abschnitte
+  markt | recht | handwerker | partner, je ein Aufruf parallel (`starte()`, Laufzustand in `laeufe`, Speichern nacheinander), Tabelle `recherchen`
+  { eingabe, ergebnis{abschnitt: {…, quellen}}, suchen, dokument_id }. Kaufpreis/Ist-Miete bleiben in der App, `rechne()` macht Faktor/Rendite.
+  Kontakte/Handwerker per Klick übernehmen (Doppelte über Name/E-Mail, `uebernommen` im Ergebnis gemerkt), Bericht als PDF über `inAblageDialog`.
+  Chat: Schalter „Nur App | Mit Internet“ (localStorage `chat-internet`), `chat(…, { internet })` gibt der KI das Werkzeug `websuche` (ruft
+  `webRecherche()` mit Prüfung), Antwort mit `quellen` (App zeigt nur http/https). Chat-Aktion `standort` öffnet die Maske vorausgefüllt
+  (`zustand.rechercheVorgabe`), gestartet wird erst per Klick. Test: `ui_recherche.py` (mock-daten22), Server-Tests in test.ts.

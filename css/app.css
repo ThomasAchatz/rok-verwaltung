@@ -1506,3 +1506,32 @@ body.datei-ueber::after {
 .auftrag-treffer .checkfeld { align-items: flex-start; margin-top: 0.2rem; font-weight: 600; color: var(--tinte); }
 .auftrag-treffer .checkfeld input { margin-top: 0.15rem; flex: none; }
 .auftrag-treffer [data-auftrag-felder] .checkfeld { font-weight: 400; color: var(--text); }
+
+/* Standort-Check (Recherche im Internet) */
+.recherche-gewerke { display: flex; flex-wrap: wrap; gap: 0.4rem; border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
+.recherche-gewerke legend { font-size: 0.85rem; font-weight: 500; color: var(--text-leise); margin-bottom: 0.4rem; padding: 0; }
+.chipwahl { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.7rem; border: 1px solid var(--linie); border-radius: 999px; font-size: 0.88rem; cursor: pointer; background: var(--flaeche); }
+.chipwahl:has(input:checked) { border-color: var(--tinte-hell); background: var(--tinte-zart); color: var(--tinte); }
+.chipwahl input { width: 1rem; height: 1rem; margin: 0; }
+.recherche-bericht .flaeche { padding: 1.1rem 1.25rem; }
+.recherche-zahlen { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 0.6rem; margin: 0.6rem 0 0.8rem; }
+.recherche-zahlen > div { border: 1px solid var(--linie); border-radius: var(--radius); padding: 0.55rem 0.75rem; min-width: 0; }
+.recherche-zahlen dt { font-size: 0.78rem; color: var(--text-leise); }
+.recherche-zahlen dd { margin: 0.15rem 0 0; font-weight: 600; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 0.15rem; }
+.recherche-zahlen dd .leise { font-weight: 400; font-size: 0.8rem; }
+.recherche-punkte, .recherche-recht, .recherche-quellen { margin: 0.4rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.35rem; overflow-wrap: anywhere; }
+.recherche-recht { list-style: none; padding: 0; gap: 0.6rem; }
+.recherche-recht li { display: flex; flex-direction: column; gap: 0.15rem; border-bottom: 1px solid var(--linie); padding-bottom: 0.55rem; }
+.recherche-recht__kopf { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.recherche-quelle { font-size: 0.82rem; }
+.recherche-quelle a, .recherche-quellen a, .recherche-portale a { overflow-wrap: anywhere; }
+.recherche-gruppe { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-leise); margin: 1rem 0 0.4rem; }
+.recherche-kontakte { display: grid; gap: 0.5rem; }
+.recherche-kontakt { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem 1rem; border: 1px solid var(--linie); border-radius: var(--radius); padding: 0.6rem 0.8rem; margin-top: 0.5rem; }
+.recherche-kontakt > div { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1 1 14rem; overflow-wrap: anywhere; }
+.recherche-hinweis { margin: 0.5rem 0 2rem; }
+.chat__modus { display: flex; gap: 0.4rem; padding: 0.5rem 1rem 0; flex-wrap: wrap; }
+.chat__modus label { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.75rem; border: 1px solid var(--linie); border-radius: 999px; font-size: 0.85rem; cursor: pointer; background: var(--flaeche); }
+.chat__modus label:has(input:checked) { border-color: var(--tinte-hell); background: var(--tinte-zart); color: var(--tinte); font-weight: 600; }
+.chat__modus input { margin: 0; width: 0.95rem; height: 0.95rem; accent-color: var(--tinte); }
+.chat__quellen { margin-top: 0.5rem; font-size: 0.82rem; overflow-wrap: anywhere; }

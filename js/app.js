@@ -207,6 +207,7 @@ async function route() {
     else if (teil === "auftrag" && id) await handwerker.zeigeAuftrag(id);
     else if (teil === "ablage" && id) await objekte.zeigeOrdner(id);
     else if (teil === "wissen") await ablage.zeigeWissen();
+    else if (teil === "recherche") await (await import("./recherche.js")).zeigeRecherche(id || null);
     else if (teil === "vorlagen") await zeigeVorlagen();
     else if (teil === "stammdaten") await stamm.zeigeStammdaten();
     else if (teil === "einstellungen" || teil === "briefkopf") await postfach.zeigeEinstellungen();

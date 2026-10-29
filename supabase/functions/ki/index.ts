@@ -9,7 +9,7 @@
 //   { aktion: "ablage_vorschlag", titel, text, richtung, art?, gegenueber?, mieter_id?, objekt_id? } → Ordner für die Ablage
 //   { aktion: "wissen_ordnen", text, objekt_id? }                             → eingesprochenes Wissen ordnen
 //   { aktion: "notiz_pruefen", aufgabe_id }                                   → Notiz prüfen (z. B. Mieterhöhung)
-//   { aktion: "chat", verlauf: [{ rolle: "robert"|"ki", text }] }            → Fragen an die App
+//   { aktion: "chat", verlauf: [{ rolle: "robert"|"ki", text }], internet? }            → Fragen an die App
 //   { aktion: "notiz_lesen", text, kontakt_id?, mieter_id? }                  → eingesprochene Notiz: wer, was, Termine, Schreiben
 //   { aktion: "thema_zusammenfassen", thema_id }                              → Zusammenfassung für das Abschluss-PDF
 //   { aktion: "datei_erschliessen", bild | datei_text, dateiname?, ordner? } → kurze Inhaltsangabe einer abgelegten Datei
@@ -70,7 +70,7 @@ export async function handler(req: Request): Promise<Response> {
         if (!e.aufgabe_id) throw new Fehler(400, "aufgabe_id fehlt", "eingabe");
         return json(await pruefeNotiz(e.aufgabe_id, zugriff));
       case "chat":
-        return json(await chat(e.verlauf, zugriff));
+        return json(await chat(e.verlauf, zugriff, { internet: e.internet === true }));
       case "notiz_lesen":
         return json(await liesNotiz(String(e.text ?? ""), zugriff, { kontaktId: e.kontakt_id ?? null, mieterId: e.mieter_id ?? null }));
       case "thema_zusammenfassen":

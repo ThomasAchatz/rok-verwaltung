@@ -2,6 +2,7 @@
 // - Liest nur mit Roberts Login (RLS), nie Bankdaten.
 // - Kann selbst nichts ändern: Aktionen werden nur VORGESCHLAGEN und erst nach Roberts Klick in der App ausgeführt.
 // - Summen und Rückstände kommen aus der Datenbank, nicht aus der KI.
+import { type Quelle, KI_REGEL_WEB, webRecherche } from "./recherche.ts";
 import { Fehler, KI_REGEL_FREMD, type Zugriff, claudeRoh, datumDE, datumOk, enc, euro, heuteDE, heuteISO, istEmail, kuerze, rest } from "./gemeinsam.ts";
 import { WISSEN_ORDNER, dokumentOrdner, ohneIban } from "./fach.ts";
 import { kontaktInfo } from "./notiz.ts";
@@ -77,11 +78,13 @@ const WERKZEUGE = [
       "stammdaten (daten: ziel aus [mieter, kontakt, handwerker], id, felder: { nur geänderte Felder }, bewohner_neu?): Kontaktdaten einer vorhandenen Person ändern. " +
       "Erlaubte Felder: mieter: anrede (Herr|Frau|Divers|Firma), vorname, nachname, telefon, email; kontakt: vorname, nachname, firma, rolle, telefon, email, adresse; " +
       "handwerker: name, gewerk, telefon, email. Leerer Text löscht telefon/email. bewohner_neu (nur mieter): weitere Person im Haushalt, die nicht im Vertrag steht, " +
-      "als eine Zeile 'Name · Telefon · E-Mail' (nur genannte Angaben). Robert sieht Alt und Neu und bestätigt per Klick.",
+      "als eine Zeile 'Name · Telefon · E-Mail' (nur genannte Angaben). Robert sieht Alt und Neu und bestätigt per Klick. " +
+      "standort (daten: ort, adresse?, objektart?, einheiten?, wohnflaeche?, baujahr?, kaufpreis?, gewerke? [Liste]): öffnet den Standort-Check (Recherche im Internet zu Marktmiete, " +
+      "Kaufpreisen, Baurecht, Handwerkern und Maklern an einem Ort) vorausgefüllt; Robert startet ihn per Klick. Nur mit Angaben, die Robert genannt hat.",
     input_schema: {
       type: "object",
       properties: {
-        art: { type: "string", enum: ["notiz", "entwurf", "auftrag", "wissen", "oeffnen", "pdf", "kontakt", "handwerker", "stammdaten"] },
+        art: { type: "string", enum: ["notiz", "entwurf", "auftrag", "wissen", "oeffnen", "pdf", "kontakt", "handwerker", "stammdaten", "standort"] },
         beschriftung: { type: "string", description: "Kurzer Text für den Knopf, z. B. 'Wiedervorlage am 01.03.2027 anlegen'." },
         daten: { type: "object" },
       },
@@ -262,6 +265,17 @@ export function pruefeAktion(e: any): Record<string, unknown> | null {
   if (!beschriftung) return null;
   const opt = (s: unknown) => uuid(s) ?? null;
   switch (e?.art) {
+    case "standort": {
+      const t = (v: unknown, n: number) => (v == null ? null : ohneIban(v).replace(/\s+/g, " ").trim().slice(0, n) || null);
+      const z = (v: unknown, max: number) => { const n = Number(String(v ?? "").replace(/\./g, "").replace(",", ".")); return Number.isFinite(n) && n > 0 && n < max ? n : null; };
+      const ort = t(d.ort, 120);
+      if (!ort) return null;
+      return { art: "standort", beschriftung, daten: {
+        ort, adresse: t(d.adresse, 160), objektart: t(d.objektart, 60), einheiten: z(d.einheiten, 1000), wohnflaeche: z(d.wohnflaeche, 100000),
+        baujahr: z(d.baujahr, 2100), kaufpreis: z(d.kaufpreis, 1e10),
+        gewerke: (Array.isArray(d.gewerke) ? d.gewerke : []).map((g: unknown) => t(g, 40)).filter(Boolean).slice(0, 8),
+      } };
+    }
     case "notiz":
       if (!String(d.titel ?? "").trim()) return null;
       return { art: "notiz", beschriftung, daten: {
@@ -461,7 +475,15 @@ export async function vorhandenePerson(art: string, d: Record<string, string | n
 
 type Beitrag = { rolle: "robert" | "ki"; text: string };
 
-export async function chat(verlauf: Beitrag[], zugriff: Zugriff): Promise<{ text: string; aktionen: unknown[] }> {
+// Nur mit Schalter „Mit Internet“: Sachfragen ans Internet (ohne Namen/Kontaktdaten, das prüft webRecherche)
+const WEBSUCHE = {
+  name: "websuche",
+  description: "Recherche im Internet für aktuelle Informationen außerhalb der App: Gesetze und Urteile, Mietspiegel, Preise, Firmen/Handwerker an einem Ort, Behörden, Fördermittel. " +
+    "Die Frage darf KEINE Namen von Mietparteien oder Kontakten, keine E-Mail, Telefonnummer oder Bankdaten enthalten – nur Sachfrage, Ort und Thema.",
+  input_schema: { type: "object", properties: { frage: { type: "string", description: "Sachliche Suchfrage auf Deutsch, z. B. „Mietspiegel Regensburg 2026 Spanne €/m²“" } }, required: ["frage"] },
+};
+
+export async function chat(verlauf: Beitrag[], zugriff: Zugriff, { internet = false } = {}): Promise<{ text: string; aktionen: unknown[]; quellen: Quelle[] }> {
   const beitraege = (Array.isArray(verlauf) ? verlauf : [])
     .filter((b) => b && (b.rolle === "robert" || b.rolle === "ki") && String(b.text ?? "").trim())
     .slice(-12)
@@ -498,30 +520,45 @@ export async function chat(verlauf: Beitrag[], zugriff: Zugriff): Promise<{ text
     "hole die Person mit 'suche' und schlage 'stammdaten' vor (nur die geänderten Felder). Robert bestätigt per Klick, dann ist es gespeichert. Keine Notiz dafür anlegen. " +
     "Miete, Wohnung, Mietbeginn/-ende, Kostenträger, Aktenzeichen und Bankdaten änderst du nie: dafür auf die Akte verweisen (Link aus 'suche'), Robert ändert sie dort unter Stammdaten.\n" +
     "- Kontakte (Makler, Bank, Behörden …) haben einen Gesprächsverlauf und persönliche Infos (z. B. Geburtstag). Bei Fragen wie 'Was weiß ich über …' kontakt_info nutzen und das Wichtigste kurz zusammenfassen.\n" +
+    "- Standort-Check: Will Robert einen Ort/ein Kaufobjekt gründlich recherchieren (Marktmiete, Kaufpreise, Baurecht, Handwerker, Makler – z. B. „recherchier mir Regensburg-Ost, MFH 8 Einheiten, 1,2 Mio“), " +
+    "schlage 'standort' mit den genannten Eckdaten vor (auch ohne Internet-Schalter). Robert startet die Recherche per Klick.\n" +
     `- Dokument-Ordner (in jedem Haus gleich): ${ordnerListe.join(", ")}.\n` +
-    `- Ordner unter „Allgemein“ (Unterlagen ohne Haus, frei angelegt): ${ordnerAllgemein.join(", ")}.`;
+    `- Ordner unter „Allgemein“ (Unterlagen ohne Haus, frei angelegt): ${ordnerAllgemein.join(", ")}.` +
+    (internet
+      ? "\n- Internet ist eingeschaltet: Für Fragen, die die App nicht beantworten kann (aktuelles Recht, Mietspiegel, Preise, Firmen an einem Ort, Behörden), nutze 'websuche'. " +
+        "Daten aus der App (Namen, Adressen von Mietern, Beträge, Kontaktdaten) gehören nie in die Suchfrage – nur die Sachfrage und der Ort. " +
+        `Nenne bei Fakten aus dem Internet kurz die Quelle (Name der Seite); die Links zeigt die App darunter. ${KI_REGEL_WEB}`
+      : "\n- Internet ist ausgeschaltet: Fragen zu Dingen außerhalb der App beantwortest du aus allgemeinem Wissen mit dem Hinweis, dass Robert für aktuelle Infos den Schalter „Mit Internet“ nutzen kann.");
 
   // deno-lint-ignore no-explicit-any
   const nachrichten: any[] = [...beitraege];
   const aktionen: unknown[] = [];
+  const quellen: Quelle[] = [];
+  const werkzeuge = internet ? [...WERKZEUGE, WEBSUCHE] : WERKZEUGE;
   let letzterText = "";
   for (let runde = 0; runde < 7; runde++) {
-    const daten = await claudeRoh({ max_tokens: 6000, system, messages: nachrichten, tools: WERKZEUGE, tool_choice: { type: "auto" } });
+    const daten = await claudeRoh({ max_tokens: 6000, system, messages: nachrichten, tools: werkzeuge, tool_choice: { type: "auto" } });
     const inhalt = daten.content ?? [];
     // deno-lint-ignore no-explicit-any
     letzterText = inhalt.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim() || letzterText;
     // deno-lint-ignore no-explicit-any
     const aufrufe = inhalt.filter((b: any) => b.type === "tool_use");
-    if (!aufrufe.length || daten.stop_reason !== "tool_use") return { text: letzterText || "Dazu habe ich nichts gefunden.", aktionen };
+    if (!aufrufe.length || daten.stop_reason !== "tool_use") return { text: letzterText || "Dazu habe ich nichts gefunden.", aktionen, quellen };
     nachrichten.push({ role: "assistant", content: inhalt });
     const ergebnisse = [];
     for (const a of aufrufe.slice(0, 6)) {
       let ergebnis: unknown;
-      try { ergebnis = await fuehreAus(a.name, a.input ?? {}, zugriff, aktionen); }
+      try {
+        if (a.name === "websuche" && internet) {
+          const r = await webRecherche(a.input?.frage, zugriff);
+          if ("quellen" in r) for (const q of r.quellen) if (!quellen.some((x) => x.url === q.url) && quellen.length < 12) quellen.push(q);
+          ergebnis = r;
+        } else ergebnis = await fuehreAus(a.name, a.input ?? {}, zugriff, aktionen);
+      }
       catch (err) { ergebnis = { fehler: err instanceof Error ? err.message : String(err) }; }
       ergebnisse.push({ type: "tool_result", tool_use_id: a.id, content: kuerze(JSON.stringify(ergebnis), 12000) });
     }
     nachrichten.push({ role: "user", content: ergebnisse });
   }
-  return { text: letzterText || "Das war mir zu umfangreich. Bitte die Frage enger stellen.", aktionen };
+  return { text: letzterText || "Das war mir zu umfangreich. Bitte die Frage enger stellen.", aktionen, quellen };
 }

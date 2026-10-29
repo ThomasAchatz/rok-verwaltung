@@ -21,6 +21,9 @@ const VORSCHLAEGE = [
 const verlauf = []; // { rolle: "robert" | "ki" | "fehler", text, aktionen? }
 let laeuft = false;
 let eingerichtet = false;
+// Schalter „Mit Internet“ (pro Gerät gemerkt)
+let internet = false;
+try { internet = localStorage.getItem("chat-internet") === "1"; } catch { /* ohne Speicher: aus */ }
 
 // Links aus dem Chat: im Browser in einem neuen Tab (der Chat bleibt offen), in der installierten App im selben Fenster
 const alsApp = () => window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
@@ -30,7 +33,7 @@ const ZIELE = { mieter: "#/mieter/", kontakt: "#/kontakt/", objekt: "#/objekt/",
 // Sichere Darstellung: erst alles maskieren, dann nur fett, Listen und App-interne Links erlauben
 function formatiere(text) {
   const zeile = (z) => esc(z)
-    .replace(/\[([^\]\n]{1,120})\]\((#\/(?:mieter|kontakt|kontakte|objekt|objekte|ablage|postfach|wissen|uebersicht|handwerker|thema|entwurf|auftrag)(?:\/[A-Za-z0-9-]{1,60})?)\)/g,
+    .replace(/\[([^\]\n]{1,120})\]\((#\/(?:mieter|kontakt|kontakte|objekt|objekte|ablage|postfach|wissen|uebersicht|handwerker|thema|entwurf|auftrag|recherche)(?:\/[A-Za-z0-9-]{1,60})?)\)/g,
       (_, t, href) => `<a href="${href}" data-chat-link${linkZiel()}>${t}</a>`)
     .replace(/\*\*([^*\n]{1,200})\*\*/g, "<strong>$1</strong>");
   const bloecke = [];
@@ -47,6 +50,14 @@ function formatiere(text) {
   return bloecke.join("");
 }
 
+// Quellen aus dem Internet (nur http/https, öffnen immer in einem neuen Tab)
+function quellenHtml(quellen) {
+  const ok = (Array.isArray(quellen) ? quellen : []).filter((q) => typeof q?.url === "string" && /^https?:\/\/[^\s<>"]+$/i.test(q.url)).slice(0, 12);
+  if (!ok.length) return "";
+  const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
+  return `<div class="chat__quellen"><span class="leise">Quellen:</span> ${ok.map((q) => `<a href="${esc(q.url)}" target="_blank" rel="noopener noreferrer" title="${esc(q.titel || "")}">${esc(host(q.url))}</a>`).join(" · ")}</div>`;
+}
+
 function einrichten() {
   const dlg = $("#chat");
   dlg.innerHTML = `
@@ -58,6 +69,10 @@ function einrichten() {
       </span>
     </div>
     <div class="chat__verlauf" id="chat-verlauf" aria-live="polite"></div>
+    <div class="chat__modus" role="radiogroup" aria-label="Woher kommen die Antworten?">
+      <label><input type="radio" name="chat-modus" value="app" ${internet ? "" : "checked"}> Nur App</label>
+      <label><input type="radio" name="chat-modus" value="internet" ${internet ? "checked" : ""}> Mit Internet</label>
+    </div>
     <form class="chat__eingabe" id="chat-form">
       <span class="diktat"><textarea name="frage" rows="1" maxlength="2000" placeholder="Frage stellen oder diktieren …" aria-label="Frage"></textarea>${mikroKnopf()}</span>
       <button class="knopf knopf--primaer" type="submit">Senden</button>
@@ -103,6 +118,13 @@ function einrichten() {
     if (a) a.dateiname = f.value;
   });
   dlg.addEventListener("close", stoppeDiktat);
+  for (const r of dlg.querySelectorAll("[name=chat-modus]")) {
+    r.addEventListener("change", () => {
+      internet = r.value === "internet" && r.checked;
+      try { localStorage.setItem("chat-internet", internet ? "1" : "0"); } catch { /* egal */ }
+      zeichne();
+    });
+  }
   eingerichtet = true;
 }
 
@@ -114,11 +136,13 @@ function zeichne() {
         if (b.rolle === "robert") return `<div class="chat__frage">${esc(b.text)}</div>`;
         if (b.rolle === "fehler") return `<div class="chat__fehler">${esc(b.text)}</div>`;
         return `<div class="chat__antwort">${formatiere(b.text)}
+          ${quellenHtml(b.quellen)}
           ${b.aktionen?.length ? `<div class="chat__aktionen">${b.aktionen.map((a, j) => vorschlagHtml(a, i, j)).join("")}</div>` : ""}
         </div>`;
-      }).join("") + (laeuft ? `<div class="chat__antwort chat__denkt"><span class="kreisel" aria-hidden="true"></span> sucht in der App …</div>` : "")
+      }).join("") + (laeuft ? `<div class="chat__antwort chat__denkt"><span class="kreisel" aria-hidden="true"></span> ${internet ? "sucht in der App und im Internet …" : "sucht in der App …"}</div>` : "")
     : `<div class="chat__leer">
-        <p>Fragen Sie nach Mietern, Häusern, Nachrichten, Fristen oder Wissen. Die Antworten kommen aus der App.</p>
+        <p>${internet ? "Fragen Sie nach Mietern, Häusern, Fristen – oder nach Dingen außerhalb der App (Mietspiegel, Rechtslage, Firmen an einem Ort). Für Fragen außerhalb der App sucht die KI im Internet und nennt die Quellen; Namen und Daten aus der App gehen nicht ins Internet."
+          : "Fragen Sie nach Mietern, Häusern, Nachrichten, Fristen oder Wissen. Die Antworten kommen aus der App."}</p>
         <div class="chat__chips">${VORSCHLAEGE.map((v) => `<button type="button" class="reiter__knopf" data-frage="${esc(v)}">${esc(v)}</button>`).join("")}</div>
       </div>`;
   el.scrollTop = el.scrollHeight;
@@ -134,9 +158,10 @@ async function sende(text) {
   try {
     const r = await db.funktion("ki", {
       aktion: "chat",
+      internet,
       verlauf: verlauf.filter((b) => b.rolle !== "fehler").slice(-12).map(({ rolle, text: t }) => ({ rolle, text: t })),
     });
-    verlauf.push({ rolle: "ki", text: r.text || "Dazu habe ich keine Antwort gefunden.", aktionen: Array.isArray(r.aktionen) ? r.aktionen : [] });
+    verlauf.push({ rolle: "ki", text: r.text || "Dazu habe ich keine Antwort gefunden.", aktionen: Array.isArray(r.aktionen) ? r.aktionen : [], quellen: Array.isArray(r.quellen) ? r.quellen : [] });
   } catch (err) {
     verlauf.push({ rolle: "fehler", text: "Das hat nicht geklappt: " + err.message });
   } finally {
@@ -149,7 +174,7 @@ async function sende(text) {
 // Vorschläge der KI als kleine Karten: Annehmen (speichert direkt), Ändern (vorbelegter Dialog), Ablehnen.
 // Nichts passiert ohne Klick. a.status: "gespeichert" | "abgelehnt" | undefined
 // ---------------------------------------------------------------------------
-const ART_NAME = { notiz: "To-do", wissen: "Wissen", entwurf: "Schreiben", auftrag: "Handwerkerauftrag", oeffnen: "Öffnen", pdf: "PDF", kontakt: "Neuer Kontakt", handwerker: "Neuer Handwerker", stammdaten: "Stammdaten ändern" };
+const ART_NAME = { standort: "Standort-Check", notiz: "To-do", wissen: "Wissen", entwurf: "Schreiben", auftrag: "Handwerkerauftrag", oeffnen: "Öffnen", pdf: "PDF", kontakt: "Neuer Kontakt", handwerker: "Neuer Handwerker", stammdaten: "Stammdaten ändern" };
 // Stammdaten-Karte: welche Felder heißen wie (der Server lässt nur diese zu)
 const FELD_NAME = { anrede: "Anrede", vorname: "Vorname", nachname: "Nachname", name: "Name", firma: "Firma", rolle: "Rolle", telefon: "Telefon", email: "E-Mail", adresse: "Adresse", gewerk: "Gewerk" };
 const ZIEL_TABELLE = { mieter: "mieter", kontakt: "kontakt", handwerker: "handwerker" };
@@ -179,6 +204,7 @@ function vorschlagHtml(a, i, j) {
     : a.art === "kontakt" ? [kontaktName(d), d.vorname || d.nachname ? d.firma : "", d.rolle, d.telefon, d.email,
         d.geburtstag_tag ? `Geburtstag ${d.geburtstag_tag}.${d.geburtstag_monat}.${d.geburtsjahr || ""}` : ""].filter(Boolean).join(" · ")
     : a.art === "handwerker" ? [d.name, d.gewerk, d.telefon, d.email, d.objekt_id ? objektVon(d.objekt_id)?.bezeichnung || "" : "alle Häuser"].filter(Boolean).join(" · ")
+    : a.art === "standort" ? [d.ort, d.adresse, d.objektart, d.einheiten && `${d.einheiten} Einheiten`, d.wohnflaeche && `${d.wohnflaeche} m²`, d.kaufpreis && `Kaufpreis ${Number(d.kaufpreis).toLocaleString("de-DE")} €`].filter(Boolean).join(" · ")
     : a.art === "auftrag" ? [d.art === "angebot" ? "Angebote einholen" : "Direkt beauftragen", d.haus, d.ort, (d.handwerker || []).join(", ") || "Handwerker in der Maske wählen",
         d.frist ? `bis ${tag(d.frist)}` : ""].filter(Boolean).join(" · ")
     : a.art === "entwurf" && d.anhaenge?.length ? `${d.anhaenge.length === 1 ? "Anhang" : "Anhänge"}: ${d.anhaenge.map((x) => x.titel || "Datei").join(", ")}`
@@ -202,6 +228,8 @@ function vorschlagHtml(a, i, j) {
     knoepfe = d.empfaenger_neu && !neu?.zielId
       ? `<span class="chatvorschlag__status">Erst ${d.empfaenger_neu === "handwerker" ? "den Handwerker" : "den Kontakt"} oben anlegen</span>` + k("ablehnen", "Ablehnen", "knopf--leise")
       : k("oeffnen", "Schreiben öffnen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
+  } else if (a.art === "standort") {
+    knoepfe = k("standort", "Standort-Check öffnen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "auftrag") {
     knoepfe = k("auftrag", "Auftrag anlegen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "pdf") {
@@ -433,6 +461,15 @@ async function behandle(a, op, knopf) {
   try {
     switch (op) {
       case "neuladen": return location.reload();
+      case "standort": {
+        // Maske vorausgefüllt; die Recherche startet erst mit Roberts Klick
+        zustand.rechercheVorgabe = { ...d };
+        dlg.close();
+        a.href = "#/recherche";
+        setze(a, "gespeichert", "Geöffnet");
+        geheZu("#/recherche");
+        return;
+      }
       case "auftrag": {
         // Maske „Handwerker beauftragen“ vorausgefüllt; gesendet wird erst nach Prüfen des Entwurfs
         dlg.close();

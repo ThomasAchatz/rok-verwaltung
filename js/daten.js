@@ -366,6 +366,21 @@ export async function loescheVerlauf(id) {
   pruefe(await sb.from("verlauf").delete().eq("id", id));
 }
 
+// --- Recherchen aus dem Internet (Standort-Check) ---
+export async function ladeRecherchen() {
+  return pruefe(await sb.from("recherchen").select("id,titel,eingabe,suchen,dokument_id,erstellt_am").order("erstellt_am", { ascending: false }).limit(100));
+}
+export async function ladeRecherche(id) {
+  return pruefe(await sb.from("recherchen").select("*").eq("id", id).single());
+}
+export async function speichereRecherche(id, felder) {
+  if (!id) return pruefe(await sb.from("recherchen").insert(felder).select().single());
+  return pruefe(await sb.from("recherchen").update(felder).eq("id", id).select().single());
+}
+export async function loescheRecherche(id) {
+  pruefe(await sb.from("recherchen").delete().eq("id", id));
+}
+
 // --- Handwerker und Dienstleister ------------------------------------------
 // --- Handwerker-Aufträge (Angebote einholen / direkt beauftragen) ---
 export async function ladeAuftraege() {
