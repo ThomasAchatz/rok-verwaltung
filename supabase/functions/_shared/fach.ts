@@ -963,8 +963,9 @@ export async function erschliesseDatei(
 }
 
 // ---------------------------------------------------------------------------
-// „Ja und Ja“: bei Schadensmeldungen Antwort und Handwerker-Auftrag als Entwürfe vorbereiten.
-// Nur Vorschläge: gespeichert als Entwurf, gesendet wird erst nach Roberts Klick (mit Vorschau).
+// Schadensmeldung, Schritt 1: Antwort an den Mieter als Entwurf vorbereiten (Eingang bestätigen, ggf. Rückfrage,
+// Fotos oder Zeitfenster für den Handwerker). Die weiteren Schritte (Auftrag, Rückmeldung des Handwerkers, Termin-Info)
+// entstehen erst auf Klick im Vorgang. Gesendet wird erst nach Roberts Klick (mit Vorschau).
 // Läuft mit Roberts Login (nicht im Server-Posteingang, der hat bewusst keine Rechte auf antworten).
 // ---------------------------------------------------------------------------
 const SCHADEN_KATEGORIEN = ["Reparatur/Mangel"];
@@ -988,6 +989,11 @@ export function passenderHandwerker(text: string, liste: any[], objektId: string
     .sort((a, b) => b.p - a.p || klein(a.d.name).localeCompare(klein(b.d.name)));
   return kandidaten[0]?.d ?? null;
 }
+export const ANWEISUNG_SCHRITT1 =
+  "Bestätige freundlich den Eingang der Schadensmeldung und dass wir uns kümmern und uns wieder melden. " +
+  "Ist der Schaden unklar beschrieben oder fehlen Fotos, bitte um 1 bis 3 Fotos und eine kurze Beschreibung. " +
+  "Ist absehbar, dass ein Handwerker in die Wohnung muss, frage, an welchen Tagen und zu welchen Zeiten die Mietpartei in den nächsten zwei Wochen erreichbar bzw. zu Hause ist. " +
+  "Keinen Handwerker-Namen und keinen Termin nennen.";
 
 // deno-lint-ignore no-explicit-any
 export async function bereiteSchritteVor(nachrichtId: string, zugriff: Zugriff, o: { erzwingen?: boolean } = {}): Promise<any> {
@@ -1007,21 +1013,7 @@ export async function bereiteSchritteVor(nachrichtId: string, zugriff: Zugriff, 
   if (schon.length) return await merke({ status: "keine", grund: "es gibt schon einen Entwurf" });
   await merke({ status: "laeuft" });
   try {
-    // Haus der Meldung (über die Mietpartei oder „ganzes Haus“) und passender Handwerker
-    let objektId: string | null = n.objekt_id ?? null;
-    if (!objektId && n.mieter_id) {
-      const [m] = await rest(`mieter?id=eq.${enc(n.mieter_id)}&select=wohnung:wohnungen(objekt_id)`, zugriff);
-      objektId = m?.wohnung?.objekt_id ?? null;
-    }
-    const dienst = await rest("dienstleister?aktiv=is.true&select=id,name,gewerk,email,telefon,objekt_id", zugriff).catch(() => []);
-    const hw = passenderHandwerker(`${n.betreff ?? ""} ${n.text ?? ""} ${n.ki_zusammenfassung ?? ""}`, dienst, objektId);
-    const anweisungAntwort = hw
-      ? "Bestätige freundlich den Eingang der Meldung. Teile mit, dass wir einen Fachbetrieb beauftragen, der sich zur Terminabsprache direkt meldet (keinen Namen und keinen Termin nennen)."
-      : "Bestätige freundlich den Eingang der Meldung und dass wir uns kümmern und uns zeitnah wieder melden.";
-    const [antwortText, auftragText] = await Promise.all([
-      entwirf({ zugriff, nachrichtId, anweisung: anweisungAntwort }),
-      hw ? auftrag({ zugriff, nachrichtId, dienstleisterId: hw.id }) : Promise.resolve(null),
-    ]);
+    const antwortText = await entwirf({ zugriff, nachrichtId, anweisung: ANWEISUNG_SCHRITT1 });
     // Vorgang der Nachricht (wie in der App)
     let themaId = n.thema_id ?? null;
     if (!themaId) {
@@ -1039,26 +1031,12 @@ export async function bereiteSchritteVor(nachrichtId: string, zugriff: Zugriff, 
         thema_id: themaId, nachricht_id: nachrichtId, mieter_id: n.mieter_id ?? null, objekt_id: n.mieter_id ? null : n.objekt_id ?? null,
         empfaenger_email: n.absender_email ?? null, empfaenger_name: n.absender_name ?? null,
         betreff: antwortText.betreff || `AW: ${n.betreff ?? ""}`.slice(0, 200), text: antwortText.text,
-        anweisung: "Vorschlag der KI (nächste Schritte)", ki_modell: antwortText.modell ?? null,
+        anweisung: "Vorschlag der KI (Schritt 1: Eingang bestätigen)", ki_modell: antwortText.modell ?? null,
       },
     });
-    let auftragZeile = null;
-    if (hw && auftragText) {
-      const fotos = (n.anhaenge ?? []).filter((a: { pfad?: string; typ?: string }) => a.pfad && /^image\//.test(a.typ ?? ""));
-      [auftragZeile] = await rest("antworten", zugriff, {
-        method: "POST", prefer: "return=representation",
-        body: {
-          thema_id: themaId, art: "auftrag", nachricht_id: nachrichtId, mieter_id: n.mieter_id ?? null, dienstleister_id: hw.id,
-          empfaenger_email: hw.email ?? null, empfaenger_name: hw.name, betreff: auftragText.betreff, text: auftragText.text,
-          anweisung: "Vorschlag der KI (nächste Schritte)", ki_modell: auftragText.modell ?? null,
-          anhaenge: fotos.slice(0, 6).map((f: { pfad: string; name?: string }) => ({ bucket: "eingang", pfad: f.pfad, name: f.name || "Foto.jpg" })),
-        },
-      });
-    }
     return await merke({
-      status: "fertig", antwort_id: antwort?.id ?? null, auftrag_id: auftragZeile?.id ?? null,
-      dienstleister: hw ? { id: hw.id, name: hw.name, gewerk: hw.gewerk ?? null, email: hw.email ?? null } : null,
-      hinweise: [...(antwortText.hinweise ?? []), ...(auftragText?.hinweise ?? [])].slice(0, 6),
+      status: "fertig", antwort_id: antwort?.id ?? null, auftrag_id: null, dienstleister: null,
+      hinweise: (antwortText.hinweise ?? []).slice(0, 6),
     });
   } catch (err) {
     await merke({ status: "fehler", meldung: err instanceof Error ? err.message.slice(0, 300) : String(err) }).catch(() => null);

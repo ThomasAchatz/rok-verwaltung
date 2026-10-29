@@ -15,6 +15,7 @@ import {
   suchauswahlHtml, verbindeSuchauswahl,
 } from "./ui.js";
 import { naechsterSchritt } from "./schritte.js";
+import * as schaden from "./schaden.js";
 import * as ablage from "./ablage.js";
 import { drucke } from "./ui.js";
 import { aufgabeDialog, fristVon } from "./start.js";
@@ -452,49 +453,22 @@ export async function bereiteImHintergrundVor(nachrichten = []) {
   for (const n of offen) await bereiteSchritteVor(n).catch(() => null);
 }
 
-function schritteHtml(n, antworten, erledigt) {
+// Schaden-Ablauf (js/schaden.js): Schritt 1 bereitet die KI vor, Schritt 2–4 auf Klick.
+function schritteHtml(n, antworten, erledigt, ablauf) {
   const s = n.ki_schritte;
-  if (erledigt && s?.status !== "fertig") return "";
-  const kasten = (inhalt) => `<section class="flaeche schritte" id="schritte"><div class="flaeche__kopf"><h2>${ICON_KI} Nächste Schritte</h2>
-    <span class="leise">Vorschlag der KI</span></div><div class="flaeche__inhalt">${inhalt}</div></section>`;
-  if (laeuftNoch(s) || sollVorbereiten(n, antworten)) {
-    return kasten(`<p class="schritte__laeuft"><span class="kreisel" aria-hidden="true"></span> Die KI schreibt eine Antwort und einen Auftrag an den passenden Handwerker …</p>`);
-  }
-  if (s?.status === "fehler" && !antworten.length) {
-    return kasten(`<p class="formfehler">Vorbereiten hat nicht geklappt: ${esc(s.meldung || "unbekannter Fehler")}</p>
-      <button type="button" class="knopf knopf--ki" data-schritte="nochmal">${ICON_KI} Nochmal versuchen</button>`);
-  }
-  if (s?.status !== "fertig") return "";
-  const zeile = (nr, text, a, knopf) => {
-    const fertig = a && a.status && a.status !== "entwurf";
-    return `<li class="schritt ${fertig ? "schritt--fertig" : ""}"><span class="schritt__nr">${fertig ? "✓" : nr}</span>
-      <span class="schritt__text">${text}</span>
-      <span class="schritt__aktion">${fertig ? `<span class="leise">${a.status === "als_brief" ? "als Brief erledigt" : "gesendet"}</span>` : !a ? `<span class="leise">verworfen</span>` : knopf}</span></li>`;
-  };
-  const aw = antworten.find((a) => a.id === s.antwort_id);
-  const au = antworten.find((a) => a.id === s.auftrag_id);
-  const hw = s.dienstleister;
-  const offen = [aw, au].filter((a) => a && (!a.status || a.status === "entwurf"));
-  return kasten(`
-    <ol class="schritte__liste">
-      ${zeile(1, `Antwort an <strong>${esc(n.absender_name || n.absender_email || "Absender")}</strong>: Eingang bestätigen, Handwerker kommt`, aw,
-        `<button type="button" class="knopf knopf--primaer knopf--klein" data-schritte="antwort">Ja, Antwort senden</button>`)}
-      ${hw
-        ? zeile(2, `<strong>${esc(hw.name)}</strong>${hw.gewerk ? ` (${esc(hw.gewerk)})` : ""} beauftragen${au?.anhaenge?.length ? `, mit ${au.anhaenge.length} ${au.anhaenge.length === 1 ? "Foto" : "Fotos"}` : ""}${hw.email ? "" : " · <em>keine E-Mail hinterlegt</em>"}`, au,
-          `<button type="button" class="knopf knopf--primaer knopf--klein" data-schritte="auftrag">${hw.email ? "Ja, Auftrag senden" : "Ja, Auftrag öffnen"}</button>
-           <button type="button" class="knopf knopf--klein knopf--leise" data-schritte="anderer">Anderer Handwerker</button>`)
-        : `<li class="schritt"><span class="schritt__nr">2</span><span class="schritt__text">Kein passender Handwerker in der Liste gefunden.</span>
-           <span class="schritt__aktion"><button type="button" class="knopf knopf--klein" data-schritte="anderer">Handwerker wählen</button></span></li>`}
-    </ol>
-    ${s.hinweise?.length ? `<p class="leise">Bitte prüfen: ${s.hinweise.map(esc).join(" · ")}</p>` : ""}
-    <p class="leise schritte__fuss">Jedes „Ja“ zeigt die E-Mail vorher noch einmal. Die Entwürfe stehen unten und lassen sich ändern.
-      ${offen.length ? `<button type="button" class="textknopf" data-schritte="verwerfen">Vorschlag verwerfen</button>` : ""}</p>`);
+  if (!ablauf) return "";
+  if (erledigt && !s && !ablauf.auftrag) return "";
+  if (ablauf.n.id !== n.id) return schaden.ablaufHtml(ablauf, { seite: "vorgang" }); // z. B. Antwort des Handwerkers im selben Vorgang
+  const laeuft = laeuftNoch(s) || sollVorbereiten(n, antworten);
+  const fehler = s?.status === "fehler" && !antworten.length ? s.meldung || "unbekannter Fehler" : null;
+  return schaden.ablaufHtml(ablauf, { seite: "nachricht", laeuft, fehler });
 }
 
-function verbindeSchritte(n, antworten, erledigt, neu) {
+function verbindeSchritte(n, antworten, erledigt, neu, ablauf, { mieter, bilder, objekt }) {
   const box = $("#schritte");
   if (!box) return;
   const s = n.ki_schritte;
+  if (ablauf && ablauf.n.id !== n.id) return schaden.verbindeAblauf(box, ablauf, { neu });
   if (laeuftNoch(s) || sollVorbereiten(n, antworten)) {
     // Selbst vorbereiten (oder auf einen laufenden Aufruf warten) und dann neu zeichnen
     const warte = laeuftNoch(s) && !vorbereitung.has(n.id)
@@ -508,7 +482,7 @@ function verbindeSchritte(n, antworten, erledigt, neu) {
       if (!tippt) return neu();
       const b = $("#schritte .flaeche__inhalt");
       if (b) {
-        b.innerHTML = `<p>Die KI hat eine Antwort und einen Handwerker-Auftrag vorbereitet.</p>
+        b.innerHTML = `<p>Die KI hat eine Antwort an die Mietpartei vorbereitet.</p>
           <button type="button" class="knopf knopf--klein" data-schritte-zeigen>Vorschlag anzeigen</button>
           <span class="leise">(Dein angefangener Text unten wird dabei verworfen.)</span>`;
         b.querySelector("[data-schritte-zeigen]").addEventListener("click", neu);
@@ -523,33 +497,31 @@ function verbindeSchritte(n, antworten, erledigt, neu) {
     k.click();
     return true;
   };
-  for (const b of $$("[data-schritte]", box)) b.addEventListener("click", async () => {
-    const was = b.dataset.schritte;
-    if (was === "antwort") klick("#entwurf [data-k=senden]") || melde("Der Antwort-Entwurf ist nicht mehr da.", "info");
-    if (was === "auftrag") {
-      const ziel = `[data-auftrag="${s.auftrag_id}"]`;
-      if (s.dienstleister?.email) klick(`${ziel} [data-k=senden]`) || melde("Der Auftrag ist nicht mehr da.", "info");
-      else $(ziel)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-    if (was === "anderer") $("#handwerker")?.click();
-    if (was === "nochmal") {
-      b.disabled = true;
+  schaden.verbindeAblauf(box, ablauf, {
+    neu,
+    senden1: () => klick("#entwurf [data-k=senden]") || melde("Der Antwort-Entwurf ist nicht mehr da.", "info"),
+    schreiben1: () => { $("#entwurf")?.scrollIntoView({ behavior: "smooth", block: "start" }); $("#entwurf textarea, #entwurf input")?.focus(); },
+    senden2: () => {
+      const z = ablauf.auftrag && $$("[data-auftrag]").find((el) => el.querySelector("[data-k=senden]"));
+      if (!z) return melde("Der Auftrags-Entwurf ist nicht mehr da.", "info");
+      klick(`[data-auftrag="${z.dataset.auftrag}"] [data-k=senden]`);
+    },
+    auftragStarten: () => auftragStarten(n, mieter, bilder, objekt),
+    nochmal: async () => {
       await db.aendereNachricht(n.id, { ki_schritte: null }).catch(() => null);
       n.ki_schritte = null;
-      bereiteSchritteVor(n, { erzwingen: true }).then(neu).catch((err) => { b.disabled = false; melde(err.message, "fehler"); });
-    }
-    if (was === "verwerfen") {
-      if (!(await frage("Vorschlag verwerfen?", "<p>Die vorbereitete Antwort und der Auftrag werden gelöscht. Du kannst danach selbst antworten oder beauftragen.</p>", "Verwerfen", { gefahr: true }))) return;
+      bereiteSchritteVor(n, { erzwingen: true }).then(neu).catch((err) => melde(err.message, "fehler"));
+    },
+    verwerfen: async () => {
+      if (!(await frage("Antwort-Entwurf verwerfen?", "<p>Die vorbereitete Antwort wird gelöscht. Du kannst danach selbst antworten.</p>", "Verwerfen", { gefahr: true }))) return;
       try {
-        for (const id of [s.antwort_id, s.auftrag_id]) {
-          const a = antworten.find((x) => x.id === id);
-          if (a && (!a.status || a.status === "entwurf")) await db.loescheAntwort(a.id);
-        }
+        const a = antworten.find((x) => x.id === s?.antwort_id);
+        if (a && (!a.status || a.status === "entwurf")) await db.loescheAntwort(a.id);
         await db.aendereNachricht(n.id, { ki_schritte: { ...s, status: "verworfen", am: new Date().toISOString() } });
-        melde("Vorschlag verworfen.", "ok");
+        melde("Entwurf verworfen.", "ok");
         neu();
       } catch (err) { melde(err.message, "fehler"); }
-    }
+    },
   });
 }
 
@@ -584,6 +556,8 @@ export async function zeigeNachricht(id) {
   const vorgangKasten = await vorgaenge.vorgangKastenHtml(n).catch(() => "");
   // Nachricht gehört zu einem Handwerker-Auftrag (gleicher Vorgang oder vom Handwerker): Status und nächster Schritt
   const hwKasten = await import("./handwerker.js").then((m) => m.kastenFuerNachricht(n)).catch(() => ({ html: "", verbinde: () => {} }));
+  // Schadensmeldung: Ablauf in 4 Schritten
+  const ablauf = schaden.istSchaden(n) || n.thema_id ? await schaden.ladeAblauf(n, { mieter }).catch(() => null) : null;
 
   inhalt().innerHTML = `
     ${brotkrumen([...KRUMEN.postfach, { text: n.betreff || "(ohne Betreff)" }])}
@@ -597,7 +571,7 @@ export async function zeigeNachricht(id) {
     </div>
     <div class="akte">
       <div class="stapel">
-        ${schritteHtml(n, antworten, erledigt)}
+        ${schritteHtml(n, antworten, erledigt, ablauf)}
         <section class="flaeche">
           <div class="flaeche__kopf"><h2>${n.quelle === "brief" ? "Brief" : n.quelle === "notiz" ? "Notiz" : "Nachricht"}</h2></div>
           <div class="flaeche__inhalt">
@@ -655,7 +629,7 @@ export async function zeigeNachricht(id) {
     baueEntwurf($(`[data-auftrag="${a.id}"]`), { nachricht: n, mieter, antwort: a, auftrag: true, hinweise: hinweisSpeicher.get(a.id), nachEnde: neu, objektId: () => o?.id || null });
     hinweisSpeicher.delete(a.id);
   }
-  verbindeSchritte(n, antworten, erledigt, neu);
+  verbindeSchritte(n, antworten, erledigt, neu, ablauf, { mieter, bilder, objekt: o });
   hwKasten.verbinde(inhalt(), neu);
 
   for (const a of $$("[data-datei]")) {

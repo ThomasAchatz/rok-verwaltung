@@ -42,10 +42,10 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   Spalte `bereich` 'haus' | 'allgemein', siehe „Ordner unter Allgemein“ unten),
   zahlungen + mieteingang_status (siehe „Mieteingänge“ unten), auftraege (siehe „Handwerker-Aufträge“ unten);
   View mieter_uebersicht (security_invoker); Buckets `vorlagen`, `schreiben`, `eingang`, `dokumente` (privat).
-- Edge Functions `ki`, `posteingang`, `versand`, `miete` (Quellen in `supabase/functions/`, gemeinsamer Code in
-  `_shared/` (gemeinsam, fach, mieterhoehung, chat, notiz, miete), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
+- Edge Functions `ki`, `posteingang`, `versand`, `miete`, `schaden` (Quellen in `supabase/functions/`, gemeinsamer Code in
+  `_shared/` (gemeinsam, fach, mieterhoehung, chat, notiz, miete, schaden), deployt mit verify_jwt=false; Prüfung im Code: Mitglied bzw.
   Postfach-Token). Beim Deploy über MCP alle importierten `_shared`-Dateien mitschicken (ki: alle fünf = 6 Dateien mit index,
-  posteingang: gemeinsam + fach + mieterhoehung, versand: gemeinsam, miete: gemeinsam + miete = 3 Dateien).
+  posteingang: gemeinsam + fach + mieterhoehung, versand: gemeinsam, miete: gemeinsam + miete = 3 Dateien, schaden: gemeinsam + schaden = 3 Dateien).
   Neue KI-Bereiche lieber als eigene kleine Function (wie `miete`) statt `ki` zu vergrößern – der Deploy bleibt klein und prüfbar.
   service_role hat nur die Rechte aus `20261015010200_rechte_server.sql` (Projekt vergibt keine automatischen Grants).
   Nach jedem Deploy prüfen: `get_edge_function` holen und jede Datei mit dem Repo vergleichen (nie Platzhalter mitschicken).
@@ -158,11 +158,14 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   aus mieter_uebersicht); Aufgaben ohne jede Zuordnung mit Datum heißen „To-do“ (zählen bei Wiedervorlagen mit). Notiz-Dialog: Häkchen
   `nur_todo` blendet `[data-zuordnung]` (auch „Mit KI prüfen“) aus. `rundSenden()` schickt eine Kopie an die eigene Adresse
   (eigene antworten-Zeile mit objekt_id, ohne mieter_id, empfaenger_name „Kopie an die eigene Adresse“).
-- „Ja und Ja“ (Migration `20261025090000_ki_schritte.sql`): `nachrichten.ki_schritte` { status laeuft|fertig|keine|verworfen|fehler, am,
-  antwort_id, auftrag_id, dienstleister, hinweise }. KI-Aktion `schritte` → `bereiteSchritteVor()` in fach.ts (nur Reparatur/Mangel, nur ohne
-  vorhandene Antworten; `passenderHandwerker()` nach Gewerk-Regeln; entwirf + auftrag parallel; legt beide antworten-Zeilen im Vorgang an).
-  Läuft mit dem Login des Nutzers: `postfach.bereiteImHintergrundVor()` aus Übersicht/Postfach (max. 3) und `verbindeSchritte()` beim Öffnen.
-  Kasten `#schritte` (`schritteHtml`): „Ja“ klickt den Senden-Knopf des jeweiligen Entwurfs (normaler Bestätigungsdialog). Nie Autoversand.
+- Schaden-Ablauf (`js/schaden.js`, ersetzt „Ja und Ja“; Spalte `nachrichten.ki_schritte` aus `20261025090000_ki_schritte.sql`): 4 Schritte im Kasten
+  `#schritte.schaden` auf der Nachrichtenseite (erste Schadensmeldung des Vorgangs, `ladeAblauf()` sucht sie über `schadenImVorgang`) und auf der
+  Vorgangsseite. 1 = Antwort an den Mieter: KI-Aktion `schritte` → `bereiteSchritteVor()` (fach.ts) legt NUR diesen Entwurf an (`ANWEISUNG_SCHRITT1`:
+  Eingang bestätigen, ggf. Fotos/Zeitfenster), automatisch über `postfach.bereiteImHintergrundVor()`. 2 = Handwerkerauftrag auf Klick (`auftragStarten`).
+  3 = Antwort des Handwerkers (Nachrichten im Vorgang nach dem Senden, nicht von der Mieter-Adresse) → Function `schaden` (`handwerker_antwort`,
+  `_shared/schaden.ts`) liefert Art/Termin/Betrag/Anweisung → Dialog (Termin/Betrag nur nach Bestätigung an den Auftrag) → Entwurf an den Mieter.
+  4 = Termin-Info an den Mieter (oder „direkt abstimmen“ mit Telefon des Handwerkers). Entwürfe 3/4 gemerkt in `ki_schritte.s3/s4 = { antwort_id }`.
+  `ladeAblauf` ruft vorher `handwerker.abgleichen()`. Nie Autoversand.
 - Chat-Links: `formatiere()` erlaubt auch `#/thema/` und `#/entwurf/`; im Browser `target=_blank` (Chat bleibt offen), als installierte App
   im selben Fenster. chat.ts liefert `vorgaenge` (`themaKurz`) bei suche/mieter_info/objekt_info/offene_vorgaenge, notiz.ts bei kontakt_info.
 - Ablegen: der Dokument-weite Drop-Handler (ablage.js) nimmt ohne Ablagefläche alles an (`verteile(dateien, {})`, KI entscheidet),
@@ -260,3 +263,8 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - Ablage „Betrifft“: ein Feld (`name=mieter_id`) mit Gruppen Mieter (· Haus) | Sonstige (`k:<id>`) | Handwerker (`d:<id>`), `betrifftDokOptionen()` /
   `betrifftDok()` in ablage.js, Vorschlag aus dem Text (`betrifftVorschlag`, nur eindeutige Firma/Nachname). Spalten `dokumente.kontakt_id/dienstleister_id`;
   Kontaktseite zeigt „Dokumente“ (`#kontakt-dokumente`), Handwerker-Dialog die Dateien des Handwerkers (`.hw-doks`).
+- Chat „beauftrage …“: Aktion `auftrag` { titel, beschreibung, objekt_id, mieter_id, dienstleister_ids, art, frist } (chat.ts `pruefeAktion`/`ergaenzeAuftrag`,
+  objekt_info liefert `laufende_handwerker_auftraege`); Karte „Handwerkerauftrag“ → „Auftrag anlegen“ öffnet `anfrageDialog` vorausgefüllt (Option `frist`).
+  „Schreib … an“ bleibt `entwurf`.
+- Vereinbarungen (Ratenzahlung, Stundung) stehen in der Akte (Verlauf, Notiz, Dokument); `vereinbarungen()` in `_shared/miete.ts` sucht sie (Stichwörter,
+  13 Monate, Name ersetzt, ohne IBAN) und gibt sie `mieteingang_vorschlaege` mit – die KI nennt sie im Text der rechten Spalte. Kein eigener Ratenplan.

@@ -156,6 +156,10 @@ export async function zeigeThema(id) {
     : haus ? [...KRUMEN.objekte, { text: haus.bezeichnung, href: `#/objekt/${haus.id}` }]
     : KRUMEN.postfach;
   const neuLaden = () => zeigeThema(id);
+  // Schadensmeldung im Vorgang: Ablauf in 4 Schritten (schaden.js erst bei Bedarf laden)
+  const ursprung = posten.nachrichten.find((x) => x.ki_kategorie === "Reparatur/Mangel");
+  const sm = ursprung && t.status !== "erledigt" ? await import("./schaden.js") : null;
+  const ablauf = sm ? await sm.ladeAblauf(ursprung).catch(() => null) : null;
 
   inhalt().innerHTML = `
     ${brotkrumen([...eltern, { text: t.titel || "(ohne Betreff)" }])}
@@ -182,11 +186,13 @@ export async function zeigeThema(id) {
         ${t.zusammenfassung ? `<div class="ki-antwort"><strong>${ICON_KI} Zusammenfassung</strong><p>${esc(t.zusammenfassung)}</p></div>` : ""}
       </div>
     </section>` : ""}
+    ${ablauf ? sm.ablaufHtml(ablauf, { seite: "vorgang" }) : ""}
     <section class="flaeche">
       <div class="flaeche__kopf"><h2>Verlauf</h2><span class="leise">älteste zuerst</span></div>
       ${liste.length ? `<div class="faden">${liste.map(postenHtml).join("")}</div>` : `<div class="leer">Noch nichts in diesem Vorgang.</div>`}
     </section>`;
 
+  if (ablauf) sm.verbindeAblauf($("#schritte"), ablauf, { neu: neuLaden });
   if (doc || notizDateien.length) ablage.verbindeAbgelegt(inhalt(), [doc, ...notizDateien].filter(Boolean), { nachher: neuLaden });
   // Notiz, aus der der Vorgang gestartet wurde (start.js erst bei Bedarf laden: Kreis start↔postfach↔vorgaenge)
   for (const b of $$("[data-notiz]")) {

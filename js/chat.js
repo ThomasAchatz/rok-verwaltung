@@ -30,7 +30,7 @@ const ZIELE = { mieter: "#/mieter/", kontakt: "#/kontakt/", objekt: "#/objekt/",
 // Sichere Darstellung: erst alles maskieren, dann nur fett, Listen und App-interne Links erlauben
 function formatiere(text) {
   const zeile = (z) => esc(z)
-    .replace(/\[([^\]\n]{1,120})\]\((#\/(?:mieter|kontakt|kontakte|objekt|objekte|ablage|postfach|wissen|uebersicht|handwerker|thema|entwurf)(?:\/[A-Za-z0-9-]{1,60})?)\)/g,
+    .replace(/\[([^\]\n]{1,120})\]\((#\/(?:mieter|kontakt|kontakte|objekt|objekte|ablage|postfach|wissen|uebersicht|handwerker|thema|entwurf|auftrag)(?:\/[A-Za-z0-9-]{1,60})?)\)/g,
       (_, t, href) => `<a href="${href}" data-chat-link${linkZiel()}>${t}</a>`)
     .replace(/\*\*([^*\n]{1,200})\*\*/g, "<strong>$1</strong>");
   const bloecke = [];
@@ -149,7 +149,7 @@ async function sende(text) {
 // Vorschläge der KI als kleine Karten: Annehmen (speichert direkt), Ändern (vorbelegter Dialog), Ablehnen.
 // Nichts passiert ohne Klick. a.status: "gespeichert" | "abgelehnt" | undefined
 // ---------------------------------------------------------------------------
-const ART_NAME = { notiz: "To-do", wissen: "Wissen", entwurf: "Schreiben", oeffnen: "Öffnen", pdf: "PDF", kontakt: "Neuer Kontakt", handwerker: "Neuer Handwerker", stammdaten: "Stammdaten ändern" };
+const ART_NAME = { notiz: "To-do", wissen: "Wissen", entwurf: "Schreiben", auftrag: "Handwerkerauftrag", oeffnen: "Öffnen", pdf: "PDF", kontakt: "Neuer Kontakt", handwerker: "Neuer Handwerker", stammdaten: "Stammdaten ändern" };
 // Stammdaten-Karte: welche Felder heißen wie (der Server lässt nur diese zu)
 const FELD_NAME = { anrede: "Anrede", vorname: "Vorname", nachname: "Nachname", name: "Name", firma: "Firma", rolle: "Rolle", telefon: "Telefon", email: "E-Mail", adresse: "Adresse", gewerk: "Gewerk" };
 const ZIEL_TABELLE = { mieter: "mieter", kontakt: "kontakt", handwerker: "handwerker" };
@@ -179,6 +179,8 @@ function vorschlagHtml(a, i, j) {
     : a.art === "kontakt" ? [kontaktName(d), d.vorname || d.nachname ? d.firma : "", d.rolle, d.telefon, d.email,
         d.geburtstag_tag ? `Geburtstag ${d.geburtstag_tag}.${d.geburtstag_monat}.${d.geburtsjahr || ""}` : ""].filter(Boolean).join(" · ")
     : a.art === "handwerker" ? [d.name, d.gewerk, d.telefon, d.email, d.objekt_id ? objektVon(d.objekt_id)?.bezeichnung || "" : "alle Häuser"].filter(Boolean).join(" · ")
+    : a.art === "auftrag" ? [d.art === "angebot" ? "Angebote einholen" : "Direkt beauftragen", d.haus, d.ort, (d.handwerker || []).join(", ") || "Handwerker in der Maske wählen",
+        d.frist ? `bis ${tag(d.frist)}` : ""].filter(Boolean).join(" · ")
     : a.art === "entwurf" && d.anhaenge?.length ? `${d.anhaenge.length === 1 ? "Anhang" : "Anhänge"}: ${d.anhaenge.map((x) => x.titel || "Datei").join(", ")}`
     : "";
   let knoepfe = "";
@@ -200,6 +202,8 @@ function vorschlagHtml(a, i, j) {
     knoepfe = d.empfaenger_neu && !neu?.zielId
       ? `<span class="chatvorschlag__status">Erst ${d.empfaenger_neu === "handwerker" ? "den Handwerker" : "den Kontakt"} oben anlegen</span>` + k("ablehnen", "Ablehnen", "knopf--leise")
       : k("oeffnen", "Schreiben öffnen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
+  } else if (a.art === "auftrag") {
+    knoepfe = k("auftrag", "Auftrag anlegen", "knopf--primaer") + k("ablehnen", "Ablehnen", "knopf--leise");
   } else if (a.art === "pdf") {
     knoepfe = k("ansehen", "Ansehen") + k("laden", "Herunterladen") + k("mail", "Per E-Mail", "knopf--primaer") + k("ablage", "In Ablage") +
       k("ablehnen", "Ablehnen", "knopf--leise");
@@ -429,6 +433,17 @@ async function behandle(a, op, knopf) {
   try {
     switch (op) {
       case "neuladen": return location.reload();
+      case "auftrag": {
+        // Maske „Handwerker beauftragen“ vorausgefüllt; gesendet wird erst nach Prüfen des Entwurfs
+        dlg.close();
+        const { anfrageDialog } = await import("./handwerker.js");
+        const neu = await anfrageDialog({
+          art: d.art === "angebot" ? "angebot" : "auftrag", objektId: d.objekt_id || null, mieterId: d.mieter_id || null,
+          dienstleisterIds: d.dienstleister_ids || [], titel: d.titel || "", beschreibung: d.beschreibung || "", frist: d.frist || null,
+        });
+        if (neu?.id) { a.href = `#/auftrag/${neu.id}`; setze(a, "gespeichert", "Auftrag angelegt"); }
+        return;
+      }
       case "ablehnen": return setze(a, "abgelehnt");
       case "zurueck": return setze(a, undefined);
       case "rueck":

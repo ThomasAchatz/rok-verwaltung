@@ -64,6 +64,9 @@ const WERKZEUGE = [
       "empfaenger_neu? ('kontakt' oder 'handwerker': an die Person, die du in DIESER Antwort vorher mit 'kontakt' bzw. 'handwerker' vorschlägst; dann keine Empfänger-ID)): " +
       "öffnet 'Neues Schreiben' an genau diesen Empfänger mit der Anweisung und den Anhängen. " +
       "Geht das Schreiben an einen Handwerker, dienstleister_id verwenden, nicht die Mietpartei; die Anweisung beschreibt nur den Inhalt, " +
+      "auftrag (daten: titel (kurz, z. B. 'Dusche reparieren'), beschreibung (was zu tun ist, alle genannten Fakten), objekt_id?, mieter_id? (betroffene Wohnung/Mietpartei), " +
+      "dienstleister_ids? (Handwerker aus 'objekt_info'/'suche': einer bei Direktauftrag, mehrere bei Angeboten), art ('auftrag' = direkt beauftragen | 'angebot' = Angebote einholen), frist? JJJJ-MM-TT): " +
+      "öffnet die Maske „Handwerker beauftragen“ vorausgefüllt; daraus entsteht ein Auftrag mit Status und das Schreiben an den Handwerker als Entwurf, " +
       `wissen (daten: titel, inhalt, ordner aus [${WISSEN_ORDNER.join(", ")}], objekt_id?), ` +
       "oeffnen (daten: ziel aus [mieter, kontakt, objekt, nachricht, postfach, wissen], id?), " +
       "pdf (daten: titel, einleitung?, abschnitte: [{ titel, text }], objekt_id?, mieter_id?): eine PDF-Datei, z. B. eine Liste oder Übersicht; " +
@@ -78,7 +81,7 @@ const WERKZEUGE = [
     input_schema: {
       type: "object",
       properties: {
-        art: { type: "string", enum: ["notiz", "entwurf", "wissen", "oeffnen", "pdf", "kontakt", "handwerker", "stammdaten"] },
+        art: { type: "string", enum: ["notiz", "entwurf", "auftrag", "wissen", "oeffnen", "pdf", "kontakt", "handwerker", "stammdaten"] },
         beschriftung: { type: "string", description: "Kurzer Text für den Knopf, z. B. 'Wiedervorlage am 01.03.2027 anlegen'." },
         daten: { type: "object" },
       },
@@ -171,11 +174,13 @@ async function fuehreAus(werkzeug: string, e: any, zugriff: Zugriff, aktionen: u
       if (!o) return { fehler: "nicht gefunden" };
       // Vorgänge des Hauses: am Haus selbst oder an seinen Mietparteien
       const ids = mieter.map((m: { id: string }) => m.id);
-      const themen = await rest(
-        `themen?select=id,titel,status,aktualisiert_am,mieter_id&or=(objekt_id.eq.${id}${ids.length ? `,mieter_id.in.(${ids.join(",")})` : ""})&order=aktualisiert_am.desc&limit=20`, zugriff,
-      ).catch(() => []);
+      const [themen, auftraege] = await Promise.all([
+        rest(`themen?select=id,titel,status,aktualisiert_am,mieter_id&or=(objekt_id.eq.${id}${ids.length ? `,mieter_id.in.(${ids.join(",")})` : ""})&order=aktualisiert_am.desc&limit=20`, zugriff).catch(() => []),
+        rest(`auftraege?objekt_id=eq.${id}&status=in.(entwurf,angefragt,angebot,beauftragt,erledigt)&select=id,titel,status,mieter_id&order=erstellt_am.desc&limit=20`, zugriff).catch(() => []),
+      ]);
       return {
         ...o, link: `#/objekt/${id}`, vorgaenge: themen.map(themaKurz),
+        laufende_handwerker_auftraege: auftraege.map((x: { id: string; titel: string; status: string }) => ({ titel: x.titel, status: x.status, link: `#/auftrag/${x.id}` })),
         // deno-lint-ignore no-explicit-any
         mietparteien: mieter.map((m: any) => ({ id: m.id, name: name(m), wohnung: m.wohnung, offen: euro(m.offen_summe), kostentraeger: m.kostentraeger, link: `#/mieter/${m.id}` })),
         wissen, dokumente, offene_notizen: notizen, handwerker: dienstleister,
@@ -238,6 +243,10 @@ async function fuehreAus(werkzeug: string, e: any, zugriff: Zugriff, aktionen: u
         const fehler = await ergaenzeEntwurf(a, zugriff, aktionen);
         if (fehler) return { fehler };
       }
+      if (a.art === "auftrag") {
+        const fehler = await ergaenzeAuftrag(a, zugriff);
+        if (fehler) return { fehler };
+      }
       if (aktionen.length >= 4) return { fehler: "Höchstens 4 Vorschläge pro Antwort." };
       aktionen.push(a);
       return { ok: true, hinweis: "Der Vorschlag wird Robert als Knopf angezeigt. Er entscheidet selbst." };
@@ -269,6 +278,16 @@ export function pruefeAktion(e: any): Record<string, unknown> | null {
         mieter_id: opt(d.mieter_id), nachricht_id: neu ? null : opt(d.nachricht_id), kontakt_id: neu ? null : opt(d.kontakt_id),
         dienstleister_id: neu ? null : opt(d.dienstleister_id), kostentraeger_id: neu ? null : opt(d.kostentraeger_id), objekt_id: opt(d.objekt_id),
         anweisung: String(d.anweisung ?? "").slice(0, 2000), empfaenger_neu: neu, anhaenge,
+      } };
+    }
+    case "auftrag": {
+      const titel = ohneIban(d.titel).replace(/\s+/g, " ").trim().slice(0, 160);
+      if (!titel) return null;
+      const ids = [...new Set((Array.isArray(d.dienstleister_ids) ? d.dienstleister_ids : d.dienstleister_id ? [d.dienstleister_id] : []).map(opt).filter(Boolean))].slice(0, 5);
+      const art = d.art === "angebot" ? "angebot" : "auftrag";
+      return { art: "auftrag", beschriftung, daten: {
+        titel, beschreibung: ohneIban(d.beschreibung).trim().slice(0, 1500) || null, objekt_id: opt(d.objekt_id), mieter_id: opt(d.mieter_id),
+        dienstleister_ids: art === "auftrag" ? ids.slice(0, 1) : ids, art, frist: datumOk(d.frist) && d.frist >= heuteISO() ? d.frist : null,
       } };
     }
     case "wissen":
@@ -396,6 +415,29 @@ export async function ergaenzeEntwurf(a: any, zugriff: Zugriff, aktionen: unknow
   return null;
 }
 
+/** Handwerkerauftrag prüfen: Haus, Mietpartei und Handwerker müssen es geben; Haus folgt der Mietpartei; Namen für die Karte */
+// deno-lint-ignore no-explicit-any
+export async function ergaenzeAuftrag(a: any, zugriff: Zugriff): Promise<string | null> {
+  const d = a.daten;
+  if (d.mieter_id) {
+    const [m] = await rest(`mieter?id=eq.${d.mieter_id}&select=id,vorname,nachname,wohnung:wohnungen(bezeichnung,objekt_id)`, zugriff).catch(() => []);
+    if (!m) return "Diese Mietpartei gibt es nicht. Bitte die ID mit 'suche' oder 'objekt_info' holen.";
+    d.objekt_id = m.wohnung?.objekt_id ?? d.objekt_id;
+    d.ort = [name(m), m.wohnung?.bezeichnung].filter(Boolean).join(", ");
+  }
+  if (d.objekt_id) {
+    const [o] = await rest(`objekte?id=eq.${d.objekt_id}&select=id,bezeichnung`, zugriff).catch(() => []);
+    if (!o) return "Dieses Haus gibt es nicht. Bitte die ID mit 'suche' holen.";
+    d.haus = o.bezeichnung;
+  }
+  if (d.dienstleister_ids.length) {
+    const hw = await rest(`dienstleister?id=in.(${d.dienstleister_ids.join(",")})&aktiv=is.true&select=id,name,gewerk`, zugriff).catch(() => []);
+    d.dienstleister_ids = d.dienstleister_ids.filter((id: string) => hw.some((x: { id: string }) => x.id === id));
+    d.handwerker = d.dienstleister_ids.map((id: string) => hw.find((x: { id: string }) => x.id === id)).map((x: { name: string; gewerk: string }) => `${x.name}${x.gewerk ? ` (${x.gewerk})` : ""}`);
+  }
+  return null;
+}
+
 /** Gibt es den Kontakt bzw. Handwerker schon (gleiche E-Mail, gleicher Name oder gleiche Firma)? */
 // deno-lint-ignore no-explicit-any
 export async function vorhandenePerson(art: string, d: Record<string, string | null>, zugriff: Zugriff): Promise<{ id: string; name: string } | null> {
@@ -445,6 +487,11 @@ export async function chat(verlauf: Beitrag[], zugriff: Zugriff): Promise<{ text
     "- Gibt es die Person schon (Treffer bei 'suche'), schlage nie 'kontakt' oder 'handwerker' vor, sondern 'stammdaten' für den vorhandenen Eintrag.\n" +
     "- Schreiben an eine Person, die es noch nicht gibt: in DERSELBEN Antwort erst 'kontakt' bzw. 'handwerker' vorschlagen, danach 'entwurf' mit empfaenger_neu.\n" +
     "  Nicht auf eine Bestätigung warten und Robert nicht bitten, 'angelegt' zu schreiben: die App öffnet das Schreiben, sobald er die Person angelegt hat.\n" +
+    "- Handwerker: Sagt Robert „beauftrage“, „Handwerkerauftrag“, „Handwerker soll …“ oder „hol Angebote ein“, schlage 'auftrag' vor (nie 'entwurf' an den Handwerker). " +
+    "Hole vorher mit 'objekt_info' das Haus, die Mietparteien und die Handwerker des Hauses; den passenden Handwerker nach Gewerk vorauswählen (Hausmeister für Kleinigkeiten). " +
+    "Fehlt etwas (Wohnung, was genau kaputt ist), schlage den Auftrag trotzdem vor und frag in einem Satz nach; Robert ergänzt es in der Maske. " +
+    "Gibt es im Haus schon einen laufenden Auftrag zum selben Thema ('laufende_handwerker_auftraege'), verlinke ihn und weise darauf hin.\n" +
+    "  „Schreib … an“ (Mieter, Kontakt, Amt) ist dagegen ein 'entwurf'.\n" +
     "- Anhänge: Du kannst Dateien aus der Ablage an ein Schreiben hängen ('entwurf' mit anhaenge = Dokument-IDs). Such das Dokument mit 'suche' oder 'objekt_info'.\n" +
     "  Sag nie, dass du nichts anhängen kannst. Gibt es mehrere passende, nimm das neueste und nenne es; findest du keins, sag das.\n" +
     "- Ändert sich eine Telefonnummer, E-Mail, Anrede, ein Name (Kontakte auch Firma/Rolle/Adresse, Handwerker Gewerk) oder zieht jemand mit ein (weitere Bewohner), " +

@@ -1476,3 +1476,15 @@ body.datei-ueber::after {
 .zeile--kontakt .zeile__wer { display: grid; gap: 0.1rem; min-width: 0; }
 .zeile__pfeil { color: var(--text-leise); font-size: 1.3rem; line-height: 1; }
 .hw-doks { display: grid; gap: 0.2rem; justify-items: start; margin: 0 0 0.8rem; overflow-wrap: anywhere; }
+
+/* --- Schaden-Ablauf (js/schaden.js): 4 Schritte, aktueller hervorgehoben ---- */
+.schaden .schritte__liste .schritt {
+  display: grid; grid-template-columns: 1.7rem minmax(0, 1fr); gap: 0.2rem 0.6rem; align-items: start; cursor: default;
+  padding: 0.55rem 0.6rem; border: 1px solid transparent; border-radius: 8px; background: none; width: auto;
+}
+.schaden .schritte__liste .schritt:hover { background: none; border-color: transparent; }
+.schaden .schritte__liste .schritt--jetzt, .schaden .schritte__liste .schritt--jetzt:hover { background: var(--flaeche); border-color: var(--messing-rand); }
+.schaden .schritt--wartet .schritt__nr { background: var(--linie); color: var(--text-leise); }
+.schaden .schritt--wartet .schritt__text { color: var(--text-leise); }
+.schaden .schritt__text { overflow-wrap: anywhere; min-width: 0; }
+.schaden .schritt__aktion:empty { display: none; }

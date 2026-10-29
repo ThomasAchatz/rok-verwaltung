@@ -676,7 +676,7 @@ async function schreibenAnlegen(a, d, { anweisung, anzeige = null, betreff, miet
 
 // ---------------------------------------------------------------------------
 // Maske „Handwerker beauftragen“: Angebote einholen | Direkt beauftragen
-// v: { art, objektId, mieterId, dienstleisterIds, titel, beschreibung, nachricht, mieter, bilder, ersetzt, ohne, nachEntwurf(schreiben[]) }
+// v: { art, objektId, mieterId, dienstleisterIds, titel, beschreibung, frist, nachricht, mieter, bilder, ersetzt, ohne, nachEntwurf(schreiben[]) }
 // ---------------------------------------------------------------------------
 const PASST = [
   [/heiz|warmwasser|therme|kalt|heizkoerper/, /heiz|sanit/], [/wasser|rohr|tropf|abfluss|verstopf|wc|toilette|dusche|bad|feucht|schimmel|hahn/, /sanit|heiz/],
@@ -734,7 +734,7 @@ export async function anfrageDialog(v = {}) {
     <label class="feld"><span>Was soll gemacht werden?</span>
       <span class="diktat"><textarea name="beschreibung" rows="4" required placeholder="Stichpunkte reichen – die KI formuliert daraus das Schreiben.">${esc(v.beschreibung || (n ? String(n.ki_zusammenfassung || n.text || "").slice(0, 1500) : ""))}</textarea>${mikroKnopf()}</span></label>
     <div class="formraster formraster--zwei">
-      <label class="feld"><span data-frist-label>Erledigt bis (optional)</span><input type="date" name="frist" min="${esc(heuteISO())}"></label>
+      <label class="feld"><span data-frist-label>Erledigt bis (optional)</span><input type="date" name="frist" min="${esc(heuteISO())}" value="${esc(v.frist || "")}"></label>
       <label class="feld" data-nur="auftrag"><span>Kostenrahmen bis € (optional)</span><input name="kostenrahmen" inputmode="decimal" placeholder="z. B. 300"></label>
     </div>
     <fieldset class="gruppe"><legend>Fotos / Dateien</legend>

@@ -61,7 +61,7 @@ function sammle({ nachrichten = [], aufgaben = [], rueckstand = [], vorgaenge = 
       amt ? `<span class="marker marker--messing">Amt/Jobcenter</span>` : "",
       n.ki_dringlichkeit === "hoch" ? `<span class="marker marker--offen">dringend</span>` : "",
       n.status === "neu" ? `<span class="marker marker--neu">neu</span>` : "",
-      n.ki_schritte?.status === "fertig" && n.status !== "beantwortet" ? `<span class="marker marker--ki">Antwort + Auftrag bereit</span>` : "",
+      n.ki_schritte?.status === "fertig" && n.status !== "beantwortet" ? `<span class="marker marker--ki">Antwort bereit</span>` : "",
     ].join("");
     if (frist) {
       jetzt.push({
@@ -149,13 +149,11 @@ function vorbereitetHtml(nachrichten, entwuerfe, orte) {
   if (!document.documentElement.classList.contains("design-b")) return "";
   const ort = (n) => (n.mieter_id && orte[n.mieter_id]) || (n.objekt_id && objektVon(n.objekt_id)?.bezeichnung) || "";
   const schritte = nachrichten.filter((n) => n.ki_schritte?.status === "fertig" && n.status !== "beantwortet");
-  const ids = new Set(schritte.flatMap((n) => [n.ki_schritte.antwort_id, n.ki_schritte.auftrag_id]));
+  const ids = new Set(schritte.flatMap((n) => [n.ki_schritte.antwort_id, n.ki_schritte.auftrag_id].filter(Boolean)));
   const karten = [
     ...schritte.map((n) => ({
       ort: ["Schaden", ort(n)].filter(Boolean).join(" · "), titel: n.betreff || "(ohne Betreff)",
-      text: n.ki_schritte.dienstleister
-        ? `Antwort an ${n.absender_name || "die Mietpartei"} und Auftrag an ${n.ki_schritte.dienstleister.name} liegen bereit.`
-        : `Antwort an ${n.absender_name || "die Mietpartei"} liegt bereit.`,
+      text: `Antwort an ${n.absender_name || "die Mietpartei"} liegt bereit. Den Handwerker beauftragst du danach im Schaden-Ablauf.`,
       href: `#/postfach/${n.id}`, knopf: "Ansehen und senden",
     })),
     ...entwuerfe.filter((a) => !ids.has(a.id)).map((a) => ({
