@@ -1563,3 +1563,6 @@ body.datei-ueber::after {
 @keyframes gespraech-puls { 0%, 100% { height: 10px; } 50% { height: 32px; } }
 @keyframes gespraech-denken { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.9; } }
 @media (prefers-reduced-motion: reduce) { .gespraech__welle span { animation: none !important; } }
+.gespraech__marke { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--tinte); background: var(--tinte-zart, #e8eef6); border-radius: 999px; padding: 0.15rem 0.6rem; }
+.gespraech__erste { margin: 0; font-size: 0.8rem; color: var(--text-leise); max-width: 26rem; }
+.gespraech__erste .gespraech__marke { margin-right: 0.25rem; }

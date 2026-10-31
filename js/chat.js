@@ -78,6 +78,7 @@ function einrichten() {
     </div>
     <div class="chat__gespraech" id="chat-gespraech" data-phase="hoeren" hidden>
       <div class="gespraech__welle" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+      <p class="gespraech__erste"><span class="gespraech__marke">Erste Version</span> Bitte zuerst im Stand ausprobieren. Rückmeldungen, was nicht klappt, helfen uns sehr.</p>
       <p class="gespraech__status" data-g-status aria-live="polite">Ich höre zu …</p>
       <p class="gespraech__text" data-g-text></p>
       <div class="gespraech__knoepfe">
@@ -225,7 +226,7 @@ async function hoere(maxStilleMs = 90000) {
   try {
     return await h.ergebnis;
   } catch (err) {
-    melde(err.message, "fehler");
+    verlauf.push({ rolle: "fehler", text: err.message }); // im Chat sichtbar (eine Meldung läge hinter dem Chat-Fenster)
     beendeGespraech({ tschuess: false });
     return null;
   } finally {
