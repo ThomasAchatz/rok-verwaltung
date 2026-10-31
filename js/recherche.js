@@ -357,36 +357,99 @@ export function berichtAbschnitte(r) {
   const e = r.eingabe || {}, erg = r.ergebnis || {};
   const ab = [];
   const x = rechne(e, erg.markt);
-  const eck = [
-    `Objekt: ${[e.objektart, e.einheiten && `${e.einheiten} Einheiten`, e.wohnflaeche && `${komma(e.wohnflaeche, 0)} m²`, e.baujahr && `Baujahr ${e.baujahr}`].filter(Boolean).join(", ")}`,
-    e.kaufpreis ? `Kaufpreis: ${euro(e.kaufpreis)}${x.preisQm ? ` (${euro(x.preisQm)} je m²)` : ""}` : null,
-    e.ist_miete ? `Ist-Miete nettokalt: ${euro(e.ist_miete)} im Monat` : null,
-    x.faktorIst ? `Faktor auf Ist-Miete: ${komma(x.faktorIst, 1)} (Bruttorendite ${komma(x.renditeIst * 100, 1)} %)` : null,
-    x.faktorMarkt ? `Faktor auf Marktmiete (${komma(x.marktMieteQm)} €/m²): ${komma(x.faktorMarkt, 1)} (Bruttorendite ${komma(x.renditeMarkt * 100, 1)} %)` : null,
-    x.noetigeMieteQm ? `Miete für üblichen Faktor: ${komma(x.noetigeMieteQm)} €/m²` : null,
-  ].filter(Boolean);
-  ab.push({ titel: "Eckdaten und Rechnung", text: eck.join("\n") });
+  const proz = (v) => `${komma(v * 100, 1)} %`;
+  const quelle = (u) => (u ? ` (Quelle: ${host(u)})` : "");
+
+  // 1. Objekt und Rechnung
+  const objekt = [
+    ["Ort / Lage", [e.ort, e.adresse].filter(Boolean).join(", ")],
+    ["Objektart", e.objektart],
+    ["Einheiten", e.einheiten ? String(e.einheiten) : null],
+    ["Wohnfläche", e.wohnflaeche ? `${komma(e.wohnflaeche, 0)} m²` : null],
+    ["Baujahr", e.baujahr ? String(e.baujahr) : null],
+    ["Kaufpreis", e.kaufpreis ? euro(e.kaufpreis) : null],
+    ["Ist-Miete nettokalt", e.ist_miete ? `${euro(e.ist_miete)} im Monat` : null],
+  ];
+  const rechnung = [
+    ["Kaufpreis je m²", x.preisQm ? euro(x.preisQm) : null],
+    ["Ist-Miete je m²", x.istMieteQm ? `${komma(x.istMieteQm)} €/m²` : null],
+    ["Faktor auf Ist-Miete", x.faktorIst ? `${komma(x.faktorIst, 1)}-fach (Bruttorendite ${proz(x.renditeIst)})` : null],
+    ["Marktmiete (Mitte)", x.marktMieteQm ? `${komma(x.marktMieteQm)} €/m² · ${euro(x.marktJahresmiete)} im Jahr` : null],
+    ["Faktor auf Marktmiete", x.faktorMarkt ? `${komma(x.faktorMarkt, 1)}-fach (Bruttorendite ${proz(x.renditeMarkt)})` : null],
+    ["Miete für üblichen Faktor", x.noetigeMieteQm ? `${komma(x.noetigeMieteQm)} €/m²` : null],
+  ];
+  ab.push({ titel: "Objekt und Rechnung", bloecke: [
+    { art: "tabelle", zeilen: objekt },
+    rechnung.some(([, v]) => v) ? { art: "unter", titel: "Rechnung (aus den Zahlen berechnet)" } : null,
+    rechnung.some(([, v]) => v) ? { art: "tabelle", zeilen: rechnung } : null,
+  ] });
+
+  // 2. Mieten und Kaufpreise
   const m = erg.markt;
-  if (m) ab.push({ titel: "Mieten und Kaufpreise", text: [m.zusammenfassung,
-    spanne(m.miete_bestand) && `Bestandsmiete: ${spanne(m.miete_bestand)}`, spanne(m.miete_angebot) && `Angebotsmiete: ${spanne(m.miete_angebot)}`,
-    spanne(m.kaufpreis_mfh) && `Kaufpreis MFH: ${spanne(m.kaufpreis_mfh, "€/m²", 0)}`, spanne(m.kaufpreis_etw) && `Kaufpreis ETW: ${spanne(m.kaufpreis_etw, "€/m²", 0)}`,
-    spanne(m.faktor) && `Kaufpreisfaktor: ${spanne(m.faktor, "-fach", 1)}`, m.bodenrichtwert && `Bodenrichtwert: ${komma(m.bodenrichtwert, 0)} €/m²`, m.mietspiegel && `Mietspiegel: ${m.mietspiegel}`,
-    ...(m.punkte || []).map((p) => `- ${p.text}${p.quelle ? ` (${host(p.quelle)})` : ""}`)].filter(Boolean).join("\n") });
+  if (m) ab.push({ titel: "Mieten und Kaufpreise", bloecke: [
+    m.zusammenfassung ? { art: "text", text: m.zusammenfassung } : null,
+    { art: "unter", titel: "Kennzahlen" },
+    { art: "tabelle", zeilen: [
+      ["Bestandsmiete (Mietspiegel)", spanne(m.miete_bestand)],
+      ["Angebotsmiete (Inserate)", spanne(m.miete_angebot)],
+      ["Kaufpreis Mehrfamilienhaus", spanne(m.kaufpreis_mfh, "€/m²", 0)],
+      ["Kaufpreis Eigentumswohnung", spanne(m.kaufpreis_etw, "€/m²", 0)],
+      ["Kaufpreisfaktor", spanne(m.faktor, "-fach", 1)],
+      ["Bodenrichtwert", m.bodenrichtwert ? `${komma(m.bodenrichtwert, 0)} €/m²` : null],
+      ["Mietspiegel", m.mietspiegel],
+    ] },
+    m.punkte?.length ? { art: "unter", titel: "Einzelne Fakten" } : null,
+    m.punkte?.length ? { art: "liste", punkte: m.punkte.map((p) => `${p.text}${quelle(p.quelle)}`) } : null,
+  ] });
+
+  // 3. Recht und Bauamt
   const re = erg.recht;
-  if (re) ab.push({ titel: "Recht und Bauamt", text: [re.zusammenfassung,
-    ...(re.punkte || []).map((p) => `- ${p.thema} (${STAND[p.stand]?.[0] || "unklar"}): ${p.text}`),
-    re.bauamt && `Bauamt: ${[re.bauamt.name, re.bauamt.adresse, re.bauamt.telefon, re.bauamt.email, re.bauamt.web].filter(Boolean).join(", ")}`,
-    ...(re.portale || []).map((p) => `Portal: ${p.titel} – ${p.url}`)].filter(Boolean).join("\n") });
+  if (re) {
+    const gruppe = (stand) => (re.punkte || []).filter((p) => p.stand === stand).map((p) => ({ titel: p.thema, text: `${p.text}${quelle(p.quelle)}` }));
+    const b = re.bauamt;
+    ab.push({ titel: "Recht und Bauamt", bloecke: [
+      re.zusammenfassung ? { art: "text", text: re.zusammenfassung } : null,
+      ...[["gilt", "Gilt hier"], ["gilt_nicht", "Gilt hier nicht"], ["unklar", "Unklar – beim Bauamt bzw. bei Fachleuten klären"]].flatMap(([st, t]) => {
+        const l = gruppe(st);
+        return l.length ? [{ art: "unter", titel: t }, { art: "liste", punkte: l }] : [];
+      }),
+      b ? { art: "unter", titel: "Zuständiges Bauamt" } : null,
+      b ? { art: "tabelle", zeilen: [["Name", b.name], ["Adresse", b.adresse], ["Telefon", b.telefon], ["E-Mail", b.email], ["Webseite", b.web]] } : null,
+      re.portale?.length ? { art: "unter", titel: "Offizielle Portale" } : null,
+      re.portale?.length ? { art: "liste", punkte: re.portale.map((p) => ({ titel: p.titel, text: p.url })) } : null,
+    ] });
+  }
+
+  // 4./5. Kontakte, nach Gewerk bzw. Art gruppiert
   for (const [id, titel] of [["handwerker", "Handwerker"], ["partner", "Makler, Verwaltungen und Gutachter"]]) {
     const d = erg[id];
-    if (d?.eintraege?.length) ab.push({ titel, text: d.eintraege.map((k) => `- ${k.name} (${k.art})${[k.ort, k.telefon, k.email, k.web].filter(Boolean).length ? `: ${[k.ort, k.telefon, k.email, k.web].filter(Boolean).join(", ")}` : ""}`).join("\n") });
+    if (!d?.eintraege?.length) continue;
+    const gruppen = new Map();
+    for (const k of d.eintraege) { const g = k.art || "Sonstige"; if (!gruppen.has(g)) gruppen.set(g, []); gruppen.get(g).push(k); }
+    ab.push({ titel, bloecke: [
+      d.hinweis ? { art: "hinweis", text: d.hinweis } : null,
+      ...[...gruppen.entries()].flatMap(([g, liste]) => [
+        { art: "unter", titel: g },
+        { art: "liste", punkte: liste.map((k) => ({
+          titel: k.name,
+          text: [[k.ort, k.telefon && `Tel. ${k.telefon}`].filter(Boolean).join(" · "), [k.email, k.web].filter(Boolean).join(" · "), k.notiz].filter(Boolean).join("\n"),
+        })) },
+      ]),
+    ] });
   }
+
+  // 6. Quellen, 7. Hinweis
   const quellen = new Map();
   for (const a of ABSCHNITTE) for (const q of erg[a.id]?.quellen || []) if (!quellen.has(q.url)) quellen.set(q.url, q);
-  if (quellen.size) ab.push({ titel: "Quellen", text: [...quellen.values()].map((q) => `- ${q.titel}: ${q.url}`).join("\n") });
-  ab.push({ titel: "Hinweis", text: "Einschätzung aus öffentlichen Quellen, kein Gutachten. Angebotsmieten liegen meist über den Bestandsmieten. Rechtliches beim Bauamt bzw. bei Fachleuten bestätigen lassen." });
+  if (quellen.size) ab.push({ titel: "Quellen", bloecke: [{ art: "liste", punkte: [...quellen.values()].map((q) => ({ titel: q.titel || host(q.url), text: q.url })) }] });
+  ab.push({ titel: "Hinweis", bloecke: [{ art: "hinweis", text: "Einschätzung aus öffentlichen Quellen, kein Gutachten. Angebotsmieten liegen meist über den Bestandsmieten. Rechtliches bitte beim Bauamt bzw. bei Fachleuten bestätigen lassen." }] });
   return ab;
 }
+/** Klartext eines gegliederten Abschnitts (für die KI-Ablage) */
+const abschnittText = (a) => a.text || (a.bloecke || []).filter(Boolean).map((b) =>
+  b.art === "tabelle" ? (b.zeilen || []).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join("\n")
+  : b.art === "liste" ? (b.punkte || []).map((p) => `- ${typeof p === "object" ? [p.titel, p.text].filter(Boolean).join(": ") : p}`).join("\n")
+  : b.titel || b.text || "").join("\n");
 async function alsPdf(r) {
   const lauf = laeufe.get(r.id);
   if (lauf) r.ergebnis = lauf.ergebnis;
@@ -396,9 +459,9 @@ async function alsPdf(r) {
   const e = {
     quelle: {}, richtung: "notiz", art: "Sonstiges", artFest: false, datum: heuteISO(), objektId: null, mieterId: null,
     gegenueber: "", thema: `Standort-Check ${r.eingabe?.ort || ""}`.slice(0, 60),
-    kiText: { titel, text: abschnitte.map((x) => `${x.titel}: ${x.text}`).join("\n").slice(0, 6000) },
+    kiText: { titel, text: abschnitte.map((x) => `${x.titel}:\n${abschnittText(x)}`).join("\n\n").slice(0, 6000) },
     beschreibung: "Der Bericht wird als PDF abgelegt.",
-    datei: ablage.pdfEintrag({ kopf: [p.firma || p.inhaber].filter(Boolean), titel, angaben: [["Stand", datumDE(r.aktualisiert_am || new Date())], ["Ort", r.titel]], text: "", abschnitte }),
+    datei: ablage.pdfEintrag({ kopf: [p.firma || p.inhaber].filter(Boolean), titel, angaben: [["Ort", r.titel], ["Stand", datumDE(r.aktualisiert_am || new Date())], ["Erstellt mit", "Standort-Check (Recherche im Internet)"]], text: "", abschnitte, nummern: true }),
   };
   const doc = await ablage.inAblageDialog(e);
   if (doc?.id) {

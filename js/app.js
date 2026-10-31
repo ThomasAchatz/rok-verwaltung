@@ -91,6 +91,7 @@ function monatsspanne(posten) {
 async function ladeGrunddaten() {
   const [profil, stamm, vorlagen] = await Promise.all([db.ladeProfil(), db.ladeStammdaten(), db.ladeVorlagen()]);
   Object.assign(zustand, { profil, stamm, vorlagen });
+  import("./kiname.js").then((k) => k.aktualisiereKiName()).catch(() => {});
   postfach.ladeKiStatus(); // im Hintergrund: Ist die KI eingerichtet?
 }
 

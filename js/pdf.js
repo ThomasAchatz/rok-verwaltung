@@ -78,7 +78,9 @@ const hexUtf16 = (s) => "<FEFF" + [...String(s)].map((z) => {
  * @param {string} o.titel      fette Überschrift
  * @param {Array<[string,string]>} [o.angaben]  z. B. [["Von", "…"], ["An", "…"], ["Datum", "…"]]
  * @param {string} o.text       Haupttext (Zeilenumbrüche bleiben erhalten)
- * @param {Array<{titel: string, text: string}>} [o.abschnitte]  weitere Abschnitte mit Zwischenüberschrift
+ * @param {Array<{titel: string, text?: string, bloecke?: Array}>} [o.abschnitte]  weitere Abschnitte mit Zwischenüberschrift.
+ *   Statt text auch bloecke (gegliedert): { art: "text", text } | { art: "unter", titel } | { art: "liste", punkte: [string | { titel, text }] }
+ *   | { art: "tabelle", zeilen: [[label, wert]] } | { art: "hinweis", text }. Mit o.nummern werden die Abschnitte nummeriert.
  * @param {string} [o.fuss]     Fußzeile auf jeder Seite (dazu „Seite x von y“)
  * @returns {Uint8Array}
  */
@@ -120,13 +122,67 @@ export function textPdf(o) {
   if (o.angaben?.length) linie();
   y -= 6;
   absatz(o.text || "");
-  for (const a of o.abschnitte || []) {
-    if (!a?.text) continue;
-    y -= 10;
-    platz(40);
-    absatz(a.titel, { schrift: "fett", groesse: 11 });
+  // Gegliederte Bausteine
+  const TINTE = "0.12 0.25 0.45";
+  const fettZeile = (text, { groesse = 11, farbe = TINTE, x = RAND, max = breiteText } = {}) => {
+    for (const z of umbrechen(winAnsi(text), "fett", groesse, max)) {
+      platz(groesse * 1.5);
+      y -= groesse * 1.4;
+      ops.push(`BT /F2 ${groesse} Tf ${farbe} rg ${x.toFixed(2)} ${y.toFixed(2)} Td ${pdfText(z)} Tj ET`);
+    }
+  };
+  const tabelle = (zeilen) => {
+    const LB = 150;
+    for (const [label, wert] of zeilen.filter(([, w]) => w != null && String(w).trim())) {
+      const links = umbrechen(winAnsi(label), "fett", 9.5, LB - 8);
+      const rechts = String(wert).split("\n").flatMap((t) => umbrechen(winAnsi(t), "normal", 10, breiteText - LB));
+      const n = Math.max(links.length, rechts.length);
+      platz(n * 14 + 4);
+      for (let i = 0; i < n; i++) {
+        y -= 14;
+        if (links[i]) zeile(links[i], { schrift: "fett", groesse: 9.5, grau: true });
+        if (rechts[i]) zeile(rechts[i], { x: RAND + LB, groesse: 10 });
+      }
+      y -= 2;
+      ops.push(`0.9 0.91 0.93 RG 0.4 w ${RAND} ${(y + 1).toFixed(2)} m ${B - RAND} ${(y + 1).toFixed(2)} l S`);
+    }
+    y -= 4;
+  };
+  const liste = (punkte) => {
+    const EIN = 14;
+    for (const p of punkte) {
+      const titel = typeof p === "object" && p ? p.titel : null;
+      const text = typeof p === "object" && p ? p.text : p;
+      platz(16);
+      y -= 2;
+      const start = y;
+      if (titel) fettZeile(titel, { groesse: 10, farbe: "0.1 0.12 0.16", x: RAND + EIN, max: breiteText - EIN });
+      if (text) absatz(text, { x: RAND + EIN, max: breiteText - EIN, groesse: 10 });
+      // Punkt auf Höhe der ersten Zeile
+      const yPunkt = start - (titel ? 10 * 1.4 : 10 * 1.42);
+      ops.push(`BT /F1 10 Tf ${TINTE} rg ${(RAND + 3).toFixed(2)} ${yPunkt.toFixed(2)} Td ${pdfText([0x95])} Tj ET`);
+      y -= 3;
+    }
     y -= 2;
-    absatz(a.text);
+  };
+  let nr = 0;
+  for (const a of o.abschnitte || []) {
+    const bloecke = Array.isArray(a?.bloecke) ? a.bloecke.filter(Boolean) : null;
+    if (!a || (!a.text && !bloecke?.length)) continue;
+    y -= 14;
+    platz(70); // Überschrift nie allein am Seitenende
+    nr++;
+    fettZeile(o.nummern ? `${nr}. ${a.titel}` : a.titel, { groesse: bloecke ? 13 : 11 });
+    if (bloecke) { y -= 6; ops.push(`0.62 0.7 0.82 RG 0.8 w ${RAND} ${y.toFixed(2)} m ${B - RAND} ${y.toFixed(2)} l S`); y -= 8; }
+    else y -= 2;
+    if (!bloecke) { absatz(a.text); continue; }
+    for (const b of bloecke) {
+      if (b.art === "unter") { y -= 6; platz(50); fettZeile(b.titel, { groesse: 10.5, farbe: "0.1 0.12 0.16" }); y -= 2; }
+      else if (b.art === "tabelle") tabelle(b.zeilen || []);
+      else if (b.art === "liste") liste((b.punkte || []).filter(Boolean));
+      else if (b.art === "hinweis") { y -= 2; absatz(b.text, { groesse: 8.5, grau: true, abstand: 1.35 }); y -= 2; }
+      else { absatz(b.text); y -= 4; }
+    }
   }
   neueSeite();
 

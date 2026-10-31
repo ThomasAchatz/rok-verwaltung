@@ -1785,10 +1785,10 @@ export function verbindeAbgelegt(root, docs, { nachher = () => {} } = {}) {
 }
 
 /** PDF aus Text bauen (für E-Mails, Aufträge, Notizen) */
-export function pdfEintrag({ titel, angaben, text, abschnitte, kopf, fuss = null }) {
+export function pdfEintrag({ titel, angaben, text, abschnitte, kopf, fuss = null, nummern = false }) {
   return async () => {
     const bytes = textPdf({
-      kopf, titel, angaben, text, abschnitte,
+      kopf, titel, angaben, text, abschnitte, nummern,
       fuss: fuss || `Abgelegt am ${datumDE(new Date())} aus der Verwaltungs-App`,
     });
     return { blob: new Blob([bytes], { type: "application/pdf" }), typ: "application/pdf" };

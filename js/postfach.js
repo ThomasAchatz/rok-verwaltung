@@ -1811,6 +1811,9 @@ export async function zeigeEinstellungen() {
       <section class="flaeche">
         <div class="flaeche__kopf"><h2>Antworten und E-Mails</h2></div>
         <form class="flaeche__inhalt" id="antwortformular">
+          <label class="feld"><span>Name der KI <span class="leise">(optional)</span></span>
+            <input name="ki_name" maxlength="30" value="${esc(p.ki_name || "")}" placeholder="z. B. Jarvis" autocomplete="off" data-kein-kiname>
+            <span class="feldhinweis feldhinweis--leise" data-kein-kiname>Steht dann überall statt „die KI“, z. B. „Vorschlag von Jarvis“. Leer lassen für „KI“.</span></label>
           <label class="feld"><span>So soll die KI schreiben <span class="leise">(für alle)</span></span>
             <textarea name="ki_tonfall" rows="3" placeholder="z. B. Sie-Form, freundlich, kurz. Keine Zusagen zu Geld oder Terminen.">${esc(p.ki_tonfall || "")}</textarea></label>
           ${(() => { const tg = p.ki_tonfall_gruppen || {}; return `
@@ -1936,9 +1939,11 @@ export async function zeigeEinstellungen() {
     const t = (k) => String(fd.get(k) || "").trim();
     try {
       zustand.profil = await db.speichereProfil({
+        ki_name: t("ki_name").replace(/\s+/g, " ").slice(0, 30) || null,
         ki_tonfall: t("ki_tonfall") || null, email_signatur: t("email_signatur") || null, antwort_email: t("antwort_email") || null,
         ki_tonfall_gruppen: { mieter: t("ton_mieter").slice(0, 600), handwerker: t("ton_handwerker").slice(0, 600), sonstige: t("ton_sonstige").slice(0, 600) },
       });
+      (await import("./kiname.js")).aktualisiereKiName();
       melde("Gespeichert.", "ok");
     } catch (err) { melde(err.message, "fehler"); }
   });

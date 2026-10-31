@@ -288,3 +288,10 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   Chat: Schalter „Nur App | Mit Internet“ (localStorage `chat-internet`), `chat(…, { internet })` gibt der KI das Werkzeug `websuche` (ruft
   `webRecherche()` mit Prüfung), Antwort mit `quellen` (App zeigt nur http/https). Chat-Aktion `standort` öffnet die Maske vorausgefüllt
   (`zustand.rechercheVorgabe`), gestartet wird erst per Klick. In der Oberfläche keine Kosten der KI/Recherche nennen (Tommys Wunsch). Test: `ui_recherche.py` (mock-daten22), Server-Tests in test.ts.
+- Name der KI (Migration `20261031090000_ki_name.sql`, `vermieter_profil.ki_name`, Einstellungen › Antworten und E-Mails): `js/kiname.js` ersetzt
+  per MutationObserver in sichtbaren Texten (auch placeholder/title/aria-label) „die KI“/„der KI“/„KI-Vorschlag“/„Fragen an die App“ durch den Namen
+  (`mitKiName()`, Grammatik: nach Präposition „mit Jarvis“, Genitiv „von Jarvis“). Eingaben, `.chat__frage` und `[data-kein-kiname]` bleiben unverändert.
+  Neue Texte einfach mit „die KI“ schreiben, der Name kommt automatisch. Der Server kennt den Namen nicht. Test: `ui_kiname.py`.
+- PDF gegliedert: `textPdf({ abschnitte: [{ titel, bloecke: [text|unter|liste|tabelle|hinweis] }], nummern })` (js/pdf.js; alte Abschnitte mit `text`
+  gehen weiter). Standort-Bericht nutzt das (`berichtAbschnitte()` in recherche.js: Objekt und Rechnung, Mieten und Kaufpreise, Recht und Bauamt
+  nach gilt/gilt nicht/unklar, Handwerker und Partner nach Gewerk, Quellen, Hinweis).
