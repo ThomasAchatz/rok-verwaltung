@@ -68,7 +68,7 @@ export async function zeigeRecherche(id) {
           ${ABSCHNITTE.map((a) => `<label class="chipwahl"><input type="checkbox" name="abschnitt" value="${a.id}" checked> ${esc(a.titel)}</label>`).join("")}
         </fieldset>
         <p class="leise">Ins Internet geht nur Ort, Adresse und Eckdaten – Kaufpreis und Ist-Miete bleiben in der App und werden hier nur gerechnet.
-          Dauer etwa 1–2 Minuten, Kosten grob 1–2 € je Bericht.</p>
+          Dauer etwa 1–2 Minuten.</p>
         <div class="knopfreihe"><button class="knopf knopf--primaer" type="submit">${ICON_KI} Recherche starten</button></div>
       </form>
     </section>
@@ -179,7 +179,7 @@ function zeichneKopf(r) {
     </div>`;
   el.querySelector("[data-k=pdf]").addEventListener("click", () => alsPdf(r));
   el.querySelector("[data-k=neu]").addEventListener("click", async () => {
-    if (!(await frage("Neu recherchieren?", "<p>Alle Bereiche werden neu im Internet gesucht (wieder 1–2 Minuten, 1–2 €). Übernommene Kontakte bleiben erhalten.</p>", "Neu recherchieren"))) return;
+    if (!(await frage("Neu recherchieren?", "<p>Alle Bereiche werden neu im Internet gesucht (dauert wieder 1–2 Minuten). Übernommene Kontakte bleiben erhalten.</p>", "Neu recherchieren"))) return;
     const e2 = r.eingabe || {};
     starte(r, Array.isArray(e2.abschnitte) && e2.abschnitte.length ? e2.abschnitte : ABSCHNITTE.map((a) => a.id));
     zeigeBericht(r.id);

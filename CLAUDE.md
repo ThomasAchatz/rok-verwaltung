@@ -287,4 +287,4 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
   Kontakte/Handwerker per Klick übernehmen (Doppelte über Name/E-Mail, `uebernommen` im Ergebnis gemerkt), Bericht als PDF über `inAblageDialog`.
   Chat: Schalter „Nur App | Mit Internet“ (localStorage `chat-internet`), `chat(…, { internet })` gibt der KI das Werkzeug `websuche` (ruft
   `webRecherche()` mit Prüfung), Antwort mit `quellen` (App zeigt nur http/https). Chat-Aktion `standort` öffnet die Maske vorausgefüllt
-  (`zustand.rechercheVorgabe`), gestartet wird erst per Klick. Test: `ui_recherche.py` (mock-daten22), Server-Tests in test.ts.
+  (`zustand.rechercheVorgabe`), gestartet wird erst per Klick. In der Oberfläche keine Kosten der KI/Recherche nennen (Tommys Wunsch). Test: `ui_recherche.py` (mock-daten22), Server-Tests in test.ts.
