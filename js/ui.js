@@ -195,6 +195,79 @@ function starteDiktat(knopf, feld) {
   if (!IOS) feld.focus();
 }
 
+// ---------------------------------------------------------------------------
+// Gesprächsmodus: auf genau eine Äußerung hören (danach antwortet die App laut, siehe js/gespraech.js)
+// ---------------------------------------------------------------------------
+export const kannZuhoeren = () => !!Erkennung;
+
+/**
+ * Hört zu, bis eine Äußerung fertig ist. ergebnis: Text | "" (lange Stille, maxStilleMs) | null (stopp()).
+ * Bei fehlender Mikrofon-Freigabe wird ergebnis mit einer verständlichen Meldung abgelehnt.
+ * Auf allen Geräten ohne Dauer-Modus: Eine Runde endet nach der Sprechpause von selbst; kommt nichts Neues mehr
+ * (pauseMs), wird sie beendet (das iPhone hört sonst nicht immer selbst auf). Ohne Wörter startet die nächste Runde.
+ */
+export function hoereZu({ onZwischen = () => {}, maxStilleMs = 90000, pauseMs = 1600 } = {}) {
+  stoppeDiktat();
+  let erledigt = false, aus = false, erkennung = null, aufloesen, ablehnen;
+  const ergebnis = new Promise((res, rej) => { aufloesen = res; ablehnen = rej; });
+  const ende = (wert, fehler) => {
+    if (erledigt) return;
+    erledigt = true;
+    try { erkennung?.abort(); } catch { /* schon beendet */ }
+    if (fehler) ablehnen(fehler); else aufloesen(wert);
+  };
+  const beginn = Date.now();
+  const runde = () => {
+    if (erledigt) return;
+    const e = new Erkennung();
+    erkennung = e;
+    e.lang = "de-DE";
+    e.continuous = false;
+    e.interimResults = true;
+    let fest = "", vorlaeufig = "", schweigen = null, waechter = null, fehler = null;
+    const text = () => fuegeZusammen(fest, vorlaeufig).trim();
+    e.onresult = (ev) => {
+      vorlaeufig = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript.trim();
+        if (ev.results[i].isFinal) fest = fuegeZusammen(fest, t);
+        else vorlaeufig = fuegeZusammen(vorlaeufig, t);
+      }
+      onZwischen(text());
+      clearTimeout(waechter);
+      clearTimeout(schweigen);
+      schweigen = setTimeout(() => { try { e.stop(); } catch { /* egal */ } }, pauseMs);
+    };
+    e.onerror = (ev) => {
+      if (ev.error === "not-allowed" || ev.error === "service-not-allowed" || ev.error === "audio-capture") {
+        fehler = new Error(`Das Mikrofon ist nicht freigegeben. ${IOS ? ANLEITUNG_IOS : "Bitte den Zugriff aufs Mikrofon im Browser erlauben."}`);
+      } else if (ev.error === "network") {
+        fehler = new Error("Die Spracherkennung braucht eine Internetverbindung.");
+      }
+    };
+    e.onend = () => {
+      clearTimeout(schweigen);
+      clearTimeout(waechter);
+      if (erledigt) return;
+      if (aus) return ende(null);
+      if (fehler) return ende(null, fehler);
+      const t = text();
+      if (t) return ende(t);
+      if (Date.now() - beginn > maxStilleMs) return ende("");
+      setTimeout(runde, 250);
+    };
+    try {
+      e.start();
+    } catch (err) {
+      return ende(null, new Error("Zuhören nicht möglich: " + err.message));
+    }
+    // iPhone: bleibt die Aufnahme stumm hängen, Runde abbrechen (startet neu)
+    if (IOS) waechter = setTimeout(() => { try { e.abort(); } catch { /* egal */ } }, 8000);
+  };
+  runde();
+  return { ergebnis, stopp: () => { aus = true; ende(null); } };
+}
+
 // Textfelder wachsen mit dem Inhalt
 export function wachsen(feld) {
   const anpassen = () => {

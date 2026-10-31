@@ -295,3 +295,10 @@ Sprache im Code, in der Oberfläche und in Commits: Deutsch.
 - PDF gegliedert: `textPdf({ abschnitte: [{ titel, bloecke: [text|unter|liste|tabelle|hinweis] }], nummern })` (js/pdf.js; alte Abschnitte mit `text`
   gehen weiter). Standort-Bericht nutzt das (`berichtAbschnitte()` in recherche.js: Objekt und Rechnung, Mieten und Kaufpreise, Recht und Bauamt
   nach gilt/gilt nicht/unklar, Handwerker und Partner nach Gewerk, Quellen, Hinweis).
+- Gesprächsmodus im Chat (z. B. im Auto, `js/gespraech.js` + Ablauf in `js/chat.js`): Knopf „Gespräch“ im Chat-Kopf (nur mit Spracherkennung und
+  Sprachausgabe), `hoereZu()` in ui.js hört auf eine Äußerung (ohne Dauer-Modus, iPhone-Wächter 8 s, Ende nach 90 s Stille), Antwort über
+  `sprich()` (speechSynthesis, beste deutsche Stimme, `alsSprache()` entfernt Links/Markdown und schreibt Abkürzungen aus, `teile()` in kurze Stücke).
+  Erste Ausgabe synchron im Klick (iPhone), Ton vor dem Zuhören (Web Audio), Bildschirm an (Wake Lock). Kein Server-Umbau: die App hängt der
+  letzten Frage `GESPRAECH_HINWEIS` an (kurz, gesprochen, Beträge nur auf Nachfrage), im Chat steht nur die Frage. To-dos per „Ja“ speichern
+  (= Annehmen, `istJa`/`istNein`), alles andere bleibt als Karte im Chat, nie senden. Ende: „Stopp“/„Danke, das war's“ (`istStopp`), Knopf, Chat
+  schließen, App in den Hintergrund. Test: `ui_gespraech.py` (nachgebaute Erkennung + Sprachausgabe, mock-daten23).

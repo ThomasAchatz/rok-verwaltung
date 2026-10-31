@@ -4,21 +4,23 @@ import * as db from "./daten.js";
 import { datumDE, mieterName } from "./dokumente.js";
 import { $, esc, melde, zustand, heuteISO, herunterladen, objektVon, dialogFormular, frage } from "./helfer.js";
 import {
-  ICON_KI, mikroKnopf, verbindeDiktat, stoppeDiktat, geheZu, istEmail, mieterListe, ortVon, alsBase64,
+  ICON_KI, mikroKnopf, verbindeDiktat, stoppeDiktat, hoereZu, geheZu, istEmail, mieterListe, ortVon, alsBase64,
   suchauswahlHtml, verbindeSuchauswahl,
 } from "./ui.js";
 import { aufgabeDialog } from "./start.js";
 import * as ablage from "./ablage.js";
 import { kontakteListe, kontaktName, kontaktDialog } from "./kontakte.js";
 import * as vorgaenge from "./vorgaenge.js";
+import * as sprache from "./gespraech.js";
 
+const ICON_HOERER = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 3a8 8 0 0 0-8 8v6a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H6v-2a6 6 0 0 1 12 0v2h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-6a8 8 0 0 0-8-8z"/></svg>`;
 const VORSCHLAEGE = [
   "Was ist heute wichtig?",
   "Wer ist im Rückstand?",
   "Welche Fristen stehen an?",
   "Wer macht die Heizung in der Lindenstraße?",
 ];
-const verlauf = []; // { rolle: "robert" | "ki" | "fehler", text, aktionen? }
+const verlauf = []; // { rolle: "robert" | "ki" | "fehler", text, aktionen?, gespraech? }
 let laeuft = false;
 let eingerichtet = false;
 // Schalter „Mit Internet“ (pro Gerät gemerkt)
@@ -64,6 +66,7 @@ function einrichten() {
     <div class="chat__kopf">
       <h2>${ICON_KI} Fragen an die App</h2>
       <span class="knopfreihe">
+        <button type="button" class="knopf knopf--leise knopf--klein chat__gespraech-start" data-chat="gespraech" title="Sprechen und zuhören, z. B. beim Autofahren" ${sprache.kannGespraech() ? "" : "hidden"}>${ICON_HOERER}<span>Gespräch</span></button>
         <button type="button" class="knopf knopf--leise knopf--klein" data-chat="neu">Neu</button>
         <button type="button" class="knopf knopf--leise knopf--klein" data-chat="zu" aria-label="Schließen">Schließen</button>
       </span>
@@ -72,6 +75,16 @@ function einrichten() {
     <div class="chat__modus" role="radiogroup" aria-label="Woher kommen die Antworten?">
       <label><input type="radio" name="chat-modus" value="app" ${internet ? "" : "checked"}> Nur App</label>
       <label><input type="radio" name="chat-modus" value="internet" ${internet ? "checked" : ""}> Mit Internet</label>
+    </div>
+    <div class="chat__gespraech" id="chat-gespraech" data-phase="hoeren" hidden>
+      <div class="gespraech__welle" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+      <p class="gespraech__status" data-g-status aria-live="polite">Ich höre zu …</p>
+      <p class="gespraech__text" data-g-text></p>
+      <div class="gespraech__knoepfe">
+        <button type="button" class="knopf" data-g="unterbrechen" hidden>Unterbrechen</button>
+        <button type="button" class="knopf knopf--primaer" data-g="ende">Gespräch beenden</button>
+      </div>
+      <p class="gespraech__tipp">„Stopp“ oder „Danke, das war's“ beendet das Gespräch. To-dos speicherst du mit „Ja“. Schreiben und andere Vorschläge bleiben hier im Chat, gesendet wird nichts.</p>
     </div>
     <form class="chat__eingabe" id="chat-form">
       <span class="diktat"><textarea name="frage" rows="1" maxlength="2000" placeholder="Frage stellen oder diktieren …" aria-label="Frage"></textarea>${mikroKnopf()}</span>
@@ -97,9 +110,13 @@ function einrichten() {
   dlg.addEventListener("click", (e) => {
     const knopf = e.target.closest("[data-chat]");
     if (knopf?.dataset.chat === "zu") dlg.close();
-    if (knopf?.dataset.chat === "neu") { verlauf.length = 0; zeichne(); feld.focus(); }
+    if (knopf?.dataset.chat === "neu") { beendeGespraech(); verlauf.length = 0; zeichne(); feld.focus(); }
+    if (knopf?.dataset.chat === "gespraech") starteGespraech();
+    const g = e.target.closest("[data-g]");
+    if (g?.dataset.g === "ende") beendeGespraech({ tschuess: false });
+    if (g?.dataset.g === "unterbrechen") sprache.stoppeSprechen();
     const frage = e.target.closest("[data-frage]");
-    if (frage) sende(frage.dataset.frage);
+    if (frage && !gespraech) sende(frage.dataset.frage);
     const l = e.target.closest("[data-chat-link]");
     if (l && !l.target && window.matchMedia("(max-width: 900px)").matches) dlg.close();
     const akt = e.target.closest("[data-vorschlag]");
@@ -117,7 +134,9 @@ function einrichten() {
     const a = verlauf[i]?.aktionen?.[j];
     if (a) a.dateiname = f.value;
   });
-  dlg.addEventListener("close", stoppeDiktat);
+  dlg.addEventListener("close", () => { stoppeDiktat(); beendeGespraech(); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) beendeGespraech(); });
+  sprache.waehleStimme(); // vorab, damit die erste Ausgabe direkt im Klick klappt
   for (const r of dlg.querySelectorAll("[name=chat-modus]")) {
     r.addEventListener("change", () => {
       internet = r.value === "internet" && r.checked;
@@ -148,25 +167,149 @@ function zeichne() {
   el.scrollTop = el.scrollHeight;
 }
 
-async function sende(text) {
+/** Stellt die Frage. Liefert den Antwort-Eintrag (bzw. null bei Fehler). Im Gesprächsmodus bekommt die KI einen Hinweis auf kurze, gesprochene Antworten. */
+async function sende(text, { imGespraech = false } = {}) {
   text = String(text || "").trim().slice(0, 2000);
-  if (!text || laeuft) return;
-  if (!zustand.ki?.ki) return melde("Die KI ist noch nicht eingerichtet (Einstellungen).", "fehler");
-  verlauf.push({ rolle: "robert", text });
+  if (!text || laeuft) return null;
+  if (!zustand.ki?.ki) { melde("Die KI ist noch nicht eingerichtet (Einstellungen).", "fehler"); return null; }
+  verlauf.push({ rolle: "robert", text, gespraech: imGespraech });
   laeuft = true;
   zeichne();
   try {
-    const r = await db.funktion("ki", {
-      aktion: "chat",
-      internet,
-      verlauf: verlauf.filter((b) => b.rolle !== "fehler").slice(-12).map(({ rolle, text: t }) => ({ rolle, text: t })),
-    });
-    verlauf.push({ rolle: "ki", text: r.text || "Dazu habe ich keine Antwort gefunden.", aktionen: Array.isArray(r.aktionen) ? r.aktionen : [], quellen: Array.isArray(r.quellen) ? r.quellen : [] });
+    const daten = verlauf.filter((b) => b.rolle !== "fehler").slice(-12).map(({ rolle, text: t }) => ({ rolle, text: t }));
+    if (imGespraech) daten[daten.length - 1] = { rolle: "robert", text: `${text}\n\n${GESPRAECH_HINWEIS}` };
+    const r = await db.funktion("ki", { aktion: "chat", internet, verlauf: daten });
+    const eintrag = { rolle: "ki", text: r.text || "Dazu habe ich keine Antwort gefunden.", aktionen: Array.isArray(r.aktionen) ? r.aktionen : [], quellen: Array.isArray(r.quellen) ? r.quellen : [], gespraech: imGespraech };
+    verlauf.push(eintrag);
+    return eintrag;
   } catch (err) {
     verlauf.push({ rolle: "fehler", text: "Das hat nicht geklappt: " + err.message });
+    return null;
   } finally {
     laeuft = false;
     zeichne();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gesprächsmodus (z. B. im Auto): zuhören → fragen → Antwort vorlesen → wieder zuhören.
+// To-dos lassen sich mit „Ja“ speichern (wie ein Klick auf „Annehmen“). Alles andere bleibt als Karte im Chat, nichts wird gesendet.
+// ---------------------------------------------------------------------------
+const GESPRAECH_HINWEIS = "[Gesprächsmodus: Ich fahre gerade Auto und höre deine Antwort nur, ich sehe nichts. Antworte in höchstens drei kurzen, " +
+  "natürlich gesprochenen Sätzen – ohne Listen, Links, Tabellen, Markdown, IDs oder Abkürzungen. Geldbeträge nur, wenn ich nach Geld, Miete, " +
+  "Rückständen oder Beträgen frage. Vorschläge machst du weiter mit aktion_vorschlagen und sagst in einem Halbsatz, was du vorbereitet hast; " +
+  "sag nie, etwas sei gespeichert oder gesendet.]";
+let gespraech = null; // { hoeren: { stopp } | null }
+
+function gespraechAnzeige(phase, text) {
+  const box = $("#chat-gespraech");
+  if (!box) return;
+  box.dataset.phase = phase;
+  $("[data-g-status]", box).textContent = { hoeren: "Ich höre zu …", denken: "Einen Moment …", sprechen: "Ich spreche …", frage: "Ja oder nein?" }[phase] || "";
+  if (text !== undefined) $("[data-g-text]", box).textContent = text;
+  $("[data-g=unterbrechen]", box).hidden = phase !== "sprechen";
+}
+async function sag(text) {
+  if (!gespraech) return;
+  gespraechAnzeige("sprechen");
+  await sprache.sprich(text);
+}
+async function hoere(maxStilleMs = 90000) {
+  if (!gespraech) return null;
+  gespraechAnzeige("hoeren", "");
+  sprache.ton(true);
+  await new Promise((r) => setTimeout(r, 250));
+  if (!gespraech) return null;
+  const h = hoereZu({ maxStilleMs, onZwischen: (t) => gespraechAnzeige("hoeren", t) });
+  gespraech.hoeren = h;
+  try {
+    return await h.ergebnis;
+  } catch (err) {
+    melde(err.message, "fehler");
+    beendeGespraech({ tschuess: false });
+    return null;
+  } finally {
+    if (gespraech?.hoeren === h) gespraech.hoeren = null;
+  }
+}
+
+function starteGespraech() {
+  if (gespraech || !sprache.kannGespraech()) return;
+  if (!zustand.ki?.ki) return melde("Die KI ist noch nicht eingerichtet (Einstellungen).", "fehler");
+  stoppeDiktat();
+  gespraech = { hoeren: null };
+  $("#chat").classList.add("chat--gespraech");
+  $("#chat-gespraech").hidden = false;
+  sprache.tonVorbereiten();
+  sprache.bildschirmAn();
+  gespraechAnzeige("sprechen", "");
+  // Erste Ausgabe direkt im Klick: schaltet auf dem iPhone die Sprachausgabe frei
+  const hallo = sprache.sprich("Ich höre zu.");
+  hallo.then(() => gespraechSchleife());
+}
+
+function beendeGespraech({ tschuess = false } = {}) {
+  if (!gespraech) return;
+  const g = gespraech;
+  gespraech = null;
+  g.hoeren?.stopp();
+  sprache.stoppeSprechen();
+  if (tschuess) sprache.ton(false);
+  sprache.bildschirmFrei();
+  setTimeout(sprache.tonAus, 400);
+  $("#chat")?.classList.remove("chat--gespraech");
+  const box = $("#chat-gespraech");
+  if (box) box.hidden = true;
+  zeichne();
+}
+
+async function gespraechSchleife() {
+  let naechste = null; // neue Frage, die während einer Ja/Nein-Rückfrage kam
+  while (gespraech) {
+    const text = naechste ?? await hoere();
+    naechste = null;
+    if (!gespraech || text === null) return;
+    if (text === "") {
+      await sag("Ich mach Pause. Tipp auf Gespräch, wenn du wieder was brauchst.");
+      return beendeGespraech({ tschuess: true });
+    }
+    if (sprache.istStopp(text)) {
+      await sag("Alles klar, bis später.");
+      return beendeGespraech({ tschuess: true });
+    }
+    gespraechAnzeige("denken", text);
+    const antwort = await sende(text, { imGespraech: true });
+    if (!gespraech) return;
+    if (!antwort) { await sag("Das hat nicht geklappt. Versuch es bitte noch mal."); continue; }
+    await sag(antwort.text);
+    if (!gespraech) return;
+    const offen = (antwort.aktionen || []).filter((a) => !a.status && a.art !== "oeffnen");
+    // To-dos: per Stimme bestätigen (wie „Annehmen“)
+    for (const a of offen.filter((x) => x.art === "notiz")) {
+      await sag(`Soll ich das To-do „${a.daten?.titel || a.beschriftung || "Notiz"}“ speichern?`);
+      if (!gespraech) return;
+      const t = await hoere(25000);
+      if (!gespraech || t === null) return;
+      gespraechAnzeige("frage", t);
+      if (sprache.istStopp(t)) { await sag("Alles klar, bis später."); return beendeGespraech({ tschuess: true }); }
+      if (sprache.istJa(t)) {
+        await behandle(a, "annehmen", null);
+        await sag(a.status === "gespeichert" ? "Gespeichert." : "Das hat nicht geklappt. Es liegt im Chat.");
+      } else if (sprache.istNein(t)) {
+        setze(a, "abgelehnt");
+        await sag("Okay, nicht gespeichert.");
+      } else if (!t) {
+        await sag("Ich lass es im Chat liegen.");
+      } else {
+        naechste = t; // etwas anderes gesagt: als neue Frage nehmen, To-do bleibt im Chat
+        break;
+      }
+      if (!gespraech) return;
+    }
+    const rest = offen.filter((a) => a.art !== "notiz" && !a.status).length;
+    if (rest && !naechste && !/\bchat\b/i.test(antwort.text)) {
+      await sag(rest === 1 ? "Den Vorschlag dazu findest du nachher im Chat." : "Die Vorschläge dazu findest du nachher im Chat.");
+    }
   }
 }
 
@@ -484,13 +627,13 @@ async function behandle(a, op, knopf) {
       case "ablehnen": return setze(a, "abgelehnt");
       case "zurueck": return setze(a, undefined);
       case "rueck":
-        knopf.disabled = true;
+        if (knopf) knopf.disabled = true;
         await stammdatenZurueck(a);
         setze(a, "rueckgaengig");
         neuLaden();
         return;
       case "annehmen":
-        knopf.disabled = true;
+        if (knopf) knopf.disabled = true;
         if (a.art === "stammdaten") {
           await stammdatenSpeichern(a, d.felder || {}, d.bewohner_neu || null);
           setze(a, "gespeichert_rueck", "Gespeichert");
@@ -508,7 +651,7 @@ async function behandle(a, op, knopf) {
           setze(a, "gespeichert", "Im Wissen gespeichert");
         } else if (a.art === "kontakt") {
           const weiter = await doppeltFragen(a);
-          if (weiter !== "neu") { knopf.disabled = false; if (weiter) neuLaden(); return; }
+          if (weiter !== "neu") { if (knopf) knopf.disabled = false; if (weiter) neuLaden(); return; }
           const k = await db.speichereKontakt(null, kontaktFelder(d));
           await kontakteListe(true);
           a.zielId = k.id;
@@ -516,7 +659,7 @@ async function behandle(a, op, knopf) {
           setze(a, "gespeichert", "Kontakt angelegt");
         } else if (a.art === "handwerker") {
           const weiter = await doppeltFragen(a);
-          if (weiter !== "neu") { knopf.disabled = false; if (weiter) neuLaden(); return; }
+          if (weiter !== "neu") { if (knopf) knopf.disabled = false; if (weiter) neuLaden(); return; }
           const h = await db.speichereDienstleister(null, handwerkerFelder(d));
           a.zielId = h?.id || null;
           a.href = "#/handwerker";
